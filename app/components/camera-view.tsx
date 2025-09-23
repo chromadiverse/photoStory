@@ -445,7 +445,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
               >
                 <RotateCcw size={28} className="text-white" />
               </button>
-              <span className="text-white text-sm font-medium">Flip.</span>
+              <span className="text-white text-sm font-medium">Flip</span>
             </div>
           )}
         </div>
