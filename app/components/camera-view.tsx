@@ -45,7 +45,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   })
 
   const [facingMode, setFacingMode] = useState<"user" | "environment">("environment")
-  const [showGrid, setShowGrid] = useState(false)
+
   const [isCapturing, setIsCapturing] = useState(false)
   const [hasCamera, setHasCamera] = useState(true)
   const [cvLoaded, setCvLoaded] = useState(false)
@@ -278,6 +278,45 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     }
   }, [cvLoaded, hasCamera, detectShapes])
 
+  // Crop image to detected shape
+  const cropImageToShape = useCallback((imageSrc: string, shape: DetectedShape): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          resolve(imageSrc) // Fallback to original
+          return
+        }
+
+        // Find bounding rectangle of the detected shape
+        const xs = shape.corners.map(c => c.x)
+        const ys = shape.corners.map(c => c.y)
+        const minX = Math.max(0, Math.min(...xs) - 10) // Add small padding
+        const maxX = Math.min(img.width, Math.max(...xs) + 10)
+        const minY = Math.max(0, Math.min(...ys) - 10)
+        const maxY = Math.min(img.height, Math.max(...ys) + 10)
+
+        const cropWidth = maxX - minX
+        const cropHeight = maxY - minY
+
+        canvas.width = cropWidth
+        canvas.height = cropHeight
+
+        // Draw the cropped portion
+        ctx.drawImage(
+          img,
+          minX, minY, cropWidth, cropHeight, // Source rectangle
+          0, 0, cropWidth, cropHeight // Destination rectangle
+        )
+
+        resolve(canvas.toDataURL('image/jpeg', 0.95))
+      }
+      img.src = imageSrc
+    })
+  }, [])
+
   const handleCapture = useCallback(async () => {
     if (!webcamRef.current) return
 
@@ -287,18 +326,26 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     try {
       const imageSrc = webcamRef.current.getScreenshot({ width: 1920, height: 1080 })
       if (imageSrc) {
-        const response = await fetch(imageSrc)
+        let finalImageSrc = imageSrc
+        
+        // If we have a detected shape, crop to it
+        if (detectedShape && detectionStrength > 30) {
+          setInstructionText("Cropping to detected object...")
+          finalImageSrc = await cropImageToShape(imageSrc, detectedShape)
+        }
+
+        const response = await fetch(finalImageSrc)
         const blob = await response.blob()
 
         const image = new Image()
         image.onload = () => {
           onImageCapture({
-            src: imageSrc,
+            src: finalImageSrc,
             blob,
             width: image.width,
             height: image.height,
           })
-          setInstructionText("Photo captured successfully!")
+          setInstructionText("Photo captured and cropped successfully!")
           setTimeout(() => {
             setInstructionText("Position your item in the frame")
             detectionHistoryRef.current = {
@@ -309,7 +356,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             }
           }, 2000)
         }
-        image.src = imageSrc
+        image.src = finalImageSrc
       }
     } catch (error) {
       console.error("Error capturing image:", error)
@@ -320,7 +367,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     } finally {
       setIsCapturing(false)
     }
-  }, [onImageCapture])
+  }, [onImageCapture, detectedShape, detectionStrength, cropImageToShape])
 
   const handleFileCapture = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -453,30 +500,48 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             ))}
           </div>
 
-          {/* Detected shape overlay */}
+          {/* Detected shape outline */}
           {detectedShape && detectionStrength > 30 && (
             <svg className="absolute inset-0 w-full h-full">
+              {/* Green pulsing outline around detected object */}
               <polygon
                 points={detectedShape.corners.map((c) => `${c.x},${c.y}`).join(" ")}
                 fill="none"
-                stroke={isAligned ? "#10b981" : "#3b82f6"}
-                strokeWidth="3"
-                strokeOpacity="0.8"
-                strokeDasharray={isAligned ? "0" : "10,5"}
-                className="transition-all duration-500"
+                stroke="#10b981"
+                strokeWidth="4"
+                strokeOpacity="0.9"
+                className="animate-pulse"
               />
+              
+              {/* Solid green outline for better visibility */}
+              <polygon
+                points={detectedShape.corners.map((c) => `${c.x},${c.y}`).join(" ")}
+                fill="none"
+                stroke="#22c55e"
+                strokeWidth="2"
+                strokeOpacity="1"
+              />
+              
+              {/* Corner dots */}
               {detectedShape.corners.map((corner, index) => (
                 <circle
                   key={index}
                   cx={corner.x}
                   cy={corner.y}
-                  r="6"
-                  fill={isAligned ? "#10b981" : "#3b82f6"}
+                  r="8"
+                  fill="#10b981"
                   stroke="white"
-                  strokeWidth="2"
-                  className="transition-all duration-500"
+                  strokeWidth="3"
+                  className="animate-pulse"
                 />
               ))}
+              
+              {/* Semi-transparent overlay to highlight the detected area */}
+              <polygon
+                points={detectedShape.corners.map((c) => `${c.x},${c.y}`).join(" ")}
+                fill="rgba(34, 197, 94, 0.1)"
+                stroke="none"
+              />
             </svg>
           )}
         </div>
