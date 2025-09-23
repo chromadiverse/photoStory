@@ -14,6 +14,7 @@ export interface CapturedImage {
   blob: Blob
   width: number
   height: number
+  
 }
 
 export interface CroppedImageData {
