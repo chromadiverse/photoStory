@@ -1,400 +1,232 @@
-// First, add OpenCV.js to your public folder or CDN
-// Download opencv.js from: https://docs.opencv.org/4.x/opencv.js
-// Place it in public/opencv.js
+"use client"
 
-// app/components/CameraView.tsx
-'use client'
+import type React from "react"
 
-import { useRef, useState, useCallback, useEffect } from 'react'
-import Webcam from 'react-webcam'
-import { Camera, RotateCcw, Grid3X3, Scan, AlertTriangle } from 'lucide-react'
-import { CapturedImage } from '../page'
+import { useRef, useState, useCallback, useEffect } from "react"
+import Webcam from "react-webcam"
+import { Camera, RotateCcw, LayoutGrid, CheckCircle } from "lucide-react"
+
+interface CapturedImage {
+  src: string
+  blob: Blob
+  width: number
+  height: number
+}
 
 interface CameraViewProps {
   onImageCapture: (image: CapturedImage) => void
 }
 
-interface DetectedCorners {
-  topLeft: { x: number; y: number }
-  topRight: { x: number; y: number }
-  bottomLeft: { x: number; y: number }
-  bottomRight: { x: number; y: number }
+interface DetectedShape {
+  corners: Array<{ x: number; y: number }>
+  area: number
+  isRectangle: boolean
+  tiltAngle: number
   confidence: number
-}
-
-// Declare OpenCV global
-declare global {
-  interface Window {
-    cv: any
-  }
 }
 
 const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const webcamRef = useRef<Webcam>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const animationRef = useRef<number | undefined>(undefined)
-  
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const animationFrameRef = useRef<number | null>(null)
+
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("environment")
   const [showGrid, setShowGrid] = useState(true)
-  const [showFrameDetection, setShowFrameDetection] = useState(true)
   const [isCapturing, setIsCapturing] = useState(false)
   const [hasCamera, setHasCamera] = useState(true)
-  const [detectedFrame, setDetectedFrame] = useState<DetectedCorners | null>(null)
-  const [videoSize, setVideoSize] = useState({ width: 0, height: 0 })
-  const [opencvReady, setOpencvReady] = useState(false)
-  const [detectionQuality, setDetectionQuality] = useState<'poor' | 'good' | 'excellent'>('poor')
+  const [cvLoaded, setCvLoaded] = useState(false)
+  const [detectedShape, setDetectedShape] = useState<DetectedShape | null>(null)
+  const [isAligned, setIsAligned] = useState(false)
+  const [instructionText, setInstructionText] = useState("Position your document in the frame")
 
-  // High quality video constraints
   const videoConstraints = {
-    width: { ideal: 1920, min: 1280 },
-    height: { ideal: 1080, min: 720 },
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
     facingMode: facingMode,
-    aspectRatio: { ideal: 16/9 }
   }
 
   // Load OpenCV.js
   useEffect(() => {
     const loadOpenCV = () => {
-      const script = document.createElement('script')
-      script.src = '/opencv.js' // Make sure to add opencv.js to your public folder
-      script.async = true
-      script.onload = () => {
-        if (window.cv) {
-          window.cv.onRuntimeInitialized = () => {
-            console.log('OpenCV.js loaded successfully')
-            setOpencvReady(true)
+      if (typeof window !== "undefined" && !(window as any).cv) {
+        const script = document.createElement("script")
+        script.src = "https://docs.opencv.org/4.8.0/opencv.js"
+        script.async = true
+        script.onload = () => {
+          const cv = (window as any).cv
+          cv.onRuntimeInitialized = () => {
+            console.log("OpenCV.js loaded successfully")
+            setCvLoaded(true)
+            setInstructionText("Hold your document steady in the frame")
           }
         }
+        document.head.appendChild(script)
+      } else if ((window as any).cv && (window as any).cv.Mat) {
+        setCvLoaded(true)
+        setInstructionText("Hold your document steady in the frame")
       }
-      script.onerror = () => {
-        console.error('Failed to load OpenCV.js')
-        // Fallback to basic detection
-        setOpencvReady(false)
-      }
-      document.head.appendChild(script)
     }
 
-    if (!window.cv) {
-      loadOpenCV()
-    } else if (window.cv.Mat) {
-      setOpencvReady(true)
-    }
-
-    return () => {
-      // Cleanup if needed
-    }
+    loadOpenCV()
   }, [])
 
-  // Advanced document detection using OpenCV
-  const detectDocumentOpenCV = useCallback((canvas: HTMLCanvasElement): DetectedCorners | null => {
-    if (!window.cv || !opencvReady) return null
+  // Real-time shape detection
+  const detectShapes = useCallback(() => {
+    if (!cvLoaded || !webcamRef.current || !canvasRef.current) return
+
+    const video = webcamRef.current.video
+    const canvas = canvasRef.current
+
+    if (!video || video.readyState !== 4) return
+
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    ctx.drawImage(video, 0, 0)
 
     try {
-      const cv = window.cv
-      
-      // Create OpenCV Mat from canvas
+      const cv = (window as any).cv
       const src = cv.imread(canvas)
       const gray = new cv.Mat()
-      const blur = new cv.Mat()
       const edges = new cv.Mat()
       const contours = new cv.MatVector()
       const hierarchy = new cv.Mat()
 
       // Convert to grayscale
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
-      
-      // Apply Gaussian blur to reduce noise
-      cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0)
-      
-      // Apply adaptive threshold for better edge detection
-      const thresh = new cv.Mat()
-      cv.adaptiveThreshold(blur, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2)
-      
-      // Find edges using Canny
-      cv.Canny(thresh, edges, 50, 150, 3, false)
-      
-      // Morphological operations to close gaps
-      const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3))
-      cv.morphologyEx(edges, edges, cv.MORPH_CLOSE, kernel)
-      
+
+      // Apply Gaussian blur
+      cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0)
+
+      // Edge detection
+      cv.Canny(gray, edges, 50, 150)
+
       // Find contours
       cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-      
-      let bestContour = null
-      let bestScore = 0
-      
-      // Analyze contours to find the best rectangular shape
+
+      let bestShape: DetectedShape | null = null
+      let maxArea = 0
+
+      // Process contours to find rectangles
       for (let i = 0; i < contours.size(); i++) {
         const contour = contours.get(i)
         const area = cv.contourArea(contour)
-        const perimeter = cv.arcLength(contour, true)
-        
-        // Skip contours that are too small
-        const minArea = (canvas.width * canvas.height) * 0.05 // At least 5% of image
-        if (area < minArea) {
-          contour.delete()
-          continue
-        }
-        
+
+        // Filter by area (minimum size)
+        if (area < 10000) continue
+
         // Approximate contour to polygon
         const approx = new cv.Mat()
-        cv.approxPolyDP(contour, approx, 0.02 * perimeter, true)
-        
-        // We want 4 corners for a rectangle
-        if (approx.rows === 4) {
-          const aspectRatio = getAspectRatio(approx)
-          const rectangularity = getRectangularity(approx, area)
-          const size = area / (canvas.width * canvas.height)
-          
-          // Score based on multiple factors
-          let score = 0
-          
-          // Size score (prefer medium to large rectangles)
-          if (size > 0.1 && size < 0.8) score += 30
-          
-          // Aspect ratio score (prefer reasonable aspect ratios)
-          if (aspectRatio > 0.3 && aspectRatio < 3.0) score += 25
-          
-          // Rectangularity score (how close to a perfect rectangle)
-          score += rectangularity * 25
-          
-          // Convexity score
-          const hull = new cv.Mat()
-          cv.convexHull(contour, hull)
-          const hullArea = cv.contourArea(hull)
-          const convexity = area / hullArea
-          score += convexity * 20
-          
-          if (score > bestScore) {
-            bestScore = score
-            if (bestContour) bestContour.delete()
-            bestContour = approx.clone()
+        const epsilon = 0.02 * cv.arcLength(contour, true)
+        cv.approxPolyDP(contour, approx, epsilon, true)
+
+        // Check if it's a quadrilateral (4 corners)
+        if (approx.rows === 4 && area > maxArea) {
+          const corners = []
+          for (let j = 0; j < 4; j++) {
+            const point = approx.data32S.slice(j * 2, j * 2 + 2)
+            corners.push({ x: point[0], y: point[1] })
           }
-          
-          hull.delete()
+
+          // Calculate tilt angle
+          const edge1 = {
+            x: corners[1].x - corners[0].x,
+            y: corners[1].y - corners[0].y,
+          }
+          const tiltAngle = Math.atan2(edge1.y, edge1.x) * (180 / Math.PI)
+
+          // Check if it's roughly rectangular
+          const isRectangle = Math.abs(tiltAngle % 90) < 15 || Math.abs(tiltAngle % 90) > 75
+
+          bestShape = {
+            corners,
+            area,
+            isRectangle,
+            tiltAngle,
+            confidence: area / (canvas.width * canvas.height), // Relative to frame size
+          }
+          maxArea = area
         }
-        
+
         approx.delete()
         contour.delete()
       }
-      
-      // Clean up
+
+      setDetectedShape(bestShape)
+      const aligned = bestShape ? Math.abs(bestShape.tiltAngle % 90) < 5 : false
+      setIsAligned(aligned)
+
+      if (!bestShape) {
+        setInstructionText("Move closer to your document")
+      } else if (!aligned) {
+        const tilt = Math.round(Math.abs(bestShape.tiltAngle % 90))
+        if (tilt > 10) {
+          setInstructionText("Straighten your document - rotate slightly")
+        } else {
+          setInstructionText("Almost there! Keep adjusting...")
+        }
+      } else {
+        setInstructionText("Perfect! Tap the green button to take photo")
+      }
+
+      // Cleanup
       src.delete()
       gray.delete()
-      blur.delete()
-      thresh.delete()
       edges.delete()
       contours.delete()
       hierarchy.delete()
-      kernel.delete()
-      
-      if (bestContour && bestScore > 40) {
-        const corners = extractCorners(bestContour)
-        bestContour.delete()
-        
-        if (corners) {
-          // Determine quality based on score
-          let quality: 'poor' | 'good' | 'excellent' = 'poor'
-          if (bestScore > 80) quality = 'excellent'
-          else if (bestScore > 60) quality = 'good'
-          
-          setDetectionQuality(quality)
-          
-          return {
-            ...corners,
-            confidence: bestScore / 100
-          }
-        }
-      }
-      
-      if (bestContour) bestContour.delete()
-      return null
-      
     } catch (error) {
-      console.error('OpenCV detection error:', error)
-      return null
+      console.error("Shape detection error:", error)
     }
-  }, [opencvReady])
+  }, [cvLoaded])
 
-  // Extract corner coordinates from OpenCV contour
-  const extractCorners = (contour: any): Omit<DetectedCorners, 'confidence'> | null => {
-    if (!contour || contour.rows !== 4) return null
-
-    const points = []
-    for (let i = 0; i < 4; i++) {
-      const point = contour.data32S.slice(i * 2, i * 2 + 2)
-      points.push({ x: point[0], y: point[1] })
-    }
-
-    // Sort points to identify corners
-    // Top-left: smallest x+y
-    // Top-right: largest x, smallest y
-    // Bottom-left: smallest x, largest y  
-    // Bottom-right: largest x+y
-    
-    points.sort((a, b) => (a.x + a.y) - (b.x + b.y))
-    const topLeft = points[0]
-    const bottomRight = points[3]
-    
-    const remaining = [points[1], points[2]]
-    remaining.sort((a, b) => a.x - b.x)
-    
-    const topRight = remaining.find(p => p.y < (topLeft.y + bottomRight.y) / 2) || remaining[1]
-    const bottomLeft = remaining.find(p => p.y > (topLeft.y + bottomRight.y) / 2) || remaining[0]
-
-    return {
-      topLeft,
-      topRight,
-      bottomLeft,
-      bottomRight
-    }
-  }
-
-  // Calculate aspect ratio of a quadrilateral
-  const getAspectRatio = (contour: any): number => {
-    if (contour.rows !== 4) return 0
-
-    const points = []
-    for (let i = 0; i < 4; i++) {
-      const point = contour.data32S.slice(i * 2, i * 2 + 2)
-      points.push({ x: point[0], y: point[1] })
-    }
-
-    // Calculate average width and height
-    const widths = [
-      Math.abs(points[1].x - points[0].x),
-      Math.abs(points[2].x - points[3].x)
-    ]
-    const heights = [
-      Math.abs(points[3].y - points[0].y),
-      Math.abs(points[2].y - points[1].y)
-    ]
-
-    const avgWidth = (widths[0] + widths[1]) / 2
-    const avgHeight = (heights[0] + heights[1]) / 2
-
-    return avgWidth / avgHeight
-  }
-
-  // Calculate how rectangular a shape is (0-1)
-  const getRectangularity = (contour: any, area: number): number => {
-    if (contour.rows !== 4) return 0
-
-    const points = []
-    for (let i = 0; i < 4; i++) {
-      const point = contour.data32S.slice(i * 2, i * 2 + 2)
-      points.push({ x: point[0], y: point[1] })
-    }
-
-    // Calculate bounding rectangle area
-    const minX = Math.min(...points.map(p => p.x))
-    const maxX = Math.max(...points.map(p => p.x))
-    const minY = Math.min(...points.map(p => p.y))
-    const maxY = Math.max(...points.map(p => p.y))
-    
-    const boundingArea = (maxX - minX) * (maxY - minY)
-    
-    return area / boundingArea
-  }
-
-  // Frame detection loop
-  const processFrameDetection = useCallback(() => {
-    if (!webcamRef.current || !canvasRef.current || !showFrameDetection) {
-      animationRef.current = requestAnimationFrame(processFrameDetection)
-      return
-    }
-
-    const video = webcamRef.current.video
-    if (!video || video.readyState !== 4) {
-      animationRef.current = requestAnimationFrame(processFrameDetection)
-      return
-    }
-
-    const canvas = canvasRef.current
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-
-    // Set canvas size to match video (but smaller for processing speed)
-    const scale = 0.5 // Process at half resolution for speed
-    canvas.width = video.videoWidth * scale
-    canvas.height = video.videoHeight * scale
-    
-    setVideoSize({ width: video.videoWidth, height: video.videoHeight })
-
-    // Draw video frame to canvas
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-    
-    // Detect document using OpenCV
-    const detected = detectDocumentOpenCV(canvas)
-    
-    // Scale coordinates back to full resolution
-    if (detected) {
-      const scaledDetected = {
-        topLeft: { x: detected.topLeft.x / scale, y: detected.topLeft.y / scale },
-        topRight: { x: detected.topRight.x / scale, y: detected.topRight.y / scale },
-        bottomLeft: { x: detected.bottomLeft.x / scale, y: detected.bottomLeft.y / scale },
-        bottomRight: { x: detected.bottomRight.x / scale, y: detected.bottomRight.y / scale },
-        confidence: detected.confidence
-      }
-      setDetectedFrame(scaledDetected)
-    } else {
-      setDetectedFrame(null)
-      setDetectionQuality('poor')
-    }
-
-    // Continue the loop (reduce frequency to avoid performance issues)
-    setTimeout(() => {
-      animationRef.current = requestAnimationFrame(processFrameDetection)
-    }, 100) // Process every 100ms instead of every frame
-  }, [showFrameDetection, detectDocumentOpenCV])
-
-  // Start frame detection when component mounts
+  // Start/stop detection loop
   useEffect(() => {
-    if (showFrameDetection && hasCamera && opencvReady) {
-      animationRef.current = requestAnimationFrame(processFrameDetection)
+    if (cvLoaded && hasCamera) {
+      const detectLoop = () => {
+        detectShapes()
+        animationFrameRef.current = requestAnimationFrame(detectLoop)
+      }
+      detectLoop()
     }
-    
+
     return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current)
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
       }
     }
-  }, [showFrameDetection, hasCamera, opencvReady, processFrameDetection])
+  }, [cvLoaded, hasCamera, detectShapes])
 
   const handleCapture = useCallback(async () => {
     if (!webcamRef.current) return
-    
+
     setIsCapturing(true)
-    
+    setInstructionText("Taking photo...")
+
     try {
-      const video = webcamRef.current.video
-      if (!video) return
+      const imageSrc = webcamRef.current.getScreenshot({ width: 1920, height: 1080 })
+      if (imageSrc) {
+        const response = await fetch(imageSrc)
+        const blob = await response.blob()
 
-      const canvas = document.createElement('canvas')
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-
-      canvas.width = video.videoWidth || 1920
-      canvas.height = video.videoHeight || 1080
-
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const imageSrc = canvas.toDataURL('image/jpeg', 0.95)
-          
+        const image = new Image()
+        image.onload = () => {
           onImageCapture({
             src: imageSrc,
             blob,
-            width: canvas.width,
-            height: canvas.height
+            width: image.width,
+            height: image.height,
           })
+          setInstructionText("Photo captured successfully!")
         }
-      }, 'image/jpeg', 0.95)
-      
+        image.src = imageSrc
+      }
     } catch (error) {
-      console.error('Error capturing image:', error)
+      console.error("Error capturing image:", error)
+      setInstructionText("Error taking photo. Please try again.")
     } finally {
       setIsCapturing(false)
     }
@@ -412,7 +244,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             src: result,
             blob: file,
             width: image.width,
-            height: image.height
+            height: image.height,
           })
         }
         image.src = result
@@ -422,155 +254,75 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   }
 
   const toggleCamera = () => {
-    setFacingMode(prev => prev === 'user' ? 'environment' : 'user')
+    setFacingMode((prev) => (prev === "user" ? "environment" : "user"))
   }
 
   const onUserMediaError = () => {
     setHasCamera(false)
-  }
-
-  // Convert video coordinates to display coordinates
-  const scaleCoordinates = useCallback((corners: DetectedCorners): DetectedCorners => {
-    const video = webcamRef.current?.video
-    const container = video?.parentElement
-    if (!video || !container) return corners
-
-    const containerRect = container.getBoundingClientRect()
-    const videoRect = video.getBoundingClientRect()
-    
-    const scaleX = videoRect.width / video.videoWidth
-    const scaleY = videoRect.height / video.videoHeight
-
-    return {
-      topLeft: { x: corners.topLeft.x * scaleX, y: corners.topLeft.y * scaleY },
-      topRight: { x: corners.topRight.x * scaleX, y: corners.topRight.y * scaleY },
-      bottomLeft: { x: corners.bottomLeft.x * scaleX, y: corners.bottomLeft.y * scaleY },
-      bottomRight: { x: corners.bottomRight.x * scaleX, y: corners.bottomRight.y * scaleY },
-      confidence: corners.confidence
-    }
-  }, [])
-
-  const displayCorners = detectedFrame ? scaleCoordinates(detectedFrame) : null
-
-  const getQualityColor = () => {
-    switch (detectionQuality) {
-      case 'excellent': return '#00ff00'
-      case 'good': return '#ffff00'
-      case 'poor': return '#ff6600'
-      default: return '#ff0000'
-    }
-  }
-
-  const getQualityText = () => {
-    switch (detectionQuality) {
-      case 'excellent': return '📄 Excellent Frame'
-      case 'good': return '📄 Good Frame'
-      case 'poor': return '📄 Frame Detected'
-      default: return '📄 Poor Detection'
-    }
+    setInstructionText("Camera not available. Use 'Choose Photo' instead.")
   }
 
   return (
-    <div className="relative h-full flex flex-col">
-      {/* Camera Feed Container */}
+    <div className="relative h-full flex flex-col bg-black">
+      <div
+        className={`w-full py-4 px-6 text-center text-lg font-semibold transition-colors duration-500 ${
+          isAligned ? "bg-green-600 text-white" : "bg-blue-600 text-white"
+        }`}
+      >
+        {isAligned && <CheckCircle className="inline mr-2" size={24} />}
+        {instructionText}
+      </div>
+
+      {/* Camera Feed */}
       <div className="relative flex-1 bg-black overflow-hidden">
         {hasCamera ? (
           <>
             <Webcam
               ref={webcamRef}
               audio={false}
+              height="100%"
+              width="100%"
               videoConstraints={videoConstraints}
               className="w-full h-full object-cover"
               onUserMediaError={onUserMediaError}
               screenshotFormat="image/jpeg"
               screenshotQuality={0.95}
-              mirrored={facingMode === 'user'}
             />
-            
-            {/* Hidden canvas for processing */}
-            <canvas 
-              ref={canvasRef} 
-              className="hidden"
-            />
+            {/* Hidden canvas for OpenCV processing */}
+            <canvas ref={canvasRef} className="hidden" />
           </>
         ) : (
           <div className="flex flex-col items-center justify-center h-full bg-gray-800">
-            <Camera size={64} className="mb-4 text-gray-400" />
-            <p className="text-gray-400 mb-4">Camera not available</p>
+            <Camera size={80} className="mb-6 text-gray-400" />
+            <p className="text-gray-300 mb-6 text-xl text-center px-4">Camera not available</p>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="btn-primary"
+              className="px-8 py-4 bg-blue-600 text-white text-xl rounded-xl hover:bg-blue-700 transition-colors font-semibold"
             >
-              Select Photo from Gallery
+              Choose Photo from Gallery
             </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleFileCapture}
+              className="hidden"
+            />
           </div>
         )}
 
-        {/* OpenCV Loading Status */}
-        {!opencvReady && showFrameDetection && (
-          <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-yellow-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2">
-            <div className="w-4 h-4 border-2 border-white rounded-full animate-spin border-t-transparent"></div>
-            <span>Loading AI Detection...</span>
-          </div>
-        )}
-
-        {/* Enhanced Frame Detection Overlay */}
-        {showFrameDetection && displayCorners && hasCamera && opencvReady && (
-          <div className="absolute inset-0 pointer-events-none">
-            <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <filter id="glow">
-                  <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
-                  <feMerge> 
-                    <feMergeNode in="coloredBlur"/>
-                    <feMergeNode in="SourceGraphic"/>
-                  </feMerge>
-                </filter>
-              </defs>
-              
-              {/* Main detection polygon */}
-              <polygon
-                points={`${displayCorners.topLeft.x},${displayCorners.topLeft.y} ${displayCorners.topRight.x},${displayCorners.topRight.y} ${displayCorners.bottomRight.x},${displayCorners.bottomRight.y} ${displayCorners.bottomLeft.x},${displayCorners.bottomLeft.y}`}
-                fill="none"
-                stroke={getQualityColor()}
-                strokeWidth="4"
-                filter="url(#glow)"
-                className={detectionQuality === 'excellent' ? 'animate-pulse' : ''}
-              />
-              
-              {/* Corner indicators with size based on quality */}
-              {[displayCorners.topLeft, displayCorners.topRight, displayCorners.bottomLeft, displayCorners.bottomRight].map((corner, idx) => (
-                <circle 
-                  key={idx}
-                  cx={corner.x} 
-                  cy={corner.y} 
-                  r={detectionQuality === 'excellent' ? '12' : '8'} 
-                  fill={getQualityColor()}
-                  className={detectionQuality === 'excellent' ? 'animate-pulse' : ''}
-                />
-              ))}
-            </svg>
-            
-            {/* Detection status with quality indicator */}
-            <div className={`absolute top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-lg text-white font-medium ${
-              detectionQuality === 'excellent' ? 'bg-green-600' :
-              detectionQuality === 'good' ? 'bg-yellow-600' : 'bg-orange-600'
-            }`}>
-              {getQualityText()}
-              <div className="text-xs opacity-80">
-                Confidence: {Math.round((displayCorners.confidence || 0) * 100)}%
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Grid Overlay */}
         {showGrid && hasCamera && (
           <div className="absolute inset-0 pointer-events-none">
             <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
               <defs>
                 <pattern id="grid" width="33.333%" height="33.333%" patternUnits="objectBoundingBox">
-                  <path d="M 33.333 0 L 33.333 33.333 M 0 33.333 L 33.333 33.333" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1"/>
+                  <path
+                    d="M 33.333 0 L 33.333 33.333 M 0 33.333 L 33.333 33.333"
+                    fill="none"
+                    stroke="rgba(255,255,255,0.5)"
+                    strokeWidth="2"
+                  />
                 </pattern>
               </defs>
               <rect width="100%" height="100%" fill="url(#grid)" />
@@ -578,67 +330,123 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           </div>
         )}
 
-        {/* Manual Frame Guide (when detection is off) */}
-        {!showFrameDetection && (
-          <div className="absolute inset-4 border-2 border-white opacity-30 rounded-lg pointer-events-none">
-            <div className="absolute top-0 left-0 w-8 h-8 border-l-4 border-t-4 border-blue-500 rounded-tl-lg"></div>
-            <div className="absolute top-0 right-0 w-8 h-8 border-r-4 border-t-4 border-blue-500 rounded-tr-lg"></div>
-            <div className="absolute bottom-0 left-0 w-8 h-8 border-l-4 border-b-4 border-blue-500 rounded-bl-lg"></div>
-            <div className="absolute bottom-0 right-0 w-8 h-8 border-r-4 border-b-4 border-blue-500 rounded-br-lg"></div>
+        <div className="absolute inset-8 pointer-events-none">
+          {/* Target frame */}
+          <div
+            className={`w-full h-full border-4 rounded-2xl transition-all duration-500 ${
+              isAligned ? "border-green-400 shadow-lg shadow-green-400/50" : "border-white/50"
+            }`}
+          >
+            <div
+              className={`absolute -top-2 -left-2 w-12 h-12 border-l-6 border-t-6 rounded-tl-2xl transition-all duration-500 ${
+                isAligned ? "border-green-400 shadow-lg shadow-green-400/50" : "border-blue-400"
+              }`}
+            ></div>
+            <div
+              className={`absolute -top-2 -right-2 w-12 h-12 border-r-6 border-t-6 rounded-tr-2xl transition-all duration-500 ${
+                isAligned ? "border-green-400 shadow-lg shadow-green-400/50" : "border-blue-400"
+              }`}
+            ></div>
+            <div
+              className={`absolute -bottom-2 -left-2 w-12 h-12 border-l-6 border-b-6 rounded-bl-2xl transition-all duration-500 ${
+                isAligned ? "border-green-400 shadow-lg shadow-green-400/50" : "border-blue-400"
+              }`}
+            ></div>
+            <div
+              className={`absolute -bottom-2 -right-2 w-12 h-12 border-r-6 border-b-6 rounded-br-2xl transition-all duration-500 ${
+                isAligned ? "border-green-400 shadow-lg shadow-green-400/50" : "border-blue-400"
+              }`}
+            ></div>
+          </div>
+
+          {/* Detected shape overlay */}
+          {detectedShape && (
+            <svg className="absolute inset-0 w-full h-full">
+              <polygon
+                points={detectedShape.corners.map((c) => `${c.x},${c.y}`).join(" ")}
+                fill="none"
+                stroke={detectedShape.isRectangle ? "#10b981" : "#f59e0b"}
+                strokeWidth="4"
+                strokeDasharray={detectedShape.isRectangle ? "0" : "15,10"}
+              />
+              {detectedShape.corners.map((corner, index) => (
+                <circle
+                  key={index}
+                  cx={corner.x}
+                  cy={corner.y}
+                  r="8"
+                  fill={detectedShape.isRectangle ? "#10b981" : "#f59e0b"}
+                  stroke="white"
+                  strokeWidth="2"
+                />
+              ))}
+            </svg>
+          )}
+        </div>
+
+        {detectedShape && !isAligned && (
+          <div className="absolute top-1/2 right-6 transform -translate-y-1/2">
+            <div className="bg-black/80 rounded-2xl p-4 border-2 border-orange-400">
+              <div className="text-white text-lg font-semibold mb-3 text-center">Straighten</div>
+              <div className="relative w-20 h-20">
+                <div className="absolute inset-0 border-4 border-white/50 rounded-xl"></div>
+                <div
+                  className="absolute inset-2 border-4 border-orange-400 rounded-xl transition-transform duration-300"
+                  style={{ transform: `rotate(${detectedShape.tiltAngle}deg)` }}
+                ></div>
+              </div>
+              <div className="text-white text-sm mt-2 text-center font-medium">
+                {Math.round(Math.abs(detectedShape.tiltAngle % 90))}° off
+              </div>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Controls */}
-      <div className="bg-black p-4">
-        <div className="flex items-center justify-between max-w-md mx-auto">
+      <div className="bg-black p-6 border-t-2 border-gray-800">
+        <div className="flex items-center justify-between max-w-lg mx-auto">
           {/* Grid Toggle */}
-          <button
-            onClick={() => setShowGrid(!showGrid)}
-            className={`p-3 rounded-full ${showGrid ? 'bg-blue-600' : 'bg-gray-600'} transition-colors`}
-            title="Toggle Grid"
-          >
-            <Grid3X3 size={24} />
-          </button>
-
-          {/* Frame Detection Toggle */}
-          <button
-            onClick={() => setShowFrameDetection(!showFrameDetection)}
-            className={`p-3 rounded-full ${showFrameDetection ? 'bg-green-600' : 'bg-gray-600'} transition-colors relative`}
-            title="Toggle AI Frame Detection"
-          >
-            <Scan size={24} />
-            {!opencvReady && showFrameDetection && (
-              <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-500 rounded-full animate-pulse"></div>
-            )}
-          </button>
+          <div className="flex flex-col items-center">
+            <button
+              onClick={() => setShowGrid(!showGrid)}
+              className={`p-4 rounded-2xl transition-colors mb-2 ${showGrid ? "bg-blue-600" : "bg-gray-600"}`}
+            >
+              <LayoutGrid size={28} className="text-white" />
+            </button>
+            <span className="text-white text-sm font-medium">Grid</span>
+          </div>
 
           {/* Capture Button */}
-          <button
-            onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
-            disabled={isCapturing}
-            className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-colors disabled:opacity-50 ${
-              detectionQuality === 'excellent' && displayCorners ? 'bg-green-500 hover:bg-green-400 animate-pulse' : 'bg-white hover:bg-gray-100'
-            }`}
-          >
-            {isCapturing ? (
-              <div className="w-6 h-6 border-2 border-gray-400 rounded-full animate-spin border-t-gray-600"></div>
-            ) : (
-              <div className={`w-12 h-12 rounded-full ${
-                detectionQuality === 'excellent' && displayCorners ? 'bg-white' : 'bg-gray-800'
-              }`}></div>
-            )}
-          </button>
+          <div className="flex flex-col items-center">
+            <button
+              onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
+              disabled={isCapturing}
+              className={`w-20 h-20 rounded-full flex items-center justify-center shadow-2xl transition-all disabled:opacity-50 border-4 ${
+                isAligned
+                  ? "bg-green-500 hover:bg-green-600 border-green-300 shadow-green-500/50"
+                  : "bg-white hover:bg-gray-100 border-gray-300"
+              }`}
+            >
+              {isCapturing ? (
+                <div className="w-8 h-8 border-4 border-gray-400 rounded-full animate-spin border-t-gray-600"></div>
+              ) : (
+                <div className={`w-14 h-14 rounded-full ${isAligned ? "bg-white" : "bg-gray-800"}`}></div>
+              )}
+            </button>
+            <span className="text-white text-sm font-medium mt-2">{hasCamera ? "Take Photo" : "Choose Photo"}</span>
+          </div>
 
           {/* Camera Switch */}
           {hasCamera && (
-            <button
-              onClick={toggleCamera}
-              className="p-3 rounded-full bg-gray-600 hover:bg-gray-500 transition-colors"
-              title="Switch Camera"
-            >
-              <RotateCcw size={24} />
-            </button>
+            <div className="flex flex-col items-center">
+              <button
+                onClick={toggleCamera}
+                className="p-4 rounded-2xl bg-gray-600 hover:bg-gray-500 transition-colors mb-2"
+              >
+                <RotateCcw size={28} className="text-white" />
+              </button>
+              <span className="text-white text-sm font-medium">Flip</span>
+            </div>
           )}
         </div>
       </div>
@@ -657,4 +465,3 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
 }
 
 export default CameraView
-
