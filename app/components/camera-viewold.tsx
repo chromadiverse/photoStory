@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react'
 import Webcam from 'react-webcam'
-import { Camera, RotateCcw, Grid3X3, Square } from 'lucide-react'
+import { Camera, RotateCcw,  Square } from 'lucide-react'
 import { CapturedImage } from '../page'
 
 interface CameraViewProps {
@@ -13,7 +13,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const webcamRef = useRef<Webcam>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment')
-  const [showGrid, setShowGrid] = useState(true)
+
   const [isCapturing, setIsCapturing] = useState(false)
   const [hasCamera, setHasCamera] = useState(true)
 
@@ -119,19 +119,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           </div>
         )}
 
-        {/* Grid Overlay */}
-        {showGrid && hasCamera && (
-          <div className="absolute inset-0 pointer-events-none">
-            <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <pattern id="grid" width="33.333%" height="33.333%" patternUnits="objectBoundingBox">
-                  <path d="M 33.333 0 L 33.333 33.333 M 0 33.333 L 33.333 33.333" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1"/>
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill="url(#grid)" />
-            </svg>
-          </div>
-        )}
+     
 
         {/* Document Frame Overlay */}
         <div className="absolute inset-4 border-2 border-white opacity-30 rounded-lg pointer-events-none">
@@ -145,13 +133,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       {/* Controls */}
       <div className="bg-black p-4">
         <div className="flex items-center justify-between max-w-md mx-auto">
-          {/* Grid Toggle */}
-          <button
-            onClick={() => setShowGrid(!showGrid)}
-            className={`p-3 rounded-full ${showGrid ? 'bg-blue-600' : 'bg-gray-600'} transition-colors`}
-          >
-            <Grid3X3 size={24} />
-          </button>
+       
 
           {/* Capture Button */}
           <button

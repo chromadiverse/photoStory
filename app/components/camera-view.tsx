@@ -1,108 +1,93 @@
-"use client"
+'use client'
 
-import type React from "react"
-
-import { useRef, useState, useCallback, useEffect } from "react"
-import Webcam from "react-webcam"
-import { Camera, RotateCcw, LayoutGrid, CheckCircle } from "lucide-react"
+import { useRef, useState, useCallback, useEffect } from 'react'
+import Webcam from 'react-webcam'
+import { Camera, RotateCcw, Square, CheckCircle, AlertCircle } from 'lucide-react'
 
 interface CapturedImage {
   src: string
   blob: Blob
   width: number
   height: number
+  detectedFrame?: { x: number, y: number, width: number, height: number }
 }
 
-interface CameraViewProps {
-  onImageCapture: (image: CapturedImage) => void
-}
-
-interface DetectedShape {
-  corners: Array<{ x: number; y: number }>
-  area: number
-  isRectangle: boolean
-  tiltAngle: number
+interface DetectedRectangle {
+  x: number
+  y: number
+  width: number
+  height: number
   confidence: number
 }
 
-interface DetectionHistory {
-  shapes: DetectedShape[]
-  alignedCount: number
-  stableCount: number
-  lastInstructionChange: number
+interface CameraViewProps {
+  onImageCapture?: (image: CapturedImage) => void
 }
 
-const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
+const CameraView: React.FC<CameraViewProps> = ({ onImageCapture = () => {} }) => {
   const webcamRef = useRef<Webcam>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const animationFrameRef = useRef<number | null>(null)
-  const detectionHistoryRef = useRef<DetectionHistory>({
-    shapes: [],
-    alignedCount: 0,
-    stableCount: 0,
-    lastInstructionChange: 0
-  })
-
-  const [facingMode, setFacingMode] = useState<"user" | "environment">("environment")
-
+  const detectionIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment')
   const [isCapturing, setIsCapturing] = useState(false)
   const [hasCamera, setHasCamera] = useState(true)
-  const [cvLoaded, setCvLoaded] = useState(false)
-  const [detectedShape, setDetectedShape] = useState<DetectedShape | null>(null)
-  const [isAligned, setIsAligned] = useState(false)
-  const [instructionText, setInstructionText] = useState("Position your item in the frame")
-  const [detectionStrength, setDetectionStrength] = useState(0) // 0-100 strength indicator
-
+  const [detectedRect, setDetectedRect] = useState<DetectedRectangle | null>(null)
+  const [isDetectionActive, setIsDetectionActive] = useState(true)
+  const [feedback, setFeedback] = useState<string>('Hold steady and point camera at photo or poster')
+  const [captureTimer, setCaptureTimer] = useState<number>(0)
+  const [isAutoCapturing, setIsAutoCapturing] = useState(false)
+  
   const videoConstraints = {
-    width: { ideal: 1920 },
-    height: { ideal: 1080 },
-    facingMode: facingMode,
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+    facingMode: facingMode
   }
 
-  // Load OpenCV.js
+  // Load OpenCV
   useEffect(() => {
-    const loadOpenCV = () => {
-      if (typeof window !== "undefined" && !(window as any).cv) {
-        const script = document.createElement("script")
-        script.src = "https://docs.opencv.org/4.8.0/opencv.js"
-        script.async = true
-        script.onload = () => {
-          const cv = (window as any).cv
-          cv.onRuntimeInitialized = () => {
-            console.log("OpenCV.js loaded successfully")
-            setCvLoaded(true)
-            setInstructionText("Hold your item steady in the frame")
-          }
-        }
-        document.head.appendChild(script)
-      } else if ((window as any).cv && (window as any).cv.Mat) {
-        setCvLoaded(true)
-        setInstructionText("Hold your item steady in the frame")
+    const script = document.createElement('script')
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/opencv.js/4.8.0/opencv.js'
+    script.async = true
+    script.onload = () => {
+      // @ts-ignore
+      if (window.cv) {
+        console.log('OpenCV loaded successfully')
+        startDetection()
       }
     }
+    document.body.appendChild(script)
 
-    loadOpenCV()
+    return () => {
+      if (detectionIntervalRef.current) {
+        clearInterval(detectionIntervalRef.current)
+      }
+      document.body.removeChild(script)
+    }
   }, [])
 
-  // Stabilized shape detection with history
-  const detectShapes = useCallback(() => {
-    if (!cvLoaded || !webcamRef.current || !canvasRef.current) return
-
-    const video = webcamRef.current.video
-    const canvas = canvasRef.current
-
-    if (!video || video.readyState !== 4) return
-
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    ctx.drawImage(video, 0, 0)
+  const detectRectangles = useCallback(() => {
+    // @ts-ignore
+    if (!window.cv || !webcamRef.current || !canvasRef.current) return
 
     try {
-      const cv = (window as any).cv
+      const video = webcamRef.current.video
+      if (!video || video.readyState !== 4) return
+
+      const canvas = canvasRef.current
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      // Set canvas size to match video
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      
+      // Draw video frame to canvas
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      
+      // @ts-ignore
+      const cv = window.cv
       const src = cv.imread(canvas)
       const gray = new cv.Mat()
       const edges = new cv.Mat()
@@ -111,263 +96,216 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
 
       // Convert to grayscale
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
-
-      // Apply Gaussian blur for noise reduction
-      cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0)
-
-      // Edge detection with more sensitive parameters
-      cv.Canny(gray, edges, 50, 150)
-
+      
+      // Apply Gaussian blur to reduce noise
+      const blurred = new cv.Mat()
+      cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0)
+      
+      // Edge detection with adjusted thresholds for better rectangle detection
+      cv.Canny(blurred, edges, 50, 150)
+      
+      // Dilate to connect nearby edges
+      const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3))
+      cv.dilate(edges, edges, kernel)
+      
       // Find contours
       cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
-
-      let currentShape: DetectedShape | null = null
-      let maxArea = 0
-      const minArea = 5000 // Much lower minimum area
-      const maxArea_limit = (canvas.width * canvas.height) * 0.95 // Allow larger shapes
-
-      // Process contours to find rectangles
+      
+      let bestRect: DetectedRectangle | null = null
+      let maxScore = 0
+      
+      // Analyze contours
       for (let i = 0; i < contours.size(); i++) {
         const contour = contours.get(i)
         const area = cv.contourArea(contour)
-
-        // Less strict area filtering
-        if (area < minArea) continue
-
+        const perimeter = cv.arcLength(contour, true)
+        
+        if (area < 10000 || area > canvas.width * canvas.height * 0.8) continue
+        
         // Approximate contour to polygon
         const approx = new cv.Mat()
-        const epsilon = 0.02 * cv.arcLength(contour, true) // Back to original epsilon
-        cv.approxPolyDP(contour, approx, epsilon, true)
-
-        // Check if it's a quadrilateral (4 corners)
-        if (approx.rows === 4 && area > maxArea) {
-          const corners = []
-          for (let j = 0; j < 4; j++) {
-            const point = approx.data32S.slice(j * 2, j * 2 + 2)
-            corners.push({ x: point[0], y: point[1] })
+        cv.approxPolyDP(contour, approx, 0.02 * perimeter, true)
+        
+        // Look for rectangles (4 corners) or reasonable polygons
+        if (approx.rows >= 4) {
+          const rect = cv.boundingRect(contour)
+          const aspectRatio = rect.width / rect.height
+          
+          // Score based on size, aspect ratio, and shape regularity
+          let score = 0
+          
+          // Size score (prefer medium to large rectangles)
+          const sizeRatio = area / (canvas.width * canvas.height)
+          if (sizeRatio > 0.05 && sizeRatio < 0.7) {
+            score += Math.min(sizeRatio * 10, 5)
           }
-
-          // Calculate tilt angle using first edge (simpler approach)
-          const edge1 = {
-            x: corners[1].x - corners[0].x,
-            y: corners[1].y - corners[0].y,
+          
+          // Aspect ratio score (prefer photo-like ratios)
+          if ((aspectRatio > 0.6 && aspectRatio < 1.8) || (aspectRatio > 0.55 && aspectRatio < 2.0)) {
+            score += 3
           }
-          const tiltAngle = Math.atan2(edge1.y, edge1.x) * (180 / Math.PI)
-
-          // More lenient rectangle check
-          const normalizedAngle = Math.abs(tiltAngle % 90)
-          const isRectangle = normalizedAngle < 25 || normalizedAngle > 65
-
-          currentShape = {
-            corners,
-            area,
-            isRectangle,
-            tiltAngle,
-            confidence: Math.min(area / 50000, 1), // Simpler confidence calculation
+          
+          // Shape regularity score
+          const rectArea = rect.width * rect.height
+          const fillRatio = area / rectArea
+          if (fillRatio > 0.7) {
+            score += 2
           }
-          maxArea = area
+          
+          // Position preference (center-ish is better)
+          const centerX = rect.x + rect.width / 2
+          const centerY = rect.y + rect.height / 2
+          const distanceFromCenter = Math.sqrt(
+            Math.pow(centerX - canvas.width / 2, 2) + 
+            Math.pow(centerY - canvas.height / 2, 2)
+          )
+          const maxDistance = Math.sqrt(Math.pow(canvas.width / 2, 2) + Math.pow(canvas.height / 2, 2))
+          score += (1 - distanceFromCenter / maxDistance) * 2
+          
+          if (score > maxScore) {
+            maxScore = score
+            bestRect = {
+              x: rect.x / canvas.width,
+              y: rect.y / canvas.height,
+              width: rect.width / canvas.width,
+              height: rect.height / canvas.height,
+              confidence: Math.min(score / 10, 1)
+            }
+          }
         }
-
+        
         approx.delete()
         contour.delete()
       }
-
-      // Apply simpler temporal smoothing
-      const history = detectionHistoryRef.current
-      const now = Date.now()
-
-      if (currentShape) {
-        // Add to history (keep last 5 detections for faster response)
-        history.shapes.push(currentShape)
-        if (history.shapes.length > 5) {
-          history.shapes.shift()
-        }
-
-        // Show detection immediately but smooth alignment
-        setDetectedShape(currentShape)
+      
+      // Update detection state and feedback
+      if (bestRect && bestRect.confidence > 0.3) {
+        setDetectedRect(bestRect)
         
-        // Simple detection strength based on consistency
-        const strength = Math.min(100, (history.shapes.length / 3) * 100)
-        setDetectionStrength(strength)
-
-        // Check alignment with more tolerance
-        const normalizedAngle = Math.abs(currentShape.tiltAngle % 90)
-        const isCurrentlyAligned = normalizedAngle < 15 || normalizedAngle > 75
-
-        if (isCurrentlyAligned) {
-          history.alignedCount = Math.min(5, history.alignedCount + 1)
+        if (bestRect.confidence > 0.7) {
+          setFeedback('Perfect! Photo detected - hold steady')
+          startAutoCapture()
+        } else if (bestRect.confidence > 0.5) {
+          setFeedback('Good detection - hold steady for better focus')
         } else {
-          history.alignedCount = Math.max(0, history.alignedCount - 1)
-        }
-
-        // Faster alignment detection (3 frames instead of 8)
-        const shouldBeAligned = history.alignedCount >= 3 && strength > 50
-        const shouldNotBeAligned = history.alignedCount <= 1
-
-        if (shouldBeAligned !== isAligned) {
-          setIsAligned(shouldBeAligned)
-        }
-
-        // Update instructions with shorter debouncing
-        if (now - history.lastInstructionChange > 1000) {
-          if (strength < 40) {
-            setInstructionText("Move closer to your item")
-          } else if (!isCurrentlyAligned) {
-            const tilt = Math.round(normalizedAngle)
-            if (tilt > 20) {
-              setInstructionText("Rotate your item to straighten it")
-            } else {
-              setInstructionText("Almost aligned! Keep adjusting...")
-            }
-          } else if (shouldBeAligned) {
-            setInstructionText("Perfect! Tap to take your photo")
-          } else {
-            setInstructionText("Hold steady...")
-          }
-          history.lastInstructionChange = now
+          setFeedback('Photo detected - move closer or adjust angle')
+          resetAutoCapture()
         }
       } else {
-        // Faster recovery when no shape detected
-        history.alignedCount = Math.max(0, history.alignedCount - 2)
-        setDetectionStrength(Math.max(0, detectionStrength - 10))
-        
-        if (history.shapes.length > 0) {
-          history.shapes.pop() // Remove one detection
-        }
-        
-        if (history.shapes.length === 0) {
-          setDetectedShape(null)
-          setIsAligned(false)
-          
-          if (now - history.lastInstructionChange > 800) {
-            setInstructionText("Position your item in the frame")
-            history.lastInstructionChange = now
-          }
-        }
+        setDetectedRect(null)
+        setFeedback('Point camera at photo or poster - looking for rectangular shapes')
+        resetAutoCapture()
       }
-
-      // Cleanup
+      
+      // Clean up OpenCV objects
       src.delete()
       gray.delete()
+      blurred.delete()
       edges.delete()
       contours.delete()
       hierarchy.delete()
+      kernel.delete()
+      
     } catch (error) {
-      console.error("Shape detection error:", error)
+      console.error('Detection error:', error)
     }
-  }, [cvLoaded, isAligned, detectionStrength])
-
-  // Normal speed detection loop (30 FPS) for better responsiveness
-  useEffect(() => {
-    if (cvLoaded && hasCamera) {
-      let lastDetection = 0
-      const detectLoop = (currentTime: number) => {
-        if (currentTime - lastDetection >= 33) { // ~30 FPS
-          detectShapes()
-          lastDetection = currentTime
-        }
-        animationFrameRef.current = requestAnimationFrame(detectLoop)
-      }
-      animationFrameRef.current = requestAnimationFrame(detectLoop)
-    }
-
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current)
-      }
-    }
-  }, [cvLoaded, hasCamera, detectShapes])
-
-  // Crop image to detected shape
-  const cropImageToShape = useCallback((imageSrc: string, shape: DetectedShape): Promise<string> => {
-    return new Promise((resolve) => {
-      const img = new Image()
-      img.onload = () => {
-        const canvas = document.createElement('canvas')
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
-          resolve(imageSrc) // Fallback to original
-          return
-        }
-
-        // Find bounding rectangle of the detected shape
-        const xs = shape.corners.map(c => c.x)
-        const ys = shape.corners.map(c => c.y)
-        const minX = Math.max(0, Math.min(...xs) - 10) // Add small padding
-        const maxX = Math.min(img.width, Math.max(...xs) + 10)
-        const minY = Math.max(0, Math.min(...ys) - 10)
-        const maxY = Math.min(img.height, Math.max(...ys) + 10)
-
-        const cropWidth = maxX - minX
-        const cropHeight = maxY - minY
-
-        canvas.width = cropWidth
-        canvas.height = cropHeight
-
-        // Draw the cropped portion
-        ctx.drawImage(
-          img,
-          minX, minY, cropWidth, cropHeight, // Source rectangle
-          0, 0, cropWidth, cropHeight // Destination rectangle
-        )
-
-        resolve(canvas.toDataURL('image/jpeg', 0.95))
-      }
-      img.src = imageSrc
-    })
   }, [])
+
+  const startAutoCapture = useCallback(() => {
+    if (!isAutoCapturing && detectedRect && detectedRect.confidence > 0.7) {
+      setIsAutoCapturing(true)
+      setCaptureTimer(3)
+      
+      const countdown = setInterval(() => {
+        setCaptureTimer(prev => {
+          if (prev <= 1) {
+            clearInterval(countdown)
+            handleCapture()
+            setIsAutoCapturing(false)
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+    }
+  }, [detectedRect, isAutoCapturing])
+
+  const resetAutoCapture = useCallback(() => {
+    setIsAutoCapturing(false)
+    setCaptureTimer(0)
+  }, [])
+
+  const startDetection = useCallback(() => {
+    if (isDetectionActive && !detectionIntervalRef.current) {
+      detectionIntervalRef.current = setInterval(detectRectangles, 500) // Slower detection for elderly users
+    }
+  }, [detectRectangles, isDetectionActive])
+
+  const stopDetection = useCallback(() => {
+    if (detectionIntervalRef.current) {
+      clearInterval(detectionIntervalRef.current)
+      detectionIntervalRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isDetectionActive) {
+      startDetection()
+    } else {
+      stopDetection()
+    }
+    
+    return () => stopDetection()
+  }, [isDetectionActive, startDetection, stopDetection])
 
   const handleCapture = useCallback(async () => {
     if (!webcamRef.current) return
-
+    
     setIsCapturing(true)
-    setInstructionText("Taking your photo...")
-
+    resetAutoCapture()
+    
     try {
-      const imageSrc = webcamRef.current.getScreenshot({ width: 1920, height: 1080 })
+      const imageSrc = webcamRef.current.getScreenshot({ 
+        width: 1920, 
+        height: 1080
+      })
+      
       if (imageSrc) {
-        let finalImageSrc = imageSrc
-        
-        // If we have a detected shape, crop to it
-        if (detectedShape && detectionStrength > 30) {
-          setInstructionText("Cropping to detected object...")
-          finalImageSrc = await cropImageToShape(imageSrc, detectedShape)
-        }
-
-        const response = await fetch(finalImageSrc)
+        const response = await fetch(imageSrc)
         const blob = await response.blob()
-
+        
         const image = new Image()
         image.onload = () => {
-          onImageCapture({
-            src: finalImageSrc,
+          const capturedImage: CapturedImage = {
+            src: imageSrc,
             blob,
             width: image.width,
             height: image.height,
-          })
-          setInstructionText("Photo captured and cropped successfully!")
+            detectedFrame: detectedRect ? {
+              x: detectedRect.x * image.width,
+              y: detectedRect.y * image.height,
+              width: detectedRect.width * image.width,
+              height: detectedRect.height * image.height
+            } : undefined
+          }
+          onImageCapture(capturedImage)
+          setFeedback('Photo captured successfully!')
+          
+          // Clear detection temporarily
+          setDetectedRect(null)
           setTimeout(() => {
-            setInstructionText("Position your item in the frame")
-            detectionHistoryRef.current = {
-              shapes: [],
-              alignedCount: 0,
-              stableCount: 0,
-              lastInstructionChange: Date.now()
-            }
+            setFeedback('Point camera at another photo or poster')
           }, 2000)
         }
-        image.src = finalImageSrc
+        image.src = imageSrc
       }
     } catch (error) {
-      console.error("Error capturing image:", error)
-      setInstructionText("Error taking photo. Please try again.")
-      setTimeout(() => {
-        setInstructionText("Position your item in the frame")
-      }, 2000)
+      console.error('Error capturing image:', error)
+      setFeedback('Error capturing photo - please try again')
     } finally {
       setIsCapturing(false)
     }
-  }, [onImageCapture, detectedShape, detectionStrength, cropImageToShape])
+  }, [onImageCapture, detectedRect, resetAutoCapture])
 
   const handleFileCapture = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -381,7 +319,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             src: result,
             blob: file,
             width: image.width,
-            height: image.height,
+            height: image.height
           })
         }
         image.src = result
@@ -391,54 +329,41 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   }
 
   const toggleCamera = () => {
-    setFacingMode((prev) => (prev === "user" ? "environment" : "user"))
-    // Reset detection history when switching cameras
-    detectionHistoryRef.current = {
-      shapes: [],
-      alignedCount: 0,
-      stableCount: 0,
-      lastInstructionChange: Date.now()
-    }
+    setFacingMode(prev => prev === 'user' ? 'environment' : 'user')
   }
 
   const onUserMediaError = () => {
     setHasCamera(false)
-    setInstructionText("Camera not available. Use 'Choose Photo' instead.")
   }
 
   return (
-    <div className="relative h-full flex flex-col bg-black">
-      {/* Status Header */}
-      <div
-        className={`w-full py-4 px-6 text-center text-lg font-semibold transition-all duration-1000 ${
-          isAligned ? "bg-green-600 text-white" : detectionStrength > 50 ? "bg-blue-600 text-white" : "bg-gray-700 text-white"
-        }`}
-      >
-        <div className="flex items-center justify-center gap-3">
-          {isAligned && <CheckCircle size={24} />}
-          <span>{instructionText}</span>
+    <div className="relative h-screen flex flex-col bg-gray-900">
+      {/* Header with feedback */}
+      <div className="bg-gray-800 p-4 text-center">
+        <div className="flex items-center justify-center space-x-2 mb-2">
+          {detectedRect ? (
+            detectedRect.confidence > 0.7 ? (
+              <CheckCircle className="text-green-500" size={24} />
+            ) : (
+              <AlertCircle className="text-yellow-500" size={24} />
+            )
+          ) : (
+            <Square className="text-gray-400" size={24} />
+          )}
+          <h1 className="text-xl font-bold text-white">Photo Assistant</h1>
         </div>
-        
-        {/* Detection Strength Indicator */}
-        {detectionStrength > 0 && (
-          <div className="mt-2 max-w-xs mx-auto">
-            <div className="w-full bg-gray-300 rounded-full h-2">
-              <div
-                className={`h-2 rounded-full transition-all duration-500 ${
-                  isAligned ? "bg-green-400" : detectionStrength > 70 ? "bg-blue-400" : "bg-orange-400"
-                }`}
-                style={{ width: `${detectionStrength}%` }}
-              ></div>
-            </div>
-            <div className="text-xs mt-1 opacity-75">
-              Detection: {Math.round(detectionStrength)}%
+        <p className="text-lg text-gray-300">{feedback}</p>
+        {isAutoCapturing && (
+          <div className="mt-2">
+            <div className="text-3xl font-bold text-green-500">
+              Taking photo in {captureTimer}...
             </div>
           </div>
         )}
       </div>
 
       {/* Camera Feed */}
-      <div className="relative flex-1 bg-black overflow-hidden">
+      <div className="relative flex-1 bg-black">
         {hasCamera ? (
           <>
             <Webcam
@@ -452,167 +377,107 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
               screenshotFormat="image/jpeg"
               screenshotQuality={0.95}
             />
-            <canvas ref={canvasRef} className="hidden" />
+            
+            {/* Detection overlay */}
+            {detectedRect && (
+              <div
+                className="absolute border-4 border-green-500 bg-green-500 bg-opacity-10"
+                style={{
+                  left: `${detectedRect.x * 100}%`,
+                  top: `${detectedRect.y * 100}%`,
+                  width: `${detectedRect.width * 100}%`,
+                  height: `${detectedRect.height * 100}%`,
+                  borderColor: detectedRect.confidence > 0.7 ? '#10B981' : '#F59E0B',
+                  backgroundColor: detectedRect.confidence > 0.7 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                  boxShadow: detectedRect.confidence > 0.7 ? '0 0 20px rgba(16, 185, 129, 0.5)' : '0 0 20px rgba(245, 158, 11, 0.5)',
+                  animation: detectedRect.confidence > 0.7 ? 'pulse 2s infinite' : 'none'
+                }}
+              >
+                <div className="absolute -top-8 left-0 bg-black bg-opacity-75 text-white px-2 py-1 rounded text-sm">
+                  {Math.round(detectedRect.confidence * 100)}% match
+                </div>
+              </div>
+            )}
+
+            {/* Guide overlay for no detection */}
+            {!detectedRect && (
+              <div className="absolute inset-8 border-2 border-dashed border-gray-400 opacity-50 rounded-lg flex items-center justify-center">
+                <div className="text-center text-white bg-black bg-opacity-50 p-4 rounded-lg">
+                  <Square size={48} className="mx-auto mb-2 opacity-75" />
+                  <p className="text-lg">Position photo or poster in this area</p>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex flex-col items-center justify-center h-full bg-gray-800">
             <Camera size={80} className="mb-6 text-gray-400" />
-            <p className="text-gray-300 mb-6 text-xl text-center px-4">Camera not available</p>
+            <p className="text-gray-300 mb-6 text-xl text-center px-4">
+              Camera not available.<br />You can select a photo from your gallery instead.
+            </p>
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="px-8 py-4 bg-blue-600 text-white text-xl rounded-xl hover:bg-blue-700 transition-colors font-semibold"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-lg text-xl font-semibold"
             >
-              Choose Photo from Gallery
+              Select Photo from Gallery
             </button>
           </div>
         )}
+        
+        {/* Hidden canvas for OpenCV processing */}
+        <canvas ref={canvasRef} className="hidden" />
+      </div>
 
-        {/* Grid overlay - removed as requested */}
+      {/* Large, accessible controls */}
+      <div className="bg-gray-800 p-6">
+        <div className="flex items-center justify-center space-x-8">
+          {/* Manual capture button */}
+          <button
+            onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
+            disabled={isCapturing || isAutoCapturing}
+            className="w-20 h-20 bg-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-100 transition-all duration-200 disabled:opacity-50 transform hover:scale-105"
+          >
+            {isCapturing ? (
+              <div className="w-8 h-8 border-3 border-gray-400 rounded-full animate-spin border-t-gray-600"></div>
+            ) : (
+              <div className="w-14 h-14 bg-gray-800 rounded-full"></div>
+            )}
+          </button>
 
-        {/* Target frame with corners */}
-        <div className="absolute inset-8 pointer-events-none">
-          <div
-            className={`w-full h-full border-4 rounded-2xl transition-all duration-1000 ${
-              isAligned 
-                ? "border-green-400 shadow-lg shadow-green-400/50" 
-                : detectionStrength > 50 
-                  ? "border-blue-400 shadow-md shadow-blue-400/30" 
-                  : "border-white/40"
+          {/* Camera switch */}
+          {hasCamera && (
+            <button
+              onClick={toggleCamera}
+              className="p-4 rounded-full bg-gray-600 hover:bg-gray-500 transition-all duration-200 transform hover:scale-105"
+            >
+              <RotateCcw size={32} color="white" />
+            </button>
+          )}
+
+          {/* Detection toggle */}
+          <button
+            onClick={() => setIsDetectionActive(!isDetectionActive)}
+            className={`px-6 py-3 rounded-lg font-semibold transition-all duration-200 ${
+              isDetectionActive 
+                ? 'bg-green-600 hover:bg-green-700 text-white' 
+                : 'bg-gray-600 hover:bg-gray-500 text-white'
             }`}
           >
-            {/* Corner markers */}
-            {[
-              { position: "-top-2 -left-2", corners: "border-l-6 border-t-6 rounded-tl-2xl" },
-              { position: "-top-2 -right-2", corners: "border-r-6 border-t-6 rounded-tr-2xl" },
-              { position: "-bottom-2 -left-2", corners: "border-l-6 border-b-6 rounded-bl-2xl" },
-              { position: "-bottom-2 -right-2", corners: "border-r-6 border-b-6 rounded-br-2xl" }
-            ].map((corner, index) => (
-              <div
-                key={index}
-                className={`absolute ${corner.position} w-12 h-12 ${corner.corners} transition-all duration-1000 ${
-                  isAligned 
-                    ? "border-green-400 shadow-lg shadow-green-400/50" 
-                    : detectionStrength > 50 
-                      ? "border-blue-400 shadow-md shadow-blue-400/30" 
-                      : "border-white/50"
-                }`}
-              />
-            ))}
-          </div>
-
-          {/* Detected shape outline */}
-          {detectedShape && detectionStrength > 30 && (
-            <svg className="absolute inset-0 w-full h-full">
-              {/* Green pulsing outline around detected object */}
-              <polygon
-                points={detectedShape.corners.map((c) => `${c.x},${c.y}`).join(" ")}
-                fill="none"
-                stroke="#10b981"
-                strokeWidth="4"
-                strokeOpacity="0.9"
-                className="animate-pulse"
-              />
-              
-              {/* Solid green outline for better visibility */}
-              <polygon
-                points={detectedShape.corners.map((c) => `${c.x},${c.y}`).join(" ")}
-                fill="none"
-                stroke="#22c55e"
-                strokeWidth="2"
-                strokeOpacity="1"
-              />
-              
-              {/* Corner dots */}
-              {detectedShape.corners.map((corner, index) => (
-                <circle
-                  key={index}
-                  cx={corner.x}
-                  cy={corner.y}
-                  r="8"
-                  fill="#10b981"
-                  stroke="white"
-                  strokeWidth="3"
-                  className="animate-pulse"
-                />
-              ))}
-              
-              {/* Semi-transparent overlay to highlight the detected area */}
-              <polygon
-                points={detectedShape.corners.map((c) => `${c.x},${c.y}`).join(" ")}
-                fill="rgba(34, 197, 94, 0.1)"
-                stroke="none"
-              />
-            </svg>
-          )}
+            {isDetectionActive ? 'Auto-Detect ON' : 'Auto-Detect OFF'}
+          </button>
         </div>
 
-        {/* Tilt indicator */}
-        {detectedShape && !isAligned && detectionStrength > 50 && (
-          <div className="absolute top-1/2 right-6 transform -translate-y-1/2">
-            <div className="bg-black/90 rounded-2xl p-4 border-2 border-orange-400">
-              <div className="text-white text-base font-semibold mb-3 text-center">Straighten</div>
-              <div className="relative w-16 h-16">
-                <div className="absolute inset-0 border-3 border-white/50 rounded-lg"></div>
-                <div
-                  className="absolute inset-2 border-3 border-orange-400 rounded-lg transition-transform duration-700"
-                  style={{ transform: `rotate(${detectedShape.tiltAngle}deg)` }}
-                ></div>
-              </div>
-              <div className="text-white text-sm mt-2 text-center font-medium">
-                {Math.round(Math.abs(detectedShape.tiltAngle % 90))}° off
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Controls */}
-      <div className="bg-black p-6 border-t-2 border-gray-800">
-        <div className="flex items-center justify-between max-w-lg mx-auto">
-        
-         
-
-          {/* Capture Button */}
-          <div className="flex flex-col items-center">
-            <button
-              onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
-              disabled={isCapturing}
-              className={`w-20 h-20 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500 disabled:opacity-50 border-4 ${
-                isAligned
-                  ? "bg-green-500 hover:bg-green-600 border-green-300 shadow-green-500/50 scale-105"
-                  : detectionStrength > 50
-                    ? "bg-blue-500 hover:bg-blue-600 border-blue-300 shadow-blue-500/40"
-                    : "bg-white hover:bg-gray-100 border-gray-300"
-              }`}
-            >
-              {isCapturing ? (
-                <div className="w-8 h-8 border-4 border-gray-400 rounded-full animate-spin border-t-gray-600"></div>
-              ) : (
-                <div className={`w-14 h-14 rounded-full transition-all duration-500 ${
-                  isAligned ? "bg-white" : detectionStrength > 50 ? "bg-white" : "bg-gray-800"
-                }`}></div>
-              )}
-            </button>
-            <span className="text-white text-sm font-medium mt-2">
-              {hasCamera ? "Take Photo" : "Choose Photo"}
-            </span>
-          </div>
-
-          {/* Camera Switch */}
-          {hasCamera && (
-            <div className="flex flex-col items-center">
-              <button
-                onClick={toggleCamera}
-                className="p-4 rounded-2xl bg-gray-600 hover:bg-gray-500 transition-colors mb-2"
-              >
-                <RotateCcw size={28} className="text-white" />
-              </button>
-              <span className="text-white text-sm font-medium">Flip</span>
-            </div>
-          )}
+        {/* Instructions */}
+        <div className="mt-4 text-center text-gray-300">
+          <p className="text-lg">
+            {detectedRect && detectedRect.confidence > 0.7 
+              ? "Perfect! Photo will be taken automatically, or tap the white button"
+              : "Point camera at old photos or posters. Tap white button to capture manually"}
+          </p>
         </div>
       </div>
 
+      {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -621,6 +486,13 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         onChange={handleFileCapture}
         className="hidden"
       />
+
+      <style jsx>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.7; }
+        }
+      `}</style>
     </div>
   )
 }
