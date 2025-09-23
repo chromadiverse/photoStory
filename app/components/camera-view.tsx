@@ -569,16 +569,8 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       {/* Controls */}
       <div className="bg-black p-6 border-t-2 border-gray-800">
         <div className="flex items-center justify-between max-w-lg mx-auto">
-          {/* Grid Toggle */}
-          <div className="flex flex-col items-center">
-            <button
-              onClick={() => setShowGrid(!showGrid)}
-              className={`p-4 rounded-2xl transition-colors mb-2 ${showGrid ? "bg-blue-600" : "bg-gray-600"}`}
-            >
-              <LayoutGrid size={28} className="text-white" />
-            </button>
-            <span className="text-white text-sm font-medium">Grid</span>
-          </div>
+        
+         
 
           {/* Capture Button */}
           <div className="flex flex-col items-center">
