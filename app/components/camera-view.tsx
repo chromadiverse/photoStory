@@ -9,11 +9,10 @@ interface CameraViewProps {
   onImageCapture: (image: CapturedImage) => void
 }
 
-// Types for jscanify
+// Types for OpenCV
 declare global {
   interface Window {
     cv: any;
-    jscanify: any;
   }
 }
 
@@ -26,7 +25,6 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const [isCapturing, setIsCapturing] = useState(false)
   const [hasCamera, setHasCamera] = useState(true)
   const [isDetectionReady, setIsDetectionReady] = useState(false)
-  const [scanner, setScanner] = useState<any>(null)
   const animationFrameRef = useRef<number>(0)
   const [detectedCorners, setDetectedCorners] = useState<any>(null)
   const [isDocumentStable, setIsDocumentStable] = useState(false)
@@ -39,58 +37,50 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     facingMode: facingMode
   }
 
-  // Load OpenCV.js and jscanify
+  // Load OpenCV.js
   useEffect(() => {
-    const loadLibraries = async () => {
+    const loadOpenCV = async () => {
       try {
-        // Load OpenCV.js
-        if (!window.cv) {
-          const script1 = document.createElement('script')
-          script1.src = 'https://docs.opencv.org/4.8.0/opencv.js'
-          script1.async = true
-          document.body.appendChild(script1)
+        if (window.cv && window.cv.Mat) {
+          setIsDetectionReady(true)
+          return
+        }
 
-          await new Promise((resolve, reject) => {
-            script1.onload = resolve
-            script1.onerror = reject
-          })
+        // Create script element
+        const script = document.createElement('script')
+        script.src = 'https://docs.opencv.org/4.8.0/opencv.js'
+        script.async = true
+        
+        // Set up promise for script loading
+        const scriptPromise = new Promise((resolve, reject) => {
+          script.onload = resolve
+          script.onerror = reject
+        })
+        
+        document.head.appendChild(script)
+        await scriptPromise
 
-          // Wait for OpenCV to be ready
-          await new Promise((resolve) => {
-            const checkOpenCV = () => {
-              if (window.cv && window.cv.Mat) {
-                resolve(true)
-              } else {
-                setTimeout(checkOpenCV, 100)
-              }
+        // Wait for OpenCV to be fully initialized
+        await new Promise<void>((resolve) => {
+          const checkOpenCV = () => {
+            if (window.cv && window.cv.Mat && typeof window.cv.imread === 'function') {
+              console.log('OpenCV.js loaded successfully')
+              setIsDetectionReady(true)
+              resolve()
+            } else {
+              setTimeout(checkOpenCV, 100)
             }
-            checkOpenCV()
-          })
-        }
-
-        // Load jscanify
-        if (!window.jscanify) {
-          const script2 = document.createElement('script')
-          script2.src = 'https://cdn.jsdelivr.net/npm/jscanify@1.2.0/dist/jscanify.min.js'
-          script2.async = true
-          document.body.appendChild(script2)
-
-          await new Promise((resolve, reject) => {
-            script2.onload = resolve
-            script2.onerror = reject
-          })
-        }
-
-        // Initialize scanner
-        const scannerInstance = new window.jscanify()
-        setScanner(scannerInstance)
-        setIsDetectionReady(true)
+          }
+          checkOpenCV()
+        })
+        
       } catch (error) {
-        console.error('Failed to load detection libraries:', error)
+        console.error('Failed to load OpenCV.js:', error)
+        setIsDetectionReady(false)
       }
     }
 
-    loadLibraries()
+    loadOpenCV()
 
     return () => {
       if (animationFrameRef.current) {
@@ -99,9 +89,110 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     }
   }, [])
 
+  // Document detection function using OpenCV
+  const detectDocumentCorners = (canvas: HTMLCanvasElement) => {
+    if (!window.cv || !canvas) return null
+
+    try {
+      // Read image from canvas
+      const src = window.cv.imread(canvas)
+      
+      // Convert to grayscale
+      const gray = new window.cv.Mat()
+      window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY)
+      
+      // Apply Gaussian blur
+      const blurred = new window.cv.Mat()
+      const ksize = new window.cv.Size(5, 5)
+      window.cv.GaussianBlur(gray, blurred, ksize, 0, 0, window.cv.BORDER_DEFAULT)
+      
+      // Edge detection using Canny
+      const edges = new window.cv.Mat()
+      window.cv.Canny(blurred, edges, 75, 200)
+      
+      // Find contours
+      const contours = new window.cv.MatVector()
+      const hierarchy = new window.cv.Mat()
+      window.cv.findContours(edges, contours, hierarchy, window.cv.RETR_LIST, window.cv.CHAIN_APPROX_SIMPLE)
+      
+      let bestContour = null
+      let maxArea = 0
+      
+      // Find the largest rectangular contour
+      for (let i = 0; i < contours.size(); i++) {
+        const contour = contours.get(i)
+        const area = window.cv.contourArea(contour)
+        
+        // Skip small contours
+        if (area < 10000) continue
+        
+        // Approximate contour to polygon
+        const approx = new window.cv.Mat()
+        const epsilon = 0.02 * window.cv.arcLength(contour, true)
+        window.cv.approxPolyDP(contour, approx, epsilon, true)
+        
+        // Check if it's a quadrilateral and has reasonable area
+        if (approx.rows === 4 && area > maxArea && area > canvas.width * canvas.height * 0.1) {
+          maxArea = area
+          if (bestContour) bestContour.delete()
+          bestContour = approx.clone()
+        }
+        
+        approx.delete()
+      }
+      
+      let corners = null
+      if (bestContour) {
+        // Extract corner points
+        corners = []
+        for (let i = 0; i < bestContour.rows; i++) {
+          const point = bestContour.data32S
+          corners.push({
+            x: point[i * 2],
+            y: point[i * 2 + 1]
+          })
+        }
+        
+        // Sort corners: top-left, top-right, bottom-right, bottom-left
+        corners = sortCorners(corners)
+        bestContour.delete()
+      }
+      
+      // Cleanup
+      src.delete()
+      gray.delete()
+      blurred.delete()
+      edges.delete()
+      contours.delete()
+      hierarchy.delete()
+      
+      return corners
+      
+    } catch (error) {
+      console.error('Error in document detection:', error)
+      return null
+    }
+  }
+
+  // Sort corners in clockwise order starting from top-left
+  const sortCorners = (corners: any[]) => {
+    if (!corners || corners.length !== 4) return corners
+    
+    // Find center point
+    const centerX = corners.reduce((sum, c) => sum + c.x, 0) / 4
+    const centerY = corners.reduce((sum, c) => sum + c.y, 0) / 4
+    
+    // Sort by angle from center
+    return corners.sort((a, b) => {
+      const angleA = Math.atan2(a.y - centerY, a.x - centerX)
+      const angleB = Math.atan2(b.y - centerY, b.x - centerX)
+      return angleA - angleB
+    })
+  }
+
   // Document detection loop
   useEffect(() => {
-    if (!isDetectionReady || !scanner || !hasCamera) return
+    if (!isDetectionReady || !hasCamera) return
 
     const detectDocument = () => {
       const webcam = webcamRef.current
@@ -129,7 +220,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
         // Detect document corners
-        const corners = scanner.findPaperContour(canvas)
+        const corners = detectDocumentCorners(canvas)
         
         // Draw overlay
         const overlayCtx = overlayCanvas.getContext('2d')
@@ -145,7 +236,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           // Check if document is stable
           if (lastCorners.current && areCornersStable(corners, lastCorners.current)) {
             stableFrameCount.current++
-            if (stableFrameCount.current > 30) { // ~1 second at 30fps
+            if (stableFrameCount.current > 15) { // ~0.5 second at 30fps
               setIsDocumentStable(true)
             }
           } else {
@@ -172,24 +263,31 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           overlayCtx.globalCompositeOperation = 'source-over'
           corners.forEach((corner: any, index: number) => {
             // Corner markers
-            overlayCtx.fillStyle = isDocumentStable ? '#10B981' : '#3B82F6' // green if stable, blue if not
+            overlayCtx.fillStyle = isDocumentStable ? '#10B981' : '#3B82F6'
             overlayCtx.beginPath()
-            overlayCtx.arc(corner.x, corner.y, 8, 0, 2 * Math.PI)
+            overlayCtx.arc(corner.x, corner.y, 12, 0, 2 * Math.PI)
+            overlayCtx.fill()
+
+            // White center dot
+            overlayCtx.fillStyle = '#FFFFFF'
+            overlayCtx.beginPath()
+            overlayCtx.arc(corner.x, corner.y, 4, 0, 2 * Math.PI)
             overlayCtx.fill()
 
             // Corner lines
             overlayCtx.strokeStyle = isDocumentStable ? '#10B981' : '#3B82F6'
-            overlayCtx.lineWidth = 3
+            overlayCtx.lineWidth = 4
+            overlayCtx.lineCap = 'round'
             overlayCtx.beginPath()
             
-            const size = 30
+            const size = 40
             switch (index) {
               case 0: // top-left
                 overlayCtx.moveTo(corner.x, corner.y + size)
                 overlayCtx.lineTo(corner.x, corner.y)
                 overlayCtx.lineTo(corner.x + size, corner.y)
                 break
-              case 1: // top-right
+              case 1: // top-right  
                 overlayCtx.moveTo(corner.x - size, corner.y)
                 overlayCtx.lineTo(corner.x, corner.y)
                 overlayCtx.lineTo(corner.x, corner.y + size)
@@ -210,8 +308,8 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
 
           // Document outline
           overlayCtx.strokeStyle = isDocumentStable ? '#10B981' : '#3B82F6'
-          overlayCtx.lineWidth = 2
-          overlayCtx.setLineDash(isDocumentStable ? [] : [10, 5])
+          overlayCtx.lineWidth = 3
+          overlayCtx.setLineDash(isDocumentStable ? [] : [15, 10])
           overlayCtx.beginPath()
           overlayCtx.moveTo(corners[0].x, corners[0].y)
           for (let i = 1; i < corners.length; i++) {
@@ -233,12 +331,12 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           // Draw guide frame
           const centerX = overlayCanvas.width / 2
           const centerY = overlayCanvas.height / 2
-          const frameWidth = Math.min(overlayCanvas.width * 0.8, 600)
-          const frameHeight = frameWidth * 0.7
+          const frameWidth = Math.min(overlayCanvas.width * 0.7, 500)
+          const frameHeight = frameWidth * 0.75
 
           overlayCtx.strokeStyle = '#6B7280'
-          overlayCtx.lineWidth = 2
-          overlayCtx.setLineDash([15, 10])
+          overlayCtx.lineWidth = 3
+          overlayCtx.setLineDash([20, 15])
           overlayCtx.strokeRect(
             centerX - frameWidth / 2,
             centerY - frameHeight / 2,
@@ -249,13 +347,16 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
 
           // Guide text
           overlayCtx.fillStyle = '#FFFFFF'
-          overlayCtx.font = 'bold 18px Arial'
+          overlayCtx.font = 'bold 16px Arial'
           overlayCtx.textAlign = 'center'
+          overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.8)'
+          overlayCtx.shadowBlur = 4
           overlayCtx.fillText(
             'Position document within frame',
             centerX,
-            centerY + frameHeight / 2 + 40
+            centerY + frameHeight / 2 + 35
           )
+          overlayCtx.shadowBlur = 0
         }
       } catch (error) {
         console.error('Detection error:', error)
@@ -271,10 +372,10 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         cancelAnimationFrame(animationFrameRef.current)
       }
     }
-  }, [isDetectionReady, scanner, hasCamera])
+  }, [isDetectionReady, hasCamera])
 
   // Helper function to check if corners are stable
-  const areCornersStable = (corners1: any[], corners2: any[], threshold = 20) => {
+  const areCornersStable = (corners1: any[], corners2: any[], threshold = 25) => {
     if (!corners1 || !corners2 || corners1.length !== corners2.length) return false
     
     for (let i = 0; i < corners1.length; i++) {
@@ -285,8 +386,69 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     return true
   }
 
+  // Perspective transform function
+  const perspectiveTransform = (canvas: HTMLCanvasElement, corners: any[]) => {
+    if (!window.cv || !corners || corners.length !== 4) return canvas
+
+    try {
+      const src = window.cv.imread(canvas)
+      
+      // Define source points (detected corners)
+      const srcPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
+        corners[0].x, corners[0].y,
+        corners[1].x, corners[1].y, 
+        corners[2].x, corners[2].y,
+        corners[3].x, corners[3].y
+      ])
+      
+      // Calculate target dimensions
+      const width = Math.max(
+        Math.sqrt(Math.pow(corners[1].x - corners[0].x, 2) + Math.pow(corners[1].y - corners[0].y, 2)),
+        Math.sqrt(Math.pow(corners[2].x - corners[3].x, 2) + Math.pow(corners[2].y - corners[3].y, 2))
+      )
+      const height = Math.max(
+        Math.sqrt(Math.pow(corners[3].x - corners[0].x, 2) + Math.pow(corners[3].y - corners[0].y, 2)),
+        Math.sqrt(Math.pow(corners[2].x - corners[1].x, 2) + Math.pow(corners[2].y - corners[1].y, 2))
+      )
+      
+      // Define destination points (rectangle)
+      const dstPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
+        0, 0,
+        width, 0,
+        width, height,
+        0, height
+      ])
+      
+      // Get perspective transform matrix
+      const transformMatrix = window.cv.getPerspectiveTransform(srcPoints, dstPoints)
+      
+      // Apply perspective transformation
+      const dst = new window.cv.Mat()
+      const dsize = new window.cv.Size(width, height)
+      window.cv.warpPerspective(src, dst, transformMatrix, dsize)
+      
+      // Create output canvas
+      const outputCanvas = document.createElement('canvas')
+      outputCanvas.width = width
+      outputCanvas.height = height
+      window.cv.imshow(outputCanvas, dst)
+      
+      // Cleanup
+      src.delete()
+      dst.delete()
+      srcPoints.delete()
+      dstPoints.delete()
+      transformMatrix.delete()
+      
+      return outputCanvas
+    } catch (error) {
+      console.error('Error in perspective transform:', error)
+      return canvas
+    }
+  }
+
   const handleCapture = useCallback(async () => {
-    if (!webcamRef.current || !scanner) return
+    if (!webcamRef.current) return
     
     setIsCapturing(true)
     
@@ -297,7 +459,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         let processedBlob: Blob
 
         // If we detected corners, extract and crop the document
-        if (detectedCorners) {
+        if (detectedCorners && window.cv) {
           const tempCanvas = document.createElement('canvas')
           const tempCtx = tempCanvas.getContext('2d')
           
@@ -313,14 +475,13 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             tempCtx.drawImage(img, 0, 0)
 
             try {
-              // Use jscanify to extract and correct perspective
-              const extractedCanvas = scanner.extractPaper(tempCanvas, img.width, img.height)
+              // Use perspective transform to extract document
+              const extractedCanvas = perspectiveTransform(tempCanvas, detectedCorners)
               if (extractedCanvas) {
                 finalImage = extractedCanvas.toDataURL('image/jpeg', 0.95)
               }
             } catch (extractError) {
               console.error('Error extracting document:', extractError)
-              // Fall back to original image
             }
           }
         }
@@ -345,7 +506,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     } finally {
       setIsCapturing(false)
     }
-  }, [onImageCapture, detectedCorners, scanner])
+  }, [onImageCapture, detectedCorners])
 
   const handleFileCapture = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -428,14 +589,14 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         {/* Status indicator */}
         {hasCamera && (
           <div className="absolute top-4 left-4 right-4 flex justify-between items-center">
-            <div className="flex items-center space-x-2 bg-black bg-opacity-50 px-3 py-1 rounded-full">
-              <div className={`w-2 h-2 rounded-full ${
-                !isDetectionReady ? 'bg-yellow-500' :
-                detectedCorners ? (isDocumentStable ? 'bg-green-500' : 'bg-blue-500') : 'bg-red-500'
+            <div className="flex items-center space-x-2 bg-black bg-opacity-70 px-4 py-2 rounded-full backdrop-blur-sm">
+              <div className={`w-3 h-3 rounded-full transition-colors duration-300 ${
+                !isDetectionReady ? 'bg-yellow-500 animate-pulse' :
+                detectedCorners ? (isDocumentStable ? 'bg-green-500' : 'bg-blue-500 animate-pulse') : 'bg-red-500'
               }`} />
-              <span className="text-white text-sm">
-                {!isDetectionReady ? 'Loading...' :
-                 detectedCorners ? (isDocumentStable ? 'Ready to capture' : 'Document detected') : 'Find document'}
+              <span className="text-white text-sm font-medium">
+                {!isDetectionReady ? 'Loading detection...' :
+                 detectedCorners ? (isDocumentStable ? 'Ready to capture' : 'Hold steady...') : 'Position document'}
               </span>
             </div>
           </div>
@@ -443,22 +604,30 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       </div>
 
       {/* Controls */}
-      <div className="bg-black p-4">
-        <div className="flex items-center justify-between max-w-md mx-auto">
+      <div className="bg-black p-6">
+        <div className="flex items-center justify-center space-x-8 max-w-md mx-auto">
+          {/* File Input Button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="p-4 rounded-full bg-gray-600 hover:bg-gray-500 transition-colors"
+          >
+            <Square size={24} className="text-white" />
+          </button>
+
           {/* Capture Button */}
           <button
             onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
             disabled={isCapturing}
-            className={`w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all duration-200 disabled:opacity-50 ${
+            className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 disabled:opacity-50 transform ${
               isDocumentStable 
-                ? 'bg-green-500 hover:bg-green-400 ring-4 ring-green-300 animate-pulse' 
-                : 'bg-white hover:bg-gray-100'
+                ? 'bg-green-500 hover:bg-green-400 ring-4 ring-green-300 scale-110' 
+                : 'bg-white hover:bg-gray-100 hover:scale-105'
             }`}
           >
             {isCapturing ? (
-              <div className="w-6 h-6 border-2 border-gray-400 rounded-full animate-spin border-t-gray-600"></div>
+              <div className="w-8 h-8 border-3 border-gray-400 rounded-full animate-spin border-t-gray-600"></div>
             ) : (
-              <div className={`w-12 h-12 rounded-full ${
+              <div className={`w-14 h-14 rounded-full transition-colors ${
                 isDocumentStable ? 'bg-white' : 'bg-gray-800'
               }`}></div>
             )}
@@ -468,15 +637,15 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           {hasCamera && (
             <button
               onClick={toggleCamera}
-              className="p-3 rounded-full bg-gray-600 hover:bg-gray-500 transition-colors"
+              className="p-4 rounded-full bg-gray-600 hover:bg-gray-500 transition-colors"
             >
-              <RotateCcw size={24} />
+              <RotateCcw size={24} className="text-white" />
             </button>
           )}
         </div>
       </div>
 
-      {/* Hidden file input for fallback */}
+      {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
