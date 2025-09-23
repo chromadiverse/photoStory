@@ -25,11 +25,24 @@ interface DetectedShape {
   confidence: number
 }
 
+interface DetectionHistory {
+  shapes: DetectedShape[]
+  alignedCount: number
+  stableCount: number
+  lastInstructionChange: number
+}
+
 const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const webcamRef = useRef<Webcam>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const animationFrameRef = useRef<number | null>(null)
+  const detectionHistoryRef = useRef<DetectionHistory>({
+    shapes: [],
+    alignedCount: 0,
+    stableCount: 0,
+    lastInstructionChange: 0
+  })
 
   const [facingMode, setFacingMode] = useState<"user" | "environment">("environment")
   const [showGrid, setShowGrid] = useState(true)
@@ -38,7 +51,8 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const [cvLoaded, setCvLoaded] = useState(false)
   const [detectedShape, setDetectedShape] = useState<DetectedShape | null>(null)
   const [isAligned, setIsAligned] = useState(false)
-  const [instructionText, setInstructionText] = useState("Position your document in the frame")
+  const [instructionText, setInstructionText] = useState("Position your item in the frame")
+  const [detectionStrength, setDetectionStrength] = useState(0) // 0-100 strength indicator
 
   const videoConstraints = {
     width: { ideal: 1920 },
@@ -58,20 +72,20 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           cv.onRuntimeInitialized = () => {
             console.log("OpenCV.js loaded successfully")
             setCvLoaded(true)
-            setInstructionText("Hold your document steady in the frame")
+            setInstructionText("Hold your item steady in the frame")
           }
         }
         document.head.appendChild(script)
       } else if ((window as any).cv && (window as any).cv.Mat) {
         setCvLoaded(true)
-        setInstructionText("Hold your document steady in the frame")
+        setInstructionText("Hold your item steady in the frame")
       }
     }
 
     loadOpenCV()
   }, [])
 
-  // Real-time shape detection
+  // Stabilized shape detection with history
   const detectShapes = useCallback(() => {
     if (!cvLoaded || !webcamRef.current || !canvasRef.current) return
 
@@ -95,32 +109,42 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       const contours = new cv.MatVector()
       const hierarchy = new cv.Mat()
 
-      // Convert to grayscale
+      // Convert to grayscale with enhanced preprocessing
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
 
-      // Apply Gaussian blur
-      cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0)
-
-      // Edge detection
-      cv.Canny(gray, edges, 50, 150)
+      // Enhanced preprocessing for stability
+      cv.GaussianBlur(gray, gray, new cv.Size(7, 7), 0)
+      
+      // Adaptive threshold for better edge detection
+      const thresh = new cv.Mat()
+      cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2)
+      
+      // More conservative edge detection
+      cv.Canny(thresh, edges, 30, 100)
+      
+      // Morphological operations to clean up edges
+      const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3))
+      cv.morphologyEx(edges, edges, cv.MORPH_CLOSE, kernel)
 
       // Find contours
       cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
 
-      let bestShape: DetectedShape | null = null
+      let currentShape: DetectedShape | null = null
       let maxArea = 0
+      const minArea = (canvas.width * canvas.height) * 0.05 // At least 5% of frame
+      const maxArea_limit = (canvas.width * canvas.height) * 0.8 // At most 80% of frame
 
       // Process contours to find rectangles
       for (let i = 0; i < contours.size(); i++) {
         const contour = contours.get(i)
         const area = cv.contourArea(contour)
 
-        // Filter by area (minimum size)
-        if (area < 10000) continue
+        // More strict area filtering
+        if (area < minArea || area > maxArea_limit) continue
 
-        // Approximate contour to polygon
+        // Approximate contour to polygon with adjusted epsilon
         const approx = new cv.Mat()
-        const epsilon = 0.02 * cv.arcLength(contour, true)
+        const epsilon = 0.015 * cv.arcLength(contour, true) // More conservative approximation
         cv.approxPolyDP(contour, approx, epsilon, true)
 
         // Check if it's a quadrilateral (4 corners)
@@ -131,22 +155,38 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             corners.push({ x: point[0], y: point[1] })
           }
 
-          // Calculate tilt angle
-          const edge1 = {
-            x: corners[1].x - corners[0].x,
-            y: corners[1].y - corners[0].y,
-          }
-          const tiltAngle = Math.atan2(edge1.y, edge1.x) * (180 / Math.PI)
+          // Calculate aspect ratio to filter out very elongated shapes
+          const bounds = cv.boundingRect(contour)
+          const aspectRatio = bounds.width / bounds.height
+          
+          // Skip very elongated rectangles (likely not target objects)
+          if (aspectRatio < 0.3 || aspectRatio > 3.5) continue
 
-          // Check if it's roughly rectangular
-          const isRectangle = Math.abs(tiltAngle % 90) < 15 || Math.abs(tiltAngle % 90) > 75
+          // Calculate tilt angle using the longest edge
+          const edges_calc = [
+            { dx: corners[1].x - corners[0].x, dy: corners[1].y - corners[0].y },
+            { dx: corners[2].x - corners[1].x, dy: corners[2].y - corners[1].y },
+            { dx: corners[3].x - corners[2].x, dy: corners[3].y - corners[2].y },
+            { dx: corners[0].x - corners[3].x, dy: corners[0].y - corners[3].y }
+          ]
+          
+          // Find the longest edge
+          const edgeLengths = edges_calc.map(e => Math.sqrt(e.dx * e.dx + e.dy * e.dy))
+          const longestEdgeIndex = edgeLengths.indexOf(Math.max(...edgeLengths))
+          const longestEdge = edges_calc[longestEdgeIndex]
+          
+          const tiltAngle = Math.atan2(longestEdge.dy, longestEdge.dx) * (180 / Math.PI)
 
-          bestShape = {
+          // Check if it's roughly rectangular with more tolerance
+          const normalizedAngle = Math.abs(tiltAngle % 90)
+          const isRectangle = normalizedAngle < 20 || normalizedAngle > 70
+
+          currentShape = {
             corners,
             area,
             isRectangle,
             tiltAngle,
-            confidence: area / (canvas.width * canvas.height), // Relative to frame size
+            confidence: Math.min(area / (canvas.width * canvas.height * 0.3), 1), // Normalize confidence
           }
           maxArea = area
         }
@@ -155,21 +195,108 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         contour.delete()
       }
 
-      setDetectedShape(bestShape)
-      const aligned = bestShape ? Math.abs(bestShape.tiltAngle % 90) < 5 : false
-      setIsAligned(aligned)
+      // Apply temporal smoothing and stability checks
+      const history = detectionHistoryRef.current
+      const now = Date.now()
 
-      if (!bestShape) {
-        setInstructionText("Move closer to your document")
-      } else if (!aligned) {
-        const tilt = Math.round(Math.abs(bestShape.tiltAngle % 90))
-        if (tilt > 10) {
-          setInstructionText("Straighten your document - rotate slightly")
-        } else {
-          setInstructionText("Almost there! Keep adjusting...")
+      if (currentShape) {
+        // Add to history (keep last 10 detections)
+        history.shapes.push(currentShape)
+        if (history.shapes.length > 10) {
+          history.shapes.shift()
+        }
+
+        // Calculate stability metrics
+        if (history.shapes.length >= 5) {
+          const recentShapes = history.shapes.slice(-5)
+          
+          // Check angle stability
+          const angles = recentShapes.map(s => s.tiltAngle)
+          const avgAngle = angles.reduce((sum, a) => sum + a, 0) / angles.length
+          const angleVariance = angles.reduce((sum, a) => sum + Math.pow(a - avgAngle, 2), 0) / angles.length
+          
+          // Check area stability
+          const areas = recentShapes.map(s => s.area)
+          const avgArea = areas.reduce((sum, a) => sum + a, 0) / areas.length
+          const areaVariance = areas.reduce((sum, a) => sum + Math.pow(a - avgArea, 2), 0) / areas.length
+          
+          // Create stabilized shape with averaged values
+          const stabilizedShape: DetectedShape = {
+            corners: currentShape.corners, // Use current corners for display
+            area: avgArea,
+            isRectangle: currentShape.isRectangle,
+            tiltAngle: avgAngle,
+            confidence: currentShape.confidence
+          }
+
+          // Check if shape is stable (low variance in angle and area)
+          const isStable = angleVariance < 50 && areaVariance < (avgArea * 0.1)
+          const normalizedAngle = Math.abs(avgAngle % 90)
+          const isCurrentlyAligned = normalizedAngle < 8 || normalizedAngle > 82
+
+          if (isStable) {
+            history.stableCount++
+            setDetectedShape(stabilizedShape)
+            
+            // Calculate detection strength (0-100)
+            const strength = Math.min(100, (history.stableCount / 3) * 100)
+            setDetectionStrength(strength)
+
+            if (isCurrentlyAligned) {
+              history.alignedCount++
+            } else {
+              history.alignedCount = Math.max(0, history.alignedCount - 1)
+            }
+
+            // Only change alignment state after consistent readings
+            const shouldBeAligned = history.alignedCount >= 8 && strength > 70
+            const shouldNotBeAligned = history.alignedCount <= 2 || strength < 30
+
+            if (shouldBeAligned && !isAligned) {
+              setIsAligned(true)
+            } else if (shouldNotBeAligned && isAligned) {
+              setIsAligned(false)
+            }
+
+            // Update instructions with debouncing (minimum 2 seconds between changes)
+            if (now - history.lastInstructionChange > 2000) {
+              if (strength < 30) {
+                setInstructionText("Move closer to your item")
+              } else if (!isCurrentlyAligned && strength > 30) {
+                const tilt = Math.round(Math.abs(avgAngle % 90))
+                if (tilt > 15) {
+                  setInstructionText("Rotate your item to straighten it")
+                } else {
+                  setInstructionText("Almost aligned! Keep adjusting...")
+                }
+              } else if (shouldBeAligned) {
+                setInstructionText("Perfect! Tap to take your photo")
+              } else if (strength > 50) {
+                setInstructionText("Hold steady... almost there")
+              }
+              history.lastInstructionChange = now
+            }
+          } else {
+            // Reset stability if detection becomes unstable
+            history.stableCount = Math.max(0, history.stableCount - 1)
+            history.alignedCount = Math.max(0, history.alignedCount - 1)
+          }
         }
       } else {
-        setInstructionText("Perfect! Tap the green button to take photo")
+        // No shape detected - gradually reduce confidence
+        history.alignedCount = Math.max(0, history.alignedCount - 1)
+        history.stableCount = Math.max(0, history.stableCount - 1)
+        setDetectionStrength(Math.max(0, detectionStrength - 5))
+        
+        if (history.stableCount === 0) {
+          setDetectedShape(null)
+          setIsAligned(false)
+          
+          if (now - history.lastInstructionChange > 1500) {
+            setInstructionText("Position your item in the frame")
+            history.lastInstructionChange = now
+          }
+        }
       }
 
       // Cleanup
@@ -178,19 +305,25 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       edges.delete()
       contours.delete()
       hierarchy.delete()
+      thresh.delete()
+      kernel.delete()
     } catch (error) {
       console.error("Shape detection error:", error)
     }
-  }, [cvLoaded])
+  }, [cvLoaded, isAligned, detectionStrength])
 
-  // Start/stop detection loop
+  // Slower detection loop for stability (15 FPS instead of 60)
   useEffect(() => {
     if (cvLoaded && hasCamera) {
-      const detectLoop = () => {
-        detectShapes()
+      let lastDetection = 0
+      const detectLoop = (currentTime: number) => {
+        if (currentTime - lastDetection >= 67) { // ~15 FPS
+          detectShapes()
+          lastDetection = currentTime
+        }
         animationFrameRef.current = requestAnimationFrame(detectLoop)
       }
-      detectLoop()
+      animationFrameRef.current = requestAnimationFrame(detectLoop)
     }
 
     return () => {
@@ -204,7 +337,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     if (!webcamRef.current) return
 
     setIsCapturing(true)
-    setInstructionText("Taking photo...")
+    setInstructionText("Taking your photo...")
 
     try {
       const imageSrc = webcamRef.current.getScreenshot({ width: 1920, height: 1080 })
@@ -221,12 +354,24 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             height: image.height,
           })
           setInstructionText("Photo captured successfully!")
+          setTimeout(() => {
+            setInstructionText("Position your item in the frame")
+            detectionHistoryRef.current = {
+              shapes: [],
+              alignedCount: 0,
+              stableCount: 0,
+              lastInstructionChange: Date.now()
+            }
+          }, 2000)
         }
         image.src = imageSrc
       }
     } catch (error) {
       console.error("Error capturing image:", error)
       setInstructionText("Error taking photo. Please try again.")
+      setTimeout(() => {
+        setInstructionText("Position your item in the frame")
+      }, 2000)
     } finally {
       setIsCapturing(false)
     }
@@ -255,6 +400,13 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
 
   const toggleCamera = () => {
     setFacingMode((prev) => (prev === "user" ? "environment" : "user"))
+    // Reset detection history when switching cameras
+    detectionHistoryRef.current = {
+      shapes: [],
+      alignedCount: 0,
+      stableCount: 0,
+      lastInstructionChange: Date.now()
+    }
   }
 
   const onUserMediaError = () => {
@@ -264,13 +416,33 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
 
   return (
     <div className="relative h-full flex flex-col bg-black">
+      {/* Status Header */}
       <div
-        className={`w-full py-4 px-6 text-center text-lg font-semibold transition-colors duration-500 ${
-          isAligned ? "bg-green-600 text-white" : "bg-blue-600 text-white"
+        className={`w-full py-4 px-6 text-center text-lg font-semibold transition-all duration-1000 ${
+          isAligned ? "bg-green-600 text-white" : detectionStrength > 50 ? "bg-blue-600 text-white" : "bg-gray-700 text-white"
         }`}
       >
-        {isAligned && <CheckCircle className="inline mr-2" size={24} />}
-        {instructionText}
+        <div className="flex items-center justify-center gap-3">
+          {isAligned && <CheckCircle size={24} />}
+          <span>{instructionText}</span>
+        </div>
+        
+        {/* Detection Strength Indicator */}
+        {detectionStrength > 0 && (
+          <div className="mt-2 max-w-xs mx-auto">
+            <div className="w-full bg-gray-300 rounded-full h-2">
+              <div
+                className={`h-2 rounded-full transition-all duration-500 ${
+                  isAligned ? "bg-green-400" : detectionStrength > 70 ? "bg-blue-400" : "bg-orange-400"
+                }`}
+                style={{ width: `${detectionStrength}%` }}
+              ></div>
+            </div>
+            <div className="text-xs mt-1 opacity-75">
+              Detection: {Math.round(detectionStrength)}%
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Camera Feed */}
@@ -288,7 +460,6 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
               screenshotFormat="image/jpeg"
               screenshotQuality={0.95}
             />
-            {/* Hidden canvas for OpenCV processing */}
             <canvas ref={canvasRef} className="hidden" />
           </>
         ) : (
@@ -301,26 +472,19 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             >
               Choose Photo from Gallery
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={handleFileCapture}
-              className="hidden"
-            />
           </div>
         )}
 
+        {/* Grid overlay */}
         {showGrid && hasCamera && (
-          <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute inset-0 pointer-events-none opacity-60">
             <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
               <defs>
                 <pattern id="grid" width="33.333%" height="33.333%" patternUnits="objectBoundingBox">
                   <path
                     d="M 33.333 0 L 33.333 33.333 M 0 33.333 L 33.333 33.333"
                     fill="none"
-                    stroke="rgba(255,255,255,0.5)"
+                    stroke="rgba(255,255,255,0.6)"
                     strokeWidth="2"
                   />
                 </pattern>
@@ -330,68 +494,74 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           </div>
         )}
 
+        {/* Target frame with corners */}
         <div className="absolute inset-8 pointer-events-none">
-          {/* Target frame */}
           <div
-            className={`w-full h-full border-4 rounded-2xl transition-all duration-500 ${
-              isAligned ? "border-green-400 shadow-lg shadow-green-400/50" : "border-white/50"
+            className={`w-full h-full border-4 rounded-2xl transition-all duration-1000 ${
+              isAligned 
+                ? "border-green-400 shadow-lg shadow-green-400/50" 
+                : detectionStrength > 50 
+                  ? "border-blue-400 shadow-md shadow-blue-400/30" 
+                  : "border-white/40"
             }`}
           >
-            <div
-              className={`absolute -top-2 -left-2 w-12 h-12 border-l-6 border-t-6 rounded-tl-2xl transition-all duration-500 ${
-                isAligned ? "border-green-400 shadow-lg shadow-green-400/50" : "border-blue-400"
-              }`}
-            ></div>
-            <div
-              className={`absolute -top-2 -right-2 w-12 h-12 border-r-6 border-t-6 rounded-tr-2xl transition-all duration-500 ${
-                isAligned ? "border-green-400 shadow-lg shadow-green-400/50" : "border-blue-400"
-              }`}
-            ></div>
-            <div
-              className={`absolute -bottom-2 -left-2 w-12 h-12 border-l-6 border-b-6 rounded-bl-2xl transition-all duration-500 ${
-                isAligned ? "border-green-400 shadow-lg shadow-green-400/50" : "border-blue-400"
-              }`}
-            ></div>
-            <div
-              className={`absolute -bottom-2 -right-2 w-12 h-12 border-r-6 border-b-6 rounded-br-2xl transition-all duration-500 ${
-                isAligned ? "border-green-400 shadow-lg shadow-green-400/50" : "border-blue-400"
-              }`}
-            ></div>
+            {/* Corner markers */}
+            {[
+              { position: "-top-2 -left-2", corners: "border-l-6 border-t-6 rounded-tl-2xl" },
+              { position: "-top-2 -right-2", corners: "border-r-6 border-t-6 rounded-tr-2xl" },
+              { position: "-bottom-2 -left-2", corners: "border-l-6 border-b-6 rounded-bl-2xl" },
+              { position: "-bottom-2 -right-2", corners: "border-r-6 border-b-6 rounded-br-2xl" }
+            ].map((corner, index) => (
+              <div
+                key={index}
+                className={`absolute ${corner.position} w-12 h-12 ${corner.corners} transition-all duration-1000 ${
+                  isAligned 
+                    ? "border-green-400 shadow-lg shadow-green-400/50" 
+                    : detectionStrength > 50 
+                      ? "border-blue-400 shadow-md shadow-blue-400/30" 
+                      : "border-white/50"
+                }`}
+              />
+            ))}
           </div>
 
           {/* Detected shape overlay */}
-          {detectedShape && (
+          {detectedShape && detectionStrength > 30 && (
             <svg className="absolute inset-0 w-full h-full">
               <polygon
                 points={detectedShape.corners.map((c) => `${c.x},${c.y}`).join(" ")}
                 fill="none"
-                stroke={detectedShape.isRectangle ? "#10b981" : "#f59e0b"}
-                strokeWidth="4"
-                strokeDasharray={detectedShape.isRectangle ? "0" : "15,10"}
+                stroke={isAligned ? "#10b981" : "#3b82f6"}
+                strokeWidth="3"
+                strokeOpacity="0.8"
+                strokeDasharray={isAligned ? "0" : "10,5"}
+                className="transition-all duration-500"
               />
               {detectedShape.corners.map((corner, index) => (
                 <circle
                   key={index}
                   cx={corner.x}
                   cy={corner.y}
-                  r="8"
-                  fill={detectedShape.isRectangle ? "#10b981" : "#f59e0b"}
+                  r="6"
+                  fill={isAligned ? "#10b981" : "#3b82f6"}
                   stroke="white"
                   strokeWidth="2"
+                  className="transition-all duration-500"
                 />
               ))}
             </svg>
           )}
         </div>
 
-        {detectedShape && !isAligned && (
+        {/* Tilt indicator */}
+        {detectedShape && !isAligned && detectionStrength > 50 && (
           <div className="absolute top-1/2 right-6 transform -translate-y-1/2">
-            <div className="bg-black/80 rounded-2xl p-4 border-2 border-orange-400">
-              <div className="text-white text-lg font-semibold mb-3 text-center">Straighten</div>
-              <div className="relative w-20 h-20">
-                <div className="absolute inset-0 border-4 border-white/50 rounded-xl"></div>
+            <div className="bg-black/90 rounded-2xl p-4 border-2 border-orange-400">
+              <div className="text-white text-base font-semibold mb-3 text-center">Straighten</div>
+              <div className="relative w-16 h-16">
+                <div className="absolute inset-0 border-3 border-white/50 rounded-lg"></div>
                 <div
-                  className="absolute inset-2 border-4 border-orange-400 rounded-xl transition-transform duration-300"
+                  className="absolute inset-2 border-3 border-orange-400 rounded-lg transition-transform duration-700"
                   style={{ transform: `rotate(${detectedShape.tiltAngle}deg)` }}
                 ></div>
               </div>
@@ -403,6 +573,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         )}
       </div>
 
+      {/* Controls */}
       <div className="bg-black p-6 border-t-2 border-gray-800">
         <div className="flex items-center justify-between max-w-lg mx-auto">
           {/* Grid Toggle */}
@@ -421,19 +592,25 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             <button
               onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
               disabled={isCapturing}
-              className={`w-20 h-20 rounded-full flex items-center justify-center shadow-2xl transition-all disabled:opacity-50 border-4 ${
+              className={`w-20 h-20 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500 disabled:opacity-50 border-4 ${
                 isAligned
-                  ? "bg-green-500 hover:bg-green-600 border-green-300 shadow-green-500/50"
-                  : "bg-white hover:bg-gray-100 border-gray-300"
+                  ? "bg-green-500 hover:bg-green-600 border-green-300 shadow-green-500/50 scale-105"
+                  : detectionStrength > 50
+                    ? "bg-blue-500 hover:bg-blue-600 border-blue-300 shadow-blue-500/40"
+                    : "bg-white hover:bg-gray-100 border-gray-300"
               }`}
             >
               {isCapturing ? (
                 <div className="w-8 h-8 border-4 border-gray-400 rounded-full animate-spin border-t-gray-600"></div>
               ) : (
-                <div className={`w-14 h-14 rounded-full ${isAligned ? "bg-white" : "bg-gray-800"}`}></div>
+                <div className={`w-14 h-14 rounded-full transition-all duration-500 ${
+                  isAligned ? "bg-white" : detectionStrength > 50 ? "bg-white" : "bg-gray-800"
+                }`}></div>
               )}
             </button>
-            <span className="text-white text-sm font-medium mt-2">{hasCamera ? "Take Photo" : "Choose Photo"}</span>
+            <span className="text-white text-sm font-medium mt-2">
+              {hasCamera ? "Take Photo" : "Choose Photo"}
+            </span>
           </div>
 
           {/* Camera Switch */}
@@ -445,13 +622,12 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
               >
                 <RotateCcw size={28} className="text-white" />
               </button>
-              <span className="text-white text-sm font-medium">Flip.</span>
+              <span className="text-white text-sm font-medium">Flip</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Hidden file input for fallback */}
       <input
         ref={fileInputRef}
         type="file"
