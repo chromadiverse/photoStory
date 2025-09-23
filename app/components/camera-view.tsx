@@ -39,11 +39,11 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const [hasCamera, setHasCamera] = useState(true)
   const [isDetectionReady, setIsDetectionReady] = useState(false)
   const animationFrameRef = useRef<number>(0)
-  const [detectedShapes, setDetectedShapes] = useState<any[]>([])
-  const [bestShape, setBestShape] = useState<any>(null)
+  const [detectedShapes, setDetectedShapes] = useState<DetectedShape[]>([])
+  const [bestShape, setBestShape] = useState<DetectedShape | null>(null)
   const [isShapeStable, setIsShapeStable] = useState(false)
   const stableFrameCount = useRef(0)
-  const lastBestShape = useRef<any>(null)
+  const lastBestShape = useRef<DetectedShape | null>(null)
 
   const videoConstraints = {
     width: { ideal: 1920 },
@@ -101,7 +101,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   }, [])
 
   // Advanced shape detection function
-  const detectAllRectangularShapes = (canvas: HTMLCanvasElement) => {
+  const detectAllRectangularShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
     if (!window.cv || !canvas) return []
 
     try {
@@ -146,7 +146,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       const hierarchy = new window.cv.Mat()
       window.cv.findContours(edges, contours, hierarchy, window.cv.RETR_EXTERNAL, window.cv.CHAIN_APPROX_SIMPLE)
       
-      const detectedShapes = []
+      const detectedShapes: DetectedShape[] = []
       const minArea = canvas.width * canvas.height * 0.05 // Minimum 5% of screen
       const maxArea = canvas.width * canvas.height * 0.95 // Maximum 95% of screen
       
@@ -167,7 +167,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           
           // Check if it's a quadrilateral
           if (approx.rows === 4) {
-            const corners = []
+            const corners: Point[] = []
             for (let j = 0; j < 4; j++) {
               corners.push({
                 x: approx.data32S[j * 2],
@@ -215,7 +215,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   }
 
   // Validate if corners form a reasonable rectangle
-  const isValidRectangle = (corners: any[], canvasWidth: number, canvasHeight: number) => {
+  const isValidRectangle = (corners: Point[], canvasWidth: number, canvasHeight: number): boolean => {
     if (corners.length !== 4) return false
     
     // Check if all corners are within canvas bounds
@@ -226,7 +226,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     }
     
     // Calculate side lengths
-    const sides = []
+    const sides: number[] = []
     for (let i = 0; i < 4; i++) {
       const next = (i + 1) % 4
       const length = Math.sqrt(
@@ -245,14 +245,14 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   }
 
   // Calculate aspect ratio
-  const calculateAspectRatio = (corners: any[]) => {
+  const calculateAspectRatio = (corners: Point[]): number => {
     const width = Math.sqrt(Math.pow(corners[1].x - corners[0].x, 2) + Math.pow(corners[1].y - corners[0].y, 2))
     const height = Math.sqrt(Math.pow(corners[3].x - corners[0].x, 2) + Math.pow(corners[3].y - corners[0].y, 2))
     return width / height
   }
 
   // Calculate confidence score
-  const calculateShapeConfidence = (corners: any[], area: number, canvasWidth: number, canvasHeight: number) => {
+  const calculateShapeConfidence = (corners: Point[], area: number, canvasWidth: number, canvasHeight: number): number => {
     let confidence = 0
     
     // Area score (larger shapes get higher score, but not too large)
@@ -271,8 +271,8 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     if (ratioError < 0.2) confidence += 25
     
     // Position score (centered shapes get bonus)
-    const centerX = corners.reduce((sum, c) => sum + c.x, 0) / 4
-    const centerY = corners.reduce((sum, c) => sum + c.y, 0) / 4
+    const centerX = corners.reduce((sum: number, c: Point) => sum + c.x, 0) / 4
+    const centerY = corners.reduce((sum: number, c: Point) => sum + c.y, 0) / 4
     const distanceFromCenter = Math.sqrt(
       Math.pow(centerX - canvasWidth / 2, 2) + Math.pow(centerY - canvasHeight / 2, 2)
     )
@@ -288,8 +288,8 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   }
 
   // Calculate corner angles
-  const calculateCornerAngles = (corners: any[]) => {
-    const angles = []
+  const calculateCornerAngles = (corners: Point[]): number[] => {
+    const angles: number[] = []
     for (let i = 0; i < 4; i++) {
       const prev = corners[(i + 3) % 4]
       const curr = corners[i]
@@ -309,12 +309,12 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   }
 
   // Sort corners in clockwise order starting from top-left
-  const sortCorners = (corners: any[]) => {
+  const sortCorners = (corners: Point[]): Point[] => {
     if (!corners || corners.length !== 4) return corners
     
     // Find center point
-    const centerX = corners.reduce((sum, c) => sum + c.x, 0) / 4
-    const centerY = corners.reduce((sum, c) => sum + c.y, 0) / 4
+    const centerX = corners.reduce((sum: number, c: Point) => sum + c.x, 0) / 4
+    const centerY = corners.reduce((sum: number, c: Point) => sum + c.y, 0) / 4
     
     // Sort by angle from center, starting from top-left
     const sorted = corners.sort((a, b) => {
@@ -400,7 +400,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   }, [isDetectionReady, hasCamera])
 
   // Check if two shapes are similar (for stability)
-  const areShapesSimilar = (shape1: any, shape2: any, threshold = 30) => {
+  const areShapesSimilar = (shape1: DetectedShape | null, shape2: DetectedShape | null, threshold = 30): boolean => {
     if (!shape1 || !shape2) return false
     
     for (let i = 0; i < 4; i++) {
@@ -412,7 +412,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   }
 
   // Draw detection overlay
-  const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: any[], bestShape: any) => {
+  const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], bestShape: DetectedShape | null) => {
     const overlayCtx = overlayCanvas.getContext('2d')
     if (!overlayCtx) return
 
@@ -519,8 +519,8 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         })
         
         // Confidence and info
-        const centerX = corners.reduce((sum, c) => sum + c.x, 0) / 4
-        const centerY = corners.reduce((sum, c) => sum + c.y, 0) / 4
+        const centerX = corners.reduce((sum: number, c: Point) => sum + c.x, 0) / 4
+        const centerY = corners.reduce((sum: number, c: Point) => sum + c.y, 0) / 4
         
         overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.7)'
         overlayCtx.fillRect(centerX - 80, centerY - 25, 160, 50)
@@ -555,8 +555,8 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   }
 
   // Perspective transform function
-  const perspectiveTransform = (canvas: HTMLCanvasElement, corners: any[]) => {
-    if (!window.cv || !corners || corners.length !== 4) return canvas
+  const perspectiveTransform = (canvas: HTMLCanvasElement, corners: Point[]): HTMLCanvasElement | null => {
+    if (!window.cv || !corners || corners.length !== 4) return null
 
     try {
       const src = window.cv.imread(canvas)
@@ -604,7 +604,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       return outputCanvas
     } catch (error) {
       console.error('Error in perspective transform:', error)
-      return canvas
+      return null
     }
   }
 
