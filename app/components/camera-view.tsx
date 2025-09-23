@@ -45,7 +45,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   })
 
   const [facingMode, setFacingMode] = useState<"user" | "environment">("environment")
-  const [showGrid, setShowGrid] = useState(true)
+  const [showGrid, setShowGrid] = useState(false)
   const [isCapturing, setIsCapturing] = useState(false)
   const [hasCamera, setHasCamera] = useState(true)
   const [cvLoaded, setCvLoaded] = useState(false)
@@ -109,42 +109,34 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       const contours = new cv.MatVector()
       const hierarchy = new cv.Mat()
 
-      // Convert to grayscale with enhanced preprocessing
+      // Convert to grayscale
       cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY)
 
-      // Enhanced preprocessing for stability
-      cv.GaussianBlur(gray, gray, new cv.Size(7, 7), 0)
-      
-      // Adaptive threshold for better edge detection
-      const thresh = new cv.Mat()
-      cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2)
-      
-      // More conservative edge detection
-      cv.Canny(thresh, edges, 30, 100)
-      
-      // Morphological operations to clean up edges
-      const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3))
-      cv.morphologyEx(edges, edges, cv.MORPH_CLOSE, kernel)
+      // Apply Gaussian blur for noise reduction
+      cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0)
+
+      // Edge detection with more sensitive parameters
+      cv.Canny(gray, edges, 50, 150)
 
       // Find contours
       cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
 
       let currentShape: DetectedShape | null = null
       let maxArea = 0
-      const minArea = (canvas.width * canvas.height) * 0.05 // At least 5% of frame
-      const maxArea_limit = (canvas.width * canvas.height) * 0.8 // At most 80% of frame
+      const minArea = 5000 // Much lower minimum area
+      const maxArea_limit = (canvas.width * canvas.height) * 0.95 // Allow larger shapes
 
       // Process contours to find rectangles
       for (let i = 0; i < contours.size(); i++) {
         const contour = contours.get(i)
         const area = cv.contourArea(contour)
 
-        // More strict area filtering
-        if (area < minArea || area > maxArea_limit) continue
+        // Less strict area filtering
+        if (area < minArea) continue
 
-        // Approximate contour to polygon with adjusted epsilon
+        // Approximate contour to polygon
         const approx = new cv.Mat()
-        const epsilon = 0.015 * cv.arcLength(contour, true) // More conservative approximation
+        const epsilon = 0.02 * cv.arcLength(contour, true) // Back to original epsilon
         cv.approxPolyDP(contour, approx, epsilon, true)
 
         // Check if it's a quadrilateral (4 corners)
@@ -155,38 +147,23 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             corners.push({ x: point[0], y: point[1] })
           }
 
-          // Calculate aspect ratio to filter out very elongated shapes
-          const bounds = cv.boundingRect(contour)
-          const aspectRatio = bounds.width / bounds.height
-          
-          // Skip very elongated rectangles (likely not target objects)
-          if (aspectRatio < 0.3 || aspectRatio > 3.5) continue
+          // Calculate tilt angle using first edge (simpler approach)
+          const edge1 = {
+            x: corners[1].x - corners[0].x,
+            y: corners[1].y - corners[0].y,
+          }
+          const tiltAngle = Math.atan2(edge1.y, edge1.x) * (180 / Math.PI)
 
-          // Calculate tilt angle using the longest edge
-          const edges_calc = [
-            { dx: corners[1].x - corners[0].x, dy: corners[1].y - corners[0].y },
-            { dx: corners[2].x - corners[1].x, dy: corners[2].y - corners[1].y },
-            { dx: corners[3].x - corners[2].x, dy: corners[3].y - corners[2].y },
-            { dx: corners[0].x - corners[3].x, dy: corners[0].y - corners[3].y }
-          ]
-          
-          // Find the longest edge
-          const edgeLengths = edges_calc.map(e => Math.sqrt(e.dx * e.dx + e.dy * e.dy))
-          const longestEdgeIndex = edgeLengths.indexOf(Math.max(...edgeLengths))
-          const longestEdge = edges_calc[longestEdgeIndex]
-          
-          const tiltAngle = Math.atan2(longestEdge.dy, longestEdge.dx) * (180 / Math.PI)
-
-          // Check if it's roughly rectangular with more tolerance
+          // More lenient rectangle check
           const normalizedAngle = Math.abs(tiltAngle % 90)
-          const isRectangle = normalizedAngle < 20 || normalizedAngle > 70
+          const isRectangle = normalizedAngle < 25 || normalizedAngle > 65
 
           currentShape = {
             corners,
             area,
             isRectangle,
             tiltAngle,
-            confidence: Math.min(area / (canvas.width * canvas.height * 0.3), 1), // Normalize confidence
+            confidence: Math.min(area / 50000, 1), // Simpler confidence calculation
           }
           maxArea = area
         }
@@ -195,104 +172,74 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         contour.delete()
       }
 
-      // Apply temporal smoothing and stability checks
+      // Apply simpler temporal smoothing
       const history = detectionHistoryRef.current
       const now = Date.now()
 
       if (currentShape) {
-        // Add to history (keep last 10 detections)
+        // Add to history (keep last 5 detections for faster response)
         history.shapes.push(currentShape)
-        if (history.shapes.length > 10) {
+        if (history.shapes.length > 5) {
           history.shapes.shift()
         }
 
-        // Calculate stability metrics
-        if (history.shapes.length >= 5) {
-          const recentShapes = history.shapes.slice(-5)
-          
-          // Check angle stability
-          const angles = recentShapes.map(s => s.tiltAngle)
-          const avgAngle = angles.reduce((sum, a) => sum + a, 0) / angles.length
-          const angleVariance = angles.reduce((sum, a) => sum + Math.pow(a - avgAngle, 2), 0) / angles.length
-          
-          // Check area stability
-          const areas = recentShapes.map(s => s.area)
-          const avgArea = areas.reduce((sum, a) => sum + a, 0) / areas.length
-          const areaVariance = areas.reduce((sum, a) => sum + Math.pow(a - avgArea, 2), 0) / areas.length
-          
-          // Create stabilized shape with averaged values
-          const stabilizedShape: DetectedShape = {
-            corners: currentShape.corners, // Use current corners for display
-            area: avgArea,
-            isRectangle: currentShape.isRectangle,
-            tiltAngle: avgAngle,
-            confidence: currentShape.confidence
-          }
+        // Show detection immediately but smooth alignment
+        setDetectedShape(currentShape)
+        
+        // Simple detection strength based on consistency
+        const strength = Math.min(100, (history.shapes.length / 3) * 100)
+        setDetectionStrength(strength)
 
-          // Check if shape is stable (low variance in angle and area)
-          const isStable = angleVariance < 50 && areaVariance < (avgArea * 0.1)
-          const normalizedAngle = Math.abs(avgAngle % 90)
-          const isCurrentlyAligned = normalizedAngle < 8 || normalizedAngle > 82
+        // Check alignment with more tolerance
+        const normalizedAngle = Math.abs(currentShape.tiltAngle % 90)
+        const isCurrentlyAligned = normalizedAngle < 15 || normalizedAngle > 75
 
-          if (isStable) {
-            history.stableCount++
-            setDetectedShape(stabilizedShape)
-            
-            // Calculate detection strength (0-100)
-            const strength = Math.min(100, (history.stableCount / 3) * 100)
-            setDetectionStrength(strength)
+        if (isCurrentlyAligned) {
+          history.alignedCount = Math.min(5, history.alignedCount + 1)
+        } else {
+          history.alignedCount = Math.max(0, history.alignedCount - 1)
+        }
 
-            if (isCurrentlyAligned) {
-              history.alignedCount++
+        // Faster alignment detection (3 frames instead of 8)
+        const shouldBeAligned = history.alignedCount >= 3 && strength > 50
+        const shouldNotBeAligned = history.alignedCount <= 1
+
+        if (shouldBeAligned !== isAligned) {
+          setIsAligned(shouldBeAligned)
+        }
+
+        // Update instructions with shorter debouncing
+        if (now - history.lastInstructionChange > 1000) {
+          if (strength < 40) {
+            setInstructionText("Move closer to your item")
+          } else if (!isCurrentlyAligned) {
+            const tilt = Math.round(normalizedAngle)
+            if (tilt > 20) {
+              setInstructionText("Rotate your item to straighten it")
             } else {
-              history.alignedCount = Math.max(0, history.alignedCount - 1)
+              setInstructionText("Almost aligned! Keep adjusting...")
             }
-
-            // Only change alignment state after consistent readings
-            const shouldBeAligned = history.alignedCount >= 8 && strength > 70
-            const shouldNotBeAligned = history.alignedCount <= 2 || strength < 30
-
-            if (shouldBeAligned && !isAligned) {
-              setIsAligned(true)
-            } else if (shouldNotBeAligned && isAligned) {
-              setIsAligned(false)
-            }
-
-            // Update instructions with debouncing (minimum 2 seconds between changes)
-            if (now - history.lastInstructionChange > 2000) {
-              if (strength < 30) {
-                setInstructionText("Move closer to your item")
-              } else if (!isCurrentlyAligned && strength > 30) {
-                const tilt = Math.round(Math.abs(avgAngle % 90))
-                if (tilt > 15) {
-                  setInstructionText("Rotate your item to straighten it")
-                } else {
-                  setInstructionText("Almost aligned! Keep adjusting...")
-                }
-              } else if (shouldBeAligned) {
-                setInstructionText("Perfect! Tap to take your photo")
-              } else if (strength > 50) {
-                setInstructionText("Hold steady... almost there")
-              }
-              history.lastInstructionChange = now
-            }
+          } else if (shouldBeAligned) {
+            setInstructionText("Perfect! Tap to take your photo")
           } else {
-            // Reset stability if detection becomes unstable
-            history.stableCount = Math.max(0, history.stableCount - 1)
-            history.alignedCount = Math.max(0, history.alignedCount - 1)
+            setInstructionText("Hold steady...")
           }
+          history.lastInstructionChange = now
         }
       } else {
-        // No shape detected - gradually reduce confidence
-        history.alignedCount = Math.max(0, history.alignedCount - 1)
-        history.stableCount = Math.max(0, history.stableCount - 1)
-        setDetectionStrength(Math.max(0, detectionStrength - 5))
+        // Faster recovery when no shape detected
+        history.alignedCount = Math.max(0, history.alignedCount - 2)
+        setDetectionStrength(Math.max(0, detectionStrength - 10))
         
-        if (history.stableCount === 0) {
+        if (history.shapes.length > 0) {
+          history.shapes.pop() // Remove one detection
+        }
+        
+        if (history.shapes.length === 0) {
           setDetectedShape(null)
           setIsAligned(false)
           
-          if (now - history.lastInstructionChange > 1500) {
+          if (now - history.lastInstructionChange > 800) {
             setInstructionText("Position your item in the frame")
             history.lastInstructionChange = now
           }
@@ -305,19 +252,17 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       edges.delete()
       contours.delete()
       hierarchy.delete()
-      thresh.delete()
-      kernel.delete()
     } catch (error) {
       console.error("Shape detection error:", error)
     }
   }, [cvLoaded, isAligned, detectionStrength])
 
-  // Slower detection loop for stability (15 FPS instead of 60)
+  // Normal speed detection loop (30 FPS) for better responsiveness
   useEffect(() => {
     if (cvLoaded && hasCamera) {
       let lastDetection = 0
       const detectLoop = (currentTime: number) => {
-        if (currentTime - lastDetection >= 67) { // ~15 FPS
+        if (currentTime - lastDetection >= 33) { // ~30 FPS
           detectShapes()
           lastDetection = currentTime
         }
@@ -475,24 +420,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           </div>
         )}
 
-        {/* Grid overlay */}
-        {showGrid && hasCamera && (
-          <div className="absolute inset-0 pointer-events-none opacity-60">
-            <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
-              <defs>
-                <pattern id="grid" width="33.333%" height="33.333%" patternUnits="objectBoundingBox">
-                  <path
-                    d="M 33.333 0 L 33.333 33.333 M 0 33.333 L 33.333 33.333"
-                    fill="none"
-                    stroke="rgba(255,255,255,0.6)"
-                    strokeWidth="2"
-                  />
-                </pattern>
-              </defs>
-              <rect width="100%" height="100%" fill="url(#grid)" />
-            </svg>
-          </div>
-        )}
+        {/* Grid overlay - removed as requested */}
 
         {/* Target frame with corners */}
         <div className="absolute inset-8 pointer-events-none">
