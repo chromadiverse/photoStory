@@ -9,7 +9,6 @@ interface CameraViewProps {
   onImageCapture: (image: CapturedImage) => void
 }
 
-// Define proper types for OpenCV and shape detection
 declare global {
   interface Window {
     cv: any;
@@ -24,16 +23,16 @@ interface Point {
 interface DetectedShape {
   corners: Point[];
   area: number;
-  perimeter: number;
   aspectRatio: number;
   confidence: number;
+  type: 'rectangle' | 'square' | 'document';
 }
 
-// Smoothing and stabilization parameters
-const SMOOTHING_FACTOR = 0.7; // Higher = more smoothing (0-1)
-const STABILITY_THRESHOLD = 15; // Pixels movement allowed between frames
-const MIN_STABLE_FRAMES = 8; // Frames needed for stable detection
-const CONFIDENCE_THRESHOLD = 40; // Minimum confidence to consider
+// Tuned parameters for better document detection
+const SMOOTHING_FACTOR = 0.8;
+const STABILITY_THRESHOLD = 20;
+const MIN_STABLE_FRAMES = 5;
+const CONFIDENCE_THRESHOLD = 50;
 
 const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const webcamRef = useRef<Webcam>(null)
@@ -46,16 +45,13 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const [isDetectionReady, setIsDetectionReady] = useState(false)
   const animationFrameRef = useRef<number>(0)
   
-  // State with smoothing
   const [detectedShapes, setDetectedShapes] = useState<DetectedShape[]>([])
   const [bestShape, setBestShape] = useState<DetectedShape | null>(null)
   const [isShapeStable, setIsShapeStable] = useState(false)
   
-  // Refs for smoothing and stability tracking
   const stableFrameCount = useRef(0)
   const lastBestShape = useRef<DetectedShape | null>(null)
   const smoothedShape = useRef<Point[] | null>(null)
-  const shapeHistory = useRef<DetectedShape[]>([])
 
   const videoConstraints = {
     width: { ideal: 1920 },
@@ -76,13 +72,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         script.src = 'https://docs.opencv.org/4.8.0/opencv.js'
         script.async = true
         
-        const scriptPromise = new Promise((resolve, reject) => {
-          script.onload = resolve
-          script.onerror = reject
-        })
-        
         document.head.appendChild(script)
-        await scriptPromise
 
         await new Promise<void>((resolve) => {
           const checkOpenCV = () => {
@@ -112,8 +102,8 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     }
   }, [])
 
-  // Improved shape detection with better filtering for elderly users
-  const detectAllRectangularShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
+  // Improved shape detection specifically for documents and posters
+  const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
     if (!window.cv || !canvas) return []
 
     try {
@@ -125,64 +115,72 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       // Convert to grayscale
       window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY)
       
-      // Apply stronger blur to reduce noise from shaky hands
-      window.cv.GaussianBlur(gray, blurred, new window.cv.Size(5, 5), 0)
+      // Apply bilateral filter to preserve edges while reducing noise
+      window.cv.bilateralFilter(gray, blurred, 9, 75, 75)
       
-      // Use adaptive thresholding for better edge detection in varying light
-      const binary = new window.cv.Mat()
-      window.cv.adaptiveThreshold(blurred, binary, 255, window.cv.ADAPTIVE_THRESH_GAUSSIAN_C, window.cv.THRESH_BINARY, 11, 2)
+      // Use Canny edge detection with optimized thresholds
+      window.cv.Canny(blurred, edges, 50, 150, 3, true)
       
-      // Use morphological operations to clean up the image
+      // Dilate edges to connect broken edges of documents
       const kernel = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(3, 3))
-      window.cv.morphologyEx(binary, edges, window.cv.MORPH_CLOSE, kernel)
+      window.cv.dilate(edges, edges, kernel)
       
       // Find contours
       const contours = new window.cv.MatVector()
       const hierarchy = new window.cv.Mat()
-      window.cv.findContours(edges, contours, hierarchy, window.cv.RETR_EXTERNAL, window.cv.CHAIN_APPROX_SIMPLE)
+      window.cv.findContours(edges, contours, hierarchy, window.cv.RETR_LIST, window.cv.CHAIN_APPROX_SIMPLE)
       
       const detectedShapes: DetectedShape[] = []
-      const minArea = canvas.width * canvas.height * 0.02 // Reduced to 2% for better detection
-      const maxArea = canvas.width * canvas.height * 0.90 // Maximum 90% of screen
+      const minArea = canvas.width * canvas.height * 0.1 // Increased to 10% for documents
+      const maxArea = canvas.width * canvas.height * 0.8
       
       for (let i = 0; i < contours.size(); i++) {
         const contour = contours.get(i)
         const area = window.cv.contourArea(contour)
         
-        // Filter by area - more lenient for elderly users
         if (area < minArea || area > maxArea) {
           contour.delete()
           continue
         }
         
-        // Use more lenient epsilon for approximation (elderly might have shaky hands)
+        // Calculate contour properties for better filtering
+        const perimeter = window.cv.arcLength(contour, true)
+        const circularity = (4 * Math.PI * area) / (perimeter * perimeter)
+        
+        // Filter by circularity to exclude round objects
+        if (circularity > 0.8) {
+          contour.delete()
+          continue
+        }
+        
+        // Approximate the contour
         const approx = new window.cv.Mat()
-        const epsilon = 0.04 * window.cv.arcLength(contour, true) // Increased epsilon
+        const epsilon = 0.02 * perimeter
         window.cv.approxPolyDP(contour, approx, epsilon, true)
         
-        // Accept 4-6 vertices to be more forgiving
-        if (approx.rows >= 4 && approx.rows <= 6) {
+        // Look for quadrilaterals (4 corners)
+        if (approx.rows === 4) {
           const corners: Point[] = []
-          for (let j = 0; j < approx.rows; j++) {
+          for (let j = 0; j < 4; j++) {
             corners.push({
               x: approx.data32S[j * 2],
               y: approx.data32S[j * 2 + 1]
             })
           }
           
-          // More lenient validation for elderly users
-          if (isValidRectangle(corners, canvas.width, canvas.height)) {
+          if (isValidQuadrilateral(corners)) {
             const sortedCorners = sortCorners(corners)
-            const confidence = calculateShapeConfidence(sortedCorners, area, canvas.width, canvas.height)
+            const aspectRatio = calculateAspectRatio(sortedCorners)
+            const confidence = calculateDocumentConfidence(sortedCorners, area, canvas.width, canvas.height) // Fixed: canvas.height instead of canvasHeight
+            const type = classifyShape(sortedCorners, aspectRatio)
             
-            // Only include shapes with reasonable confidence
             if (confidence >= CONFIDENCE_THRESHOLD) {
               detectedShapes.push({
                 corners: sortedCorners,
                 area: area,
-                perimeter: window.cv.arcLength(contour, true),
-                aspectRatio: calculateAspectRatio(sortedCorners),
-                confidence: confidence
+                aspectRatio: aspectRatio,
+                confidence: confidence,
+                type: type
               })
             }
           }
@@ -196,15 +194,11 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       gray.delete()
       blurred.delete()
       edges.delete()
-      binary.delete()
       contours.delete()
       hierarchy.delete()
       kernel.delete()
       
-      // Sort by confidence and return top candidates
-      return detectedShapes
-        .sort((a, b) => b.confidence - a.confidence)
-        .slice(0, 3) // Keep only top 3 candidates
+      return detectedShapes.sort((a, b) => b.confidence - a.confidence).slice(0, 3)
       
     } catch (error) {
       console.error('Error in shape detection:', error)
@@ -212,92 +206,103 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     }
   }
 
-  // More lenient rectangle validation for elderly users
-  const isValidRectangle = (corners: Point[], canvasWidth: number, canvasHeight: number): boolean => {
-    if (corners.length < 4) return false
+  // Validate quadrilateral with proper geometric checks
+  const isValidQuadrilateral = (corners: Point[]): boolean => {
+    if (corners.length !== 4) return false
     
-    // Check if all corners are within reasonable canvas bounds
-    for (const corner of corners) {
-      if (corner.x < -50 || corner.x > canvasWidth + 50 || corner.y < -50 || corner.y > canvasHeight + 50) {
-        return false
-      }
+    // Check for convex quadrilateral - FIXED: Added type annotation
+    const orientations: number[] = []
+    for (let i = 0; i < 4; i++) {
+      const p1 = corners[i]
+      const p2 = corners[(i + 1) % 4]
+      const p3 = corners[(i + 2) % 4]
+      
+      const val = (p2.y - p1.y) * (p3.x - p2.x) - (p2.x - p1.x) * (p3.y - p2.y)
+      orientations.push(val > 0 ? 1 : -1)
     }
     
-    // Calculate side lengths
-    const sides: number[] = []
-    for (let i = 0; i < corners.length; i++) {
-      const next = (i + 1) % corners.length
-      const length = Math.sqrt(
-        Math.pow(corners[next].x - corners[i].x, 2) + 
-        Math.pow(corners[next].y - corners[i].y, 2)
-      )
-      sides.push(length)
+    // All orientations should be the same for convex shape
+    if (!orientations.every(orient => orient === orientations[0])) {
+      return false
     }
     
-    // More lenient tolerance for rectangle validation (40% instead of 30%)
-    const tolerance = 0.4
-    if (corners.length === 4) {
-      const side1Ratio = Math.abs(sides[0] - sides[2]) / Math.max(sides[0], sides[2])
-      const side2Ratio = Math.abs(sides[1] - sides[3]) / Math.max(sides[1], sides[3])
-      return side1Ratio < tolerance && side2Ratio < tolerance
-    }
+    // Check area is reasonable (not degenerate)
+    const area = Math.abs(
+      (corners[0].x * (corners[1].y - corners[2].y) +
+       corners[1].x * (corners[2].y - corners[0].y) +
+       corners[2].x * (corners[0].y - corners[1].y)) / 2
+    )
     
-    // For polygons with more than 4 sides, be more lenient
-    return true
+    return area > 1000 // Minimum area threshold
   }
 
-  // Calculate aspect ratio
+  // Calculate aspect ratio properly
   const calculateAspectRatio = (corners: Point[]): number => {
-    const width = Math.sqrt(Math.pow(corners[1].x - corners[0].x, 2) + Math.pow(corners[1].y - corners[0].y, 2))
-    const height = Math.sqrt(Math.pow(corners[3].x - corners[0].x, 2) + Math.pow(corners[3].y - corners[0].y, 2))
-    return Math.max(width, height) / Math.min(width, height)
+    const width1 = Math.sqrt(Math.pow(corners[1].x - corners[0].x, 2) + Math.pow(corners[1].y - corners[0].y, 2))
+    const width2 = Math.sqrt(Math.pow(corners[2].x - corners[3].x, 2) + Math.pow(corners[2].y - corners[3].y, 2))
+    const height1 = Math.sqrt(Math.pow(corners[3].x - corners[0].x, 2) + Math.pow(corners[3].y - corners[0].y, 2))
+    const height2 = Math.sqrt(Math.pow(corners[2].x - corners[1].x, 2) + Math.pow(corners[2].y - corners[1].y, 2))
+    
+    const avgWidth = (width1 + width2) / 2
+    const avgHeight = (height1 + height2) / 2
+    
+    return avgWidth / avgHeight
   }
 
-  // Calculate confidence score with adjustments for elderly use
-  const calculateShapeConfidence = (corners: Point[], area: number, canvasWidth: number, canvasHeight: number): number => {
+  // Classify shape type
+  const classifyShape = (corners: Point[], aspectRatio: number): 'square' | 'rectangle' | 'document' => {
+    const ratioTolerance = 0.15
+    
+    if (Math.abs(aspectRatio - 1) < ratioTolerance) {
+      return 'square'
+    } else if (Math.abs(aspectRatio - 1.414) < ratioTolerance || // A4 ratio
+               Math.abs(aspectRatio - 1.294) < ratioTolerance || // US Letter
+               Math.abs(aspectRatio - 0.707) < ratioTolerance ||
+               Math.abs(aspectRatio - 0.773) < ratioTolerance) {
+      return 'document'
+    } else {
+      return 'rectangle'
+    }
+  }
+
+  // Improved confidence calculation for documents - FIXED: Added canvasHeight parameter
+  const calculateDocumentConfidence = (corners: Point[], area: number, canvasWidth: number, canvasHeight: number): number => {
     let confidence = 0
     
-    // Area score - more lenient range
+    // Area score (prefer medium to large areas for documents)
     const areaRatio = area / (canvasWidth * canvasHeight)
-    if (areaRatio > 0.05 && areaRatio < 0.85) { // Wider range
-      confidence += 30
-    } else if (areaRatio > 0.02 && areaRatio < 0.95) { // Even wider for very small/large
-      confidence += 15
-    }
+    if (areaRatio > 0.2 && areaRatio < 0.7) confidence += 40
+    else if (areaRatio > 0.1 && areaRatio < 0.8) confidence += 30
+    else confidence += 10
     
-    // Aspect ratio score - accept wider range of ratios
+    // Aspect ratio score (common document ratios)
     const aspectRatio = calculateAspectRatio(corners)
-    const commonRatios = [1, 1.33, 1.5, 1.6, 1.77, 0.75, 0.67, 2, 0.5] // Added more ratios
+    const commonRatios = [1, 1.414, 1.294, 0.707, 0.773, 1.5, 1.333] // Square, A4, Letter, etc.
     const closestRatio = commonRatios.reduce((prev, curr) => 
       Math.abs(curr - aspectRatio) < Math.abs(prev - aspectRatio) ? curr : prev
     )
     const ratioError = Math.abs(aspectRatio - closestRatio) / closestRatio
-    if (ratioError < 0.3) confidence += 25 // Increased tolerance
+    if (ratioError < 0.1) confidence += 40
+    else if (ratioError < 0.2) confidence += 25
     
-    // Position score - less penalty for off-center shapes
-    const centerX = corners.reduce((sum: number, c: Point) => sum + c.x, 0) / corners.length
-    const centerY = corners.reduce((sum: number, c: Point) => sum + c.y, 0) / corners.length
-    const distanceFromCenter = Math.sqrt(
-      Math.pow(centerX - canvasWidth / 2, 2) + Math.pow(centerY - canvasHeight / 2, 2)
-    )
-    const maxDistance = Math.sqrt(Math.pow(canvasWidth / 2, 2) + Math.pow(canvasHeight / 2, 2))
-    confidence += (1 - distanceFromCenter / maxDistance) * 15 // Reduced weight
+    // Angle score (check for right angles)
+    const angles = calculateAngles(corners)
+    const rightAngleScore = angles.filter(angle => Math.abs(angle - 90) < 15).length * 10
+    confidence += rightAngleScore
     
-    // Regularity score - more lenient angle checking
-    const angles = calculateCornerAngles(corners)
-    const angleScore = angles.filter(angle => Math.abs(angle - 90) < 25).length * (25 / corners.length) // Increased tolerance
-    confidence += angleScore
+    // Convexity score
+    if (isConvex(corners)) confidence += 10
     
     return Math.min(confidence, 100)
   }
 
-  // Calculate corner angles
-  const calculateCornerAngles = (corners: Point[]): number[] => {
+  // Calculate angles between edges
+  const calculateAngles = (corners: Point[]): number[] => {
     const angles: number[] = []
-    for (let i = 0; i < corners.length; i++) {
-      const prev = corners[(i + corners.length - 1) % corners.length]
+    for (let i = 0; i < 4; i++) {
+      const prev = corners[(i + 3) % 4]
       const curr = corners[i]
-      const next = corners[(i + 1) % corners.length]
+      const next = corners[(i + 1) % 4]
       
       const v1 = { x: prev.x - curr.x, y: prev.y - curr.y }
       const v2 = { x: next.x - curr.x, y: next.y - curr.y }
@@ -314,54 +319,72 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     return angles
   }
 
-  // Sort corners in clockwise order
-  const sortCorners = (corners: Point[]): Point[] => {
-    if (!corners || corners.length < 3) return corners
+  // Check if polygon is convex
+  const isConvex = (corners: Point[]): boolean => {
+    if (corners.length < 4) return false
     
-    // Find center point
-    const centerX = corners.reduce((sum: number, c: Point) => sum + c.x, 0) / corners.length
-    const centerY = corners.reduce((sum: number, c: Point) => sum + c.y, 0) / corners.length
-    
-    // Sort by angle from center
-    return corners.sort((a, b) => {
-      const angleA = Math.atan2(a.y - centerY, a.x - centerX)
-      const angleB = Math.atan2(b.y - centerY, b.x - centerX)
-      return angleA - angleB
-    })
+    let sign = 0
+    for (let i = 0; i < corners.length; i++) {
+      const dx1 = corners[(i + 2) % corners.length].x - corners[(i + 1) % corners.length].x
+      const dy1 = corners[(i + 2) % corners.length].y - corners[(i + 1) % corners.length].y
+      const dx2 = corners[i].x - corners[(i + 1) % corners.length].x
+      const dy2 = corners[i].y - corners[(i + 1) % corners.length].y
+      const cross = dx1 * dy2 - dy1 * dx2
+      
+      if (i === 0) sign = Math.sign(cross)
+      else if (Math.sign(cross) !== sign) return false
+    }
+    return true
   }
 
-  // Smooth shape corners using exponential smoothing
+  // Sort corners in clockwise order starting from top-left
+  const sortCorners = (corners: Point[]): Point[] => {
+    // Find center
+    const center = {
+      x: corners.reduce((sum, p) => sum + p.x, 0) / corners.length,
+      y: corners.reduce((sum, p) => sum + p.y, 0) / corners.length
+    }
+    
+    // Sort by angle
+    const sorted = [...corners].sort((a, b) => {
+      const angleA = Math.atan2(a.y - center.y, a.x - center.x)
+      const angleB = Math.atan2(b.y - center.y, b.x - center.x)
+      return angleA - angleB
+    })
+    
+    // Find top-left point
+    const topLeft = sorted.reduce((min, p) => (p.x + p.y < min.x + min.y) ? p : min)
+    const startIndex = sorted.indexOf(topLeft)
+    
+    return [...sorted.slice(startIndex), ...sorted.slice(0, startIndex)]
+  }
+
+  // Smooth corners
   const smoothShapeCorners = (currentCorners: Point[], previousCorners: Point[] | null): Point[] => {
     if (!previousCorners || currentCorners.length !== previousCorners.length) {
       return currentCorners
     }
 
-    return currentCorners.map((corner, index) => {
-      const prevCorner = previousCorners[index]
-      return {
-        x: prevCorner.x * SMOOTHING_FACTOR + corner.x * (1 - SMOOTHING_FACTOR),
-        y: prevCorner.y * SMOOTHING_FACTOR + corner.y * (1 - SMOOTHING_FACTOR)
-      }
-    })
+    return currentCorners.map((corner, index) => ({
+      x: previousCorners[index].x * SMOOTHING_FACTOR + corner.x * (1 - SMOOTHING_FACTOR),
+      y: previousCorners[index].y * SMOOTHING_FACTOR + corner.y * (1 - SMOOTHING_FACTOR)
+    }))
   }
 
-  // Improved shape similarity check with hysteresis
+  // Check shape similarity
   const areShapesSimilar = (shape1: DetectedShape | null, shape2: DetectedShape | null): boolean => {
-    if (!shape1 || !shape2) return false
-    if (shape1.corners.length !== shape2.corners.length) return false
+    if (!shape1 || !shape2 || shape1.corners.length !== shape2.corners.length) return false
     
-    let totalDistance = 0
-    for (let i = 0; i < shape1.corners.length; i++) {
-      const dx = Math.abs(shape1.corners[i].x - shape2.corners[i].x)
-      const dy = Math.abs(shape1.corners[i].y - shape2.corners[i].y)
-      totalDistance += Math.sqrt(dx * dx + dy * dy)
-    }
+    const totalDistance = shape1.corners.reduce((sum, corner, i) => {
+      const dx = corner.x - shape2.corners[i].x
+      const dy = corner.y - shape2.corners[i].y
+      return sum + Math.sqrt(dx * dx + dy * dy)
+    }, 0)
     
-    const avgDistance = totalDistance / shape1.corners.length
-    return avgDistance < STABILITY_THRESHOLD
+    return totalDistance / shape1.corners.length < STABILITY_THRESHOLD
   }
 
-  // Detection loop with improved smoothing
+  // Detection loop
   useEffect(() => {
     if (!isDetectionReady || !hasCamera) return
 
@@ -382,7 +405,6 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       }
 
       try {
-        // Draw video frame to canvas
         const ctx = canvas.getContext('2d')
         if (!ctx) return
 
@@ -390,48 +412,36 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         canvas.height = video.videoHeight
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
 
-        // Detect all rectangular shapes
-        const shapes = detectAllRectangularShapes(canvas)
+        const shapes = detectDocumentShapes(canvas)
         setDetectedShapes(shapes)
         
-        // Select best shape and apply smoothing
-        let currentBest = shapes.length > 0 ? shapes[0] : null
+        let currentBest = shapes[0] || null
         
         if (currentBest) {
-          // Apply smoothing to reduce jumpiness
           const smoothedCorners = smoothShapeCorners(
             currentBest.corners, 
             smoothedShape.current || currentBest.corners
           )
           smoothedShape.current = smoothedCorners
-          
-          // Create smoothed shape
-          currentBest = {
-            ...currentBest,
-            corners: smoothedCorners
-          }
+          currentBest = { ...currentBest, corners: smoothedCorners }
         } else {
           smoothedShape.current = null
         }
         
-        // Stability checking with hysteresis
+        // Stability check
         if (currentBest && lastBestShape.current && areShapesSimilar(currentBest, lastBestShape.current)) {
           stableFrameCount.current = Math.min(stableFrameCount.current + 1, MIN_STABLE_FRAMES * 2)
         } else {
-          stableFrameCount.current = Math.max(stableFrameCount.current - 2, 0)
+          stableFrameCount.current = Math.max(stableFrameCount.current - 1, 0)
         }
         
-        // Update stability state
         const newStability = stableFrameCount.current >= MIN_STABLE_FRAMES
         if (newStability !== isShapeStable) {
           setIsShapeStable(newStability)
         }
         
-        // Update best shape
         setBestShape(currentBest)
         lastBestShape.current = currentBest
-        
-        // Draw overlay
         drawOverlay(overlayCanvas, shapes, currentBest)
         
       } catch (error) {
@@ -450,7 +460,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     }
   }, [isDetectionReady, hasCamera, isShapeStable])
 
-  // Simplified overlay drawing for better performance
+  // Draw overlay with better visual feedback
   const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], bestShape: DetectedShape | null) => {
     const overlayCtx = overlayCanvas.getContext('2d')
     if (!overlayCtx) return
@@ -459,92 +469,99 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     overlayCanvas.height = canvasRef.current?.height || 0
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
 
-    if (shapes.length === 0) {
-      // Simple scanning indicator
-      overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.3)'
+    if (!bestShape) {
+      // Guidance for user
+      overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height)
       
       overlayCtx.fillStyle = '#FFFFFF'
-      overlayCtx.font = 'bold 20px Arial'
+      overlayCtx.font = 'bold 24px Arial'
       overlayCtx.textAlign = 'center'
       overlayCtx.fillText(
         'Point camera at document or photo',
         overlayCanvas.width / 2,
-        overlayCanvas.height / 2
+        overlayCanvas.height / 2 - 20
+      )
+      overlayCtx.font = '18px Arial'
+      overlayCtx.fillText(
+        'Ensure good lighting and clear edges',
+        overlayCanvas.width / 2,
+        overlayCanvas.height / 2 + 20
       )
       return
     }
 
-    // Draw only the best shape to reduce visual clutter
-    if (bestShape) {
-      const corners = bestShape.corners
-      const isStable = isShapeStable
-      
-      // Draw semi-transparent overlay
-      overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.3)'
-      overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height)
-      
-      // Cut out the detected shape area
-      overlayCtx.globalCompositeOperation = 'destination-out'
+    const corners = bestShape.corners
+    const isStable = isShapeStable
+    
+    // Draw overlay with cutout
+    overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.4)'
+    overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height)
+    
+    overlayCtx.globalCompositeOperation = 'destination-out'
+    overlayCtx.beginPath()
+    overlayCtx.moveTo(corners[0].x, corners[0].y)
+    corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y))
+    overlayCtx.closePath()
+    overlayCtx.fill()
+    
+    // Draw outline
+    overlayCtx.globalCompositeOperation = 'source-over'
+    overlayCtx.strokeStyle = isStable ? '#10B981' : '#3B82F6'
+    overlayCtx.lineWidth = isStable ? 6 : 4
+    overlayCtx.setLineDash(isStable ? [] : [15, 10])
+    overlayCtx.beginPath()
+    overlayCtx.moveTo(corners[0].x, corners[0].y)
+    corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y))
+    overlayCtx.closePath()
+    overlayCtx.stroke()
+    overlayCtx.setLineDash([])
+    
+    // Draw corners
+    corners.forEach((corner, index) => {
+      overlayCtx.fillStyle = isStable ? '#10B981' : '#3B82F6'
       overlayCtx.beginPath()
-      overlayCtx.moveTo(corners[0].x, corners[0].y)
-      for (let i = 1; i < corners.length; i++) {
-        overlayCtx.lineTo(corners[i].x, corners[i].y)
-      }
-      overlayCtx.closePath()
+      overlayCtx.arc(corner.x, corner.y, 12, 0, 2 * Math.PI)
       overlayCtx.fill()
       
-      // Draw border
-      overlayCtx.globalCompositeOperation = 'source-over'
-      overlayCtx.strokeStyle = isStable ? '#10B981' : '#3B82F6'
-      overlayCtx.lineWidth = isStable ? 6 : 4
-      overlayCtx.setLineDash(isStable ? [] : [10, 5])
-      overlayCtx.beginPath()
-      overlayCtx.moveTo(corners[0].x, corners[0].y)
-      for (let i = 1; i < corners.length; i++) {
-        overlayCtx.lineTo(corners[i].x, corners[i].y)
-      }
-      overlayCtx.closePath()
-      overlayCtx.stroke()
-      overlayCtx.setLineDash([])
-      
-      // Simple corner markers
-      corners.forEach((corner) => {
-        overlayCtx.fillStyle = isStable ? '#10B981' : '#3B82F6'
-        overlayCtx.beginPath()
-        overlayCtx.arc(corner.x, corner.y, 8, 0, 2 * Math.PI)
-        overlayCtx.fill()
-      })
-      
-      // Status text
-      const centerX = corners.reduce((sum: number, c: Point) => sum + c.x, 0) / corners.length
-      const centerY = corners.reduce((sum: number, c: Point) => sum + c.y, 0) / corners.length
-      
-      overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.7)'
-      overlayCtx.fillRect(centerX - 100, centerY - 40, 200, 80)
-      
       overlayCtx.fillStyle = '#FFFFFF'
-      overlayCtx.font = 'bold 16px Arial'
-      overlayCtx.textAlign = 'center'
-      overlayCtx.fillText(
-        isStable ? 'Perfect! Ready to capture' : 'Hold steady...',
-        centerX,
-        centerY - 10
-      )
-      overlayCtx.font = '14px Arial'
-      overlayCtx.fillText(
-        `${Math.round(bestShape.confidence)}% confidence`,
-        centerX,
-        centerY + 15
-      )
-    }
+      overlayCtx.beginPath()
+      overlayCtx.arc(corner.x, corner.y, 6, 0, 2 * Math.PI)
+      overlayCtx.fill()
+    })
+    
+    // Info box
+    const centerX = corners.reduce((sum, c) => sum + c.x, 0) / corners.length
+    const centerY = corners.reduce((sum, c) => sum + c.y, 0) / corners.length
+    
+    overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.8)'
+    overlayCtx.fillRect(centerX - 120, centerY - 50, 240, 100)
+    
+    overlayCtx.fillStyle = '#FFFFFF'
+    overlayCtx.font = 'bold 18px Arial'
+    overlayCtx.textAlign = 'center'
+    overlayCtx.fillText(
+      `${bestShape.type.charAt(0).toUpperCase() + bestShape.type.slice(1)} Detected`,
+      centerX,
+      centerY - 20
+    )
+    overlayCtx.font = '16px Arial'
+    overlayCtx.fillText(
+      isStable ? 'Ready to capture!' : 'Hold steady...',
+      centerX,
+      centerY + 5
+    )
+    overlayCtx.fillText(
+      `${Math.round(bestShape.confidence)}% confidence`,
+      centerX,
+      centerY + 30
+    )
   }
 
   const handleCapture = useCallback(async () => {
     if (!webcamRef.current) return
     
     setIsCapturing(true)
-    
     try {
       const imageSrc = webcamRef.current.getScreenshot({ width: 1920, height: 1080 })
       if (imageSrc) {
@@ -600,7 +617,6 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
 
   return (
     <div className="relative h-full flex flex-col">
-      {/* Camera Feed */}
       <div className="relative flex-1 bg-black overflow-hidden">
         {hasCamera ? (
           <>
@@ -620,6 +636,20 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
               ref={overlayCanvasRef}
               className="absolute inset-0 w-full h-full object-cover pointer-events-none"
             />
+            
+            {/* Status indicator */}
+            <div className="absolute top-4 left-4">
+              <div className="flex items-center space-x-2 bg-black bg-opacity-70 px-4 py-2 rounded-full">
+                <div className={`w-3 h-3 rounded-full ${
+                  !isDetectionReady ? 'bg-yellow-500 animate-pulse' :
+                  bestShape ? (isShapeStable ? 'bg-green-500' : 'bg-blue-500 animate-pulse') : 'bg-gray-500'
+                }`} />
+                <span className="text-white text-sm">
+                  {!isDetectionReady ? 'Loading...' :
+                   bestShape ? (isShapeStable ? 'Ready!' : 'Adjusting...') : 'Point at document'}
+                </span>
+              </div>
+            </div>
           </>
         ) : (
           <div className="flex flex-col items-center justify-center h-full bg-gray-800">
@@ -633,28 +663,10 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             </button>
           </div>
         )}
-
-        {/* Simplified status indicator */}
-        {hasCamera && (
-          <div className="absolute top-4 left-4">
-            <div className="flex items-center space-x-2 bg-black bg-opacity-70 px-4 py-2 rounded-full">
-              <div className={`w-3 h-3 rounded-full ${
-                !isDetectionReady ? 'bg-yellow-500' :
-                bestShape ? (isShapeStable ? 'bg-green-500' : 'bg-blue-500') : 'bg-gray-500'
-              }`} />
-              <span className="text-white text-sm">
-                {!isDetectionReady ? 'Loading...' :
-                 bestShape ? (isShapeStable ? 'Ready!' : 'Detected') : 'Scanning...'}
-              </span>
-            </div>
-          </div>
-        )}
       </div>
 
-      {/* Simplified Controls */}
       <div className="bg-black p-6">
         <div className="flex items-center justify-center space-x-8 max-w-md mx-auto">
-          {/* File Input Button */}
           <button
             onClick={() => fileInputRef.current?.click()}
             className="p-4 rounded-full bg-gray-600 hover:bg-gray-500 transition-colors"
@@ -662,15 +674,14 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             <Square size={24} className="text-white" />
           </button>
 
-          {/* Capture Button */}
           <button
             onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
             disabled={isCapturing || !bestShape}
             className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 disabled:opacity-50 ${
               isShapeStable && bestShape
-                ? 'bg-green-500 hover:bg-green-400 ring-4 ring-green-300' 
+                ? 'bg-green-500 hover:bg-green-400 ring-4 ring-green-300 scale-110' 
                 : bestShape
-                ? 'bg-blue-500 hover:bg-blue-400'
+                ? 'bg-blue-500 hover:bg-blue-400 ring-2 ring-blue-300 scale-105'
                 : 'bg-gray-500'
             }`}
           >
@@ -681,7 +692,6 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             )}
           </button>
 
-          {/* Camera Switch */}
           {hasCamera && (
             <button
               onClick={toggleCamera}
@@ -693,7 +703,6 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         </div>
       </div>
 
-      {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
