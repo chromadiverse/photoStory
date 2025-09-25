@@ -659,32 +659,32 @@ const videoConstraints = {
     overlayCtx.fill()
     
     // Draw shape outline
-    overlayCtx.globalCompositeOperation = 'source-over'
-    overlayCtx.strokeStyle = isStable ? '#00FF00' : '#00AAFF'
-    overlayCtx.lineWidth = isStable ? 8 : 6
-    overlayCtx.setLineDash(isStable ? [] : [20, 15])
-    overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.5)'
-    overlayCtx.shadowBlur = 4
-    overlayCtx.beginPath()
-    overlayCtx.moveTo(corners[0].x, corners[0].y)
-    corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y))
-    overlayCtx.closePath()
-    overlayCtx.stroke()
-    overlayCtx.setLineDash([])
-    overlayCtx.shadowBlur = 0
-    
-    // Draw corner indicators
-    corners.forEach((corner, index) => {
-      overlayCtx.fillStyle = isStable ? '#00FF00' : '#00AAFF'
-      overlayCtx.beginPath()
-      overlayCtx.arc(corner.x, corner.y, 15, 0, 2 * Math.PI)
-      overlayCtx.fill()
-      
-      overlayCtx.fillStyle = '#FFFFFF'
-      overlayCtx.beginPath()
-      overlayCtx.arc(corner.x, corner.y, 8, 0, 2 * Math.PI)
-      overlayCtx.fill()
-    })
+overlayCtx.globalCompositeOperation = 'source-over'
+overlayCtx.strokeStyle = isStable ? '#00FF00' : '#00AAFF'
+overlayCtx.lineWidth = isStable ? 3 : 2  // Changed from 8 : 6 to 3 : 2
+overlayCtx.setLineDash(isStable ? [] : [20, 15])
+overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.5)'
+overlayCtx.shadowBlur = 4
+overlayCtx.beginPath()
+overlayCtx.moveTo(corners[0].x, corners[0].y)
+corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y))
+overlayCtx.closePath()
+overlayCtx.stroke()
+overlayCtx.setLineDash([])
+overlayCtx.shadowBlur = 0
+
+// Draw corner indicators
+corners.forEach((corner, index) => {
+  overlayCtx.fillStyle = isStable ? '#00FF00' : '#00AAFF'
+  overlayCtx.beginPath()
+  overlayCtx.arc(corner.x, corner.y, 8, 0, 2 * Math.PI)  // Changed from 15 to 8
+  overlayCtx.fill()
+  
+  overlayCtx.fillStyle = '#FFFFFF'
+  overlayCtx.beginPath()
+  overlayCtx.arc(corner.x, corner.y, 4, 0, 2 * Math.PI)  // Changed from 8 to 4
+  overlayCtx.fill()
+})
     
     // Status display
     const centerX = corners.reduce((sum, c) => sum + c.x, 0) / corners.length
