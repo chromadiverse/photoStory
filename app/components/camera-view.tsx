@@ -708,6 +708,122 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     )
   }
 
+  // Perspective correction and cropping function
+  const cropAndCorrectPerspective = (imageSrc: string, corners: Point[], canvas: HTMLCanvasElement): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        try {
+          if (!window.cv) {
+            console.error('OpenCV not loaded')
+            resolve(imageSrc) // Fallback to original image
+            return
+          }
+
+          // Create canvas for the full image
+          const fullCanvas = document.createElement('canvas')
+          const fullCtx = fullCanvas.getContext('2d')!
+          fullCanvas.width = img.width
+          fullCanvas.height = img.height
+          fullCtx.drawImage(img, 0, 0)
+
+          // Scale corners to match the full resolution image
+          const scaleX = img.width / canvas.width
+          const scaleY = img.height / canvas.height
+          
+          const scaledCorners = corners.map(corner => ({
+            x: corner.x * scaleX,
+            y: corner.y * scaleY
+          }))
+
+          // Create OpenCV matrices
+          const src = window.cv.imread(fullCanvas)
+          const dst = new window.cv.Mat()
+
+          // Determine output dimensions based on the detected rectangle
+          const topWidth = Math.sqrt(
+            Math.pow(scaledCorners[1].x - scaledCorners[0].x, 2) +
+            Math.pow(scaledCorners[1].y - scaledCorners[0].y, 2)
+          )
+          const bottomWidth = Math.sqrt(
+            Math.pow(scaledCorners[2].x - scaledCorners[3].x, 2) +
+            Math.pow(scaledCorners[2].y - scaledCorners[3].y, 2)
+          )
+          const leftHeight = Math.sqrt(
+            Math.pow(scaledCorners[3].x - scaledCorners[0].x, 2) +
+            Math.pow(scaledCorners[3].y - scaledCorners[0].y, 2)
+          )
+          const rightHeight = Math.sqrt(
+            Math.pow(scaledCorners[2].x - scaledCorners[1].x, 2) +
+            Math.pow(scaledCorners[2].y - scaledCorners[1].y, 2)
+          )
+
+          // Use the maximum dimensions for the output
+          const outputWidth = Math.max(topWidth, bottomWidth)
+          const outputHeight = Math.max(leftHeight, rightHeight)
+
+          // Define source points (the detected corners)
+          const srcPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
+            scaledCorners[0].x, scaledCorners[0].y, // Top-left
+            scaledCorners[1].x, scaledCorners[1].y, // Top-right
+            scaledCorners[2].x, scaledCorners[2].y, // Bottom-right
+            scaledCorners[3].x, scaledCorners[3].y  // Bottom-left
+          ])
+
+          // Define destination points (rectangle corners)
+          const dstPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
+            0, 0,                    // Top-left
+            outputWidth, 0,          // Top-right
+            outputWidth, outputHeight, // Bottom-right
+            0, outputHeight          // Bottom-left
+          ])
+
+          // Calculate perspective transformation matrix
+          const transformMatrix = window.cv.getPerspectiveTransform(srcPoints, dstPoints)
+
+          // Apply perspective transformation
+          window.cv.warpPerspective(
+            src, 
+            dst, 
+            transformMatrix, 
+            new window.cv.Size(outputWidth, outputHeight)
+          )
+
+          // Create output canvas
+          const outputCanvas = document.createElement('canvas')
+          outputCanvas.width = outputWidth
+          outputCanvas.height = outputHeight
+          window.cv.imshow(outputCanvas, dst)
+
+          // Convert to blob and create data URL
+          outputCanvas.toBlob((blob) => {
+            if (blob) {
+              const reader = new FileReader()
+              reader.onload = (e) => {
+                resolve(e.target?.result as string)
+              }
+              reader.readAsDataURL(blob)
+            } else {
+              resolve(imageSrc) // Fallback
+            }
+          }, 'image/jpeg', 0.95)
+
+          // Cleanup OpenCV matrices
+          src.delete()
+          dst.delete()
+          srcPoints.delete()
+          dstPoints.delete()
+          transformMatrix.delete()
+
+        } catch (error) {
+          console.error('Error in perspective correction:', error)
+          resolve(imageSrc) // Fallback to original image
+        }
+      }
+      img.src = imageSrc
+    })
+  }
+
   const handleCapture = useCallback(async () => {
     if (!webcamRef.current) return
     
@@ -715,33 +831,46 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     try {
       const imageSrc = webcamRef.current.getScreenshot({ width: 1920, height: 1080 })
       if (imageSrc) {
-        const response = await fetch(imageSrc)
-        const blob = await response.blob()
+        let finalImageSrc = imageSrc
+        let finalBlob: Blob
+
+        // If we have a detected shape, crop and correct perspective
+        if (bestShape && canvasRef.current) {
+          console.log('Applying perspective correction and cropping...')
+          finalImageSrc = await cropAndCorrectPerspective(imageSrc, bestShape.corners, canvasRef.current)
+        }
+
+        // Convert the final image to blob
+        const response = await fetch(finalImageSrc)
+        finalBlob = await response.blob()
         
         const image = new Image()
         image.onload = () => {
           onImageCapture({
-            src: imageSrc,
-            blob,
+            src: finalImageSrc,
+            blob: finalBlob,
             width: image.width,
             height: image.height
           })
         }
-        image.src = imageSrc
+        image.src = finalImageSrc
       }
     } catch (error) {
       console.error('Error capturing image:', error)
     } finally {
       setIsCapturing(false)
     }
-  }, [onImageCapture])
+  }, [onImageCapture, bestShape])
 
   const handleFileCapture = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file) {
       const reader = new FileReader()
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         const result = e.target?.result as string
+        
+        // For file uploads, we'll just pass the original image since we don't have real-time detection
+        // But we could potentially detect shapes in the uploaded image and crop it too
         const image = new Image()
         image.onload = () => {
           onImageCapture({
@@ -886,10 +1015,15 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
               bestShape && !isShapeStable ?
               'Hold still for a moment...' :
               isShapeStable ?
-              'Perfect! Tap the green button to capture' :
+              'Perfect! Tap to capture and auto-crop' :
               'Select a photo from your gallery'
             }
           </p>
+          {bestShape && isShapeStable && (
+            <p className="text-green-400 text-sm mt-2">
+              📄 Auto-crop enabled - only the highlighted area will be captured
+            </p>
+          )}
         </div>
       </div>
 
