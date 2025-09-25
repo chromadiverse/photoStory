@@ -786,31 +786,9 @@ const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeigh
 
   return { width: outputWidth, height: outputHeight }
 }
-const expandCorners = (corners: Point[], expansionFactor: number = 0.02): Point[] => {
-  if (corners.length !== 4) return corners
-  
-  const centerX = corners.reduce((sum, p) => sum + p.x, 0) / 4
-  const centerY = corners.reduce((sum, p) => sum + p.y, 0) / 4
-  
-  return corners.map(corner => {
-    const dx = corner.x - centerX
-    const dy = corner.y - centerY
-    const distance = Math.sqrt(dx * dx + dy * dy)
-    
-    // Avoid division by zero for corners exactly at center
-    if (distance === 0) return corner;
-    
-    const expandDist = distance * expansionFactor
-    
-    return {
-      x: corner.x + (dx / distance) * expandDist,
-      y: corner.y + (dy / distance) * expandDist
-    }
-  })
-}
 
-// Perspective correction and cropping function with border expansion
-const cropAndCorrectPerspective = (imageSrc: string, corners: Point[], canvas: HTMLCanvasElement): Promise<string> => {
+  // Perspective correction and cropping function
+ const cropAndCorrectPerspective = (imageSrc: string, corners: Point[], canvas: HTMLCanvasElement): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image()
     img.onload = () => {
@@ -837,25 +815,17 @@ const cropAndCorrectPerspective = (imageSrc: string, corners: Point[], canvas: H
           y: corner.y * scaleY
         }))
 
-        // EXPAND THE CORNERS OUTWARD to include more border area
-        const expandedCorners = expandCorners(scaledCorners, 0.03) // 3% expansion
-
         // Create OpenCV matrices
         const src = window.cv.imread(fullCanvas)
         const dst = new window.cv.Mat()
 
         // IMPROVED: Better corner sorting that preserves document orientation
-        const properlyOrderedCorners = orderCornersForDocument(expandedCorners)
+        const properlyOrderedCorners = orderCornersForDocument(scaledCorners)
 
         // IMPROVED: Calculate proper output dimensions maintaining aspect ratio
         const { width: outputWidth, height: outputHeight } = calculateOptimalOutputSize(properlyOrderedCorners, img.width, img.height)
 
-        // ADD MARGIN to the output to ensure no content is cut off
-        const margin = Math.max(outputWidth, outputHeight) * 0.02 // 2% margin
-        const finalWidth = outputWidth + margin * 2
-        const finalHeight = outputHeight + margin * 2
-
-        // Define source points (the EXPANDED corners in proper order)
+        // Define source points (the detected corners in proper order)
         const srcPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
           properlyOrderedCorners[0].x, properlyOrderedCorners[0].y, // Top-left
           properlyOrderedCorners[1].x, properlyOrderedCorners[1].y, // Top-right  
@@ -863,12 +833,12 @@ const cropAndCorrectPerspective = (imageSrc: string, corners: Point[], canvas: H
           properlyOrderedCorners[3].x, properlyOrderedCorners[3].y  // Bottom-left
         ])
 
-        // Define destination points with margin included
+        // Define destination points (rectangle corners)
         const dstPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
-          margin, margin,                           // Top-left (with margin)
-          finalWidth - margin, margin,              // Top-right (with margin)
-          finalWidth - margin, finalHeight - margin, // Bottom-right (with margin)
-          margin, finalHeight - margin              // Bottom-left (with margin)
+          0, 0,                    // Top-left
+          outputWidth, 0,          // Top-right
+          outputWidth, outputHeight, // Bottom-right
+          0, outputHeight          // Bottom-left
         ])
 
         // Calculate perspective transformation matrix
@@ -879,16 +849,16 @@ const cropAndCorrectPerspective = (imageSrc: string, corners: Point[], canvas: H
           src, 
           dst, 
           transformMatrix, 
-          new window.cv.Size(finalWidth, finalHeight), // Use final dimensions with margin
+          new window.cv.Size(outputWidth, outputHeight),
           window.cv.INTER_CUBIC, // Use cubic interpolation for better quality
           window.cv.BORDER_CONSTANT,
           new window.cv.Scalar(255, 255, 255, 255) // White background
         )
 
-        // Create output canvas with proper dimensions (including margin)
+        // Create output canvas with proper dimensions
         const outputCanvas = document.createElement('canvas')
-        outputCanvas.width = finalWidth
-        outputCanvas.height = finalHeight
+        outputCanvas.width = outputWidth
+        outputCanvas.height = outputHeight
         window.cv.imshow(outputCanvas, dst)
 
         // Convert to blob with high quality
