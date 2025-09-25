@@ -35,64 +35,89 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const cropperContainerRef = useRef<HTMLDivElement>(null)
 
   // Load image and initialize crop based on detected edges
-  useEffect(() => {
-    const img = new Image()
-    img.onload = () => {
-      setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight })
-      setImageLoaded(true)
-      
-      // FIXED: Initialize crop based on detected corners if available
-      if (image.detectedCorners && image.detectedCorners.length === 4) {
-        const corners = image.detectedCorners
+ useEffect(() => {
+  const img = new Image()
+  img.onload = () => {
+    setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight })
+    setImageLoaded(true)
+    
+    // Calculate initial zoom to fit image properly
+    const calculateInitialZoom = () => {
+      if (cropperContainerRef.current) {
+        const container = cropperContainerRef.current;
+        const containerWidth = container.clientWidth;
+        const containerHeight = container.clientHeight;
         
-        // Find bounding box of detected corners
-        const minX = Math.min(...corners.map(c => c.x))
-        const maxX = Math.max(...corners.map(c => c.x))
-        const minY = Math.min(...corners.map(c => c.y))
-        const maxY = Math.max(...corners.map(c => c.y))
+        const widthRatio = containerWidth / img.naturalWidth;
+        const heightRatio = containerHeight / img.naturalHeight;
         
-        // Convert detection coordinates to image coordinates
-        // (Detection was done on canvas, need to scale to full image)
-        const scaleX = img.naturalWidth / (image.width || img.naturalWidth)
-        const scaleY = img.naturalHeight / (image.height || img.naturalHeight)
-        
-        const scaledMinX = minX * scaleX
-        const scaledMinY = minY * scaleY
-        const scaledMaxX = maxX * scaleX
-        const scaledMaxY = maxY * scaleY
-        
-        // Calculate crop parameters as percentages
-        const cropX = (scaledMinX / img.naturalWidth) * 100
-        const cropY = (scaledMinY / img.naturalHeight) * 100
-        const cropWidth = ((scaledMaxX - scaledMinX) / img.naturalWidth) * 100
-        const cropHeight = ((scaledMaxY - scaledMinY) / img.naturalHeight) * 100
-        
-        // Set initial crop to detected area with small padding
-        const padding = 2 // 2% padding
-        setCrop({ 
-          x: Math.max(0, cropX - padding), 
-          y: Math.max(0, cropY - padding)
-        })
-        
-        // Set zoom to fit the detected area nicely in view
-        const areaSize = Math.min(cropWidth + padding * 2, cropHeight + padding * 2)
-        setZoom(Math.max(1, Math.min(2, 80 / areaSize))) // Zoom to make detected area prominent
-        
-        console.log('Initialized crop with detected corners:', {
-          originalCorners: corners,
-          cropArea: { x: cropX, y: cropY, width: cropWidth, height: cropHeight },
-          initialZoom: zoom
-        })
-      } else {
-        // Fallback: Use conservative crop covering most of image
-        const margin = 5 // 5% margin
-        setCrop({ x: margin, y: margin })
-        setZoom(1)
+        // Start with zoom that fits the image to container
+        return Math.min(widthRatio, heightRatio) * 0.95; // 95% to show some padding
       }
-    }
-    img.src = image.src
-  }, [image.src, image.detectedCorners, image.width, image.height])
+      return 1;
+    };
 
+    if (image.detectedCorners && image.detectedCorners.length === 4) {
+      const corners = image.detectedCorners
+      const minX = Math.min(...corners.map(c => c.x))
+      const maxX = Math.max(...corners.map(c => c.x))
+      const minY = Math.min(...corners.map(c => c.y))
+      const maxY = Math.max(...corners.map(c => c.y))
+      
+      const scaleX = img.naturalWidth / (image.width || img.naturalWidth)
+      const scaleY = img.naturalHeight / (image.height || img.naturalHeight)
+      
+      const scaledMinX = minX * scaleX
+      const scaledMinY = minY * scaleY
+      const scaledMaxX = maxX * scaleX
+      const scaledMaxY = maxY * scaleY
+      
+      // Calculate center of detected area
+      const centerX = ((scaledMinX + scaledMaxX) / 2) / img.naturalWidth * 100
+      const centerY = ((scaledMinY + scaledMaxY) / 2) / img.naturalHeight * 100
+      
+      setCrop({ x: centerX, y: centerY })
+      
+      // Calculate zoom based on detected area size
+      const detectedWidth = scaledMaxX - scaledMinX
+      const detectedHeight = scaledMaxY - scaledMinY
+      const areaSize = Math.max(detectedWidth / img.naturalWidth, detectedHeight / img.naturalHeight) * 100
+      setZoom(Math.max(1, Math.min(3, 100 / areaSize * 0.8)))
+    } else {
+      // Center the image with proper zoom
+      setCrop({ x: 50, y: 50 })
+      setZoom(calculateInitialZoom())
+    }
+  }
+  img.src = image.src
+}, [image.src, image.detectedCorners, image.width, image.height])
+const fitToWidth = () => {
+  if (cropperContainerRef.current && imageDimensions.width > 0) {
+    const container = cropperContainerRef.current;
+    const containerWidth = container.clientWidth;
+    const zoomLevel = containerWidth / imageDimensions.width;
+    
+    setZoom(zoomLevel);
+    setCrop({ x: 50, y: 50 }); // Center the image
+  }
+};
+
+useEffect(() => {
+  const updateContainerSize = () => {
+    if (cropperContainerRef.current && imageLoaded) {
+      const container = cropperContainerRef.current;
+      const containerRect = container.getBoundingClientRect();
+      
+      console.log('Container size:', containerRect.width, containerRect.height);
+      console.log('Image size:', imageDimensions.width, imageDimensions.height);
+    }
+  };
+
+  updateContainerSize();
+  window.addEventListener('resize', updateContainerSize);
+  
+  return () => window.removeEventListener('resize', updateContainerSize);
+}, [imageLoaded, imageDimensions]);
   const onCropCompleteHandler = useCallback((croppedArea: Area, croppedAreaPixels: Area) => {
     setCroppedAreaPixels(croppedAreaPixels)
     console.log('Crop area updated:', croppedAreaPixels)
@@ -306,11 +331,14 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
               borderRadius: '8px',
               boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.5)'
             },
-            mediaStyle: {
-              maxHeight: '100%',
-              maxWidth: '100%',
-      
-            }
+             mediaStyle: {
+      // Key changes here - ensure image fills container properly
+      width: 'auto',
+      height: 'auto',
+      maxWidth: 'none',
+      maxHeight: 'none',
+      transform: 'translateZ(0)' // Force hardware acceleration
+    }
           }}
           cropShape="rect"
           objectFit="contain"
@@ -371,7 +399,14 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
             </button>
           ))}
         </div>
-
+        {/* FIT CONTROL */}
+<button
+  onClick={fitToWidth}
+  className="flex items-center space-x-1 text-blue-400 hover:text-blue-300 transition-colors"
+>
+  <Maximize2 size={16} />
+  <span>Fit to Width</span>
+</button>
         {/* Rotation Control */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
