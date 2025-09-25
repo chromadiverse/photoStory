@@ -11,6 +11,11 @@ interface CropperProps {
   onBack: () => void
 }
 
+interface DetectedCorners {
+  x: number;
+  y: number;
+}
+
 const aspectRatios = [
   { label: 'Free', value: null },
   { label: 'Square', value: 1 },
@@ -29,31 +34,64 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 })
   const cropperContainerRef = useRef<HTMLDivElement>(null)
 
-  // Load image and get its natural dimensions
+  // Load image and initialize crop based on detected edges
   useEffect(() => {
     const img = new Image()
     img.onload = () => {
       setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight })
       setImageLoaded(true)
       
-      // Start with crop covering most of the image but with some margin
-      const margin = 0.05 // 5% margin on each side
-      setCrop({ 
-        x: margin * 100, 
-        y: margin * 100 
-      })
-      
-      // Set initial zoom to fit the image nicely
-      setZoom(1)
-      
-      console.log('Image loaded:', {
-        naturalWidth: img.naturalWidth,
-        naturalHeight: img.naturalHeight,
-        src: image.src.substring(0, 50) + '...'
-      })
+      // FIXED: Initialize crop based on detected corners if available
+      if (image.detectedCorners && image.detectedCorners.length === 4) {
+        const corners = image.detectedCorners
+        
+        // Find bounding box of detected corners
+        const minX = Math.min(...corners.map(c => c.x))
+        const maxX = Math.max(...corners.map(c => c.x))
+        const minY = Math.min(...corners.map(c => c.y))
+        const maxY = Math.max(...corners.map(c => c.y))
+        
+        // Convert detection coordinates to image coordinates
+        // (Detection was done on canvas, need to scale to full image)
+        const scaleX = img.naturalWidth / (image.width || img.naturalWidth)
+        const scaleY = img.naturalHeight / (image.height || img.naturalHeight)
+        
+        const scaledMinX = minX * scaleX
+        const scaledMinY = minY * scaleY
+        const scaledMaxX = maxX * scaleX
+        const scaledMaxY = maxY * scaleY
+        
+        // Calculate crop parameters as percentages
+        const cropX = (scaledMinX / img.naturalWidth) * 100
+        const cropY = (scaledMinY / img.naturalHeight) * 100
+        const cropWidth = ((scaledMaxX - scaledMinX) / img.naturalWidth) * 100
+        const cropHeight = ((scaledMaxY - scaledMinY) / img.naturalHeight) * 100
+        
+        // Set initial crop to detected area with small padding
+        const padding = 2 // 2% padding
+        setCrop({ 
+          x: Math.max(0, cropX - padding), 
+          y: Math.max(0, cropY - padding)
+        })
+        
+        // Set zoom to fit the detected area nicely in view
+        const areaSize = Math.min(cropWidth + padding * 2, cropHeight + padding * 2)
+        setZoom(Math.max(1, Math.min(2, 80 / areaSize))) // Zoom to make detected area prominent
+        
+        console.log('Initialized crop with detected corners:', {
+          originalCorners: corners,
+          cropArea: { x: cropX, y: cropY, width: cropWidth, height: cropHeight },
+          initialZoom: zoom
+        })
+      } else {
+        // Fallback: Use conservative crop covering most of image
+        const margin = 5 // 5% margin
+        setCrop({ x: margin, y: margin })
+        setZoom(1)
+      }
     }
     img.src = image.src
-  }, [image.src])
+  }, [image.src, image.detectedCorners, image.width, image.height])
 
   const onCropCompleteHandler = useCallback((croppedArea: Area, croppedAreaPixels: Area) => {
     setCroppedAreaPixels(croppedAreaPixels)
@@ -68,6 +106,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       image.src = url
     })
 
+  // FIXED: Higher quality cropping with better canvas handling
   const getCroppedImg = async (
     imageSrc: string,
     pixelCrop: Area,
@@ -81,33 +120,56 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       throw new Error('Could not get canvas context')
     }
 
-    // For no rotation, we can do a simple crop which preserves quality better
+    // Set canvas to exact crop dimensions for maximum quality
+    canvas.width = Math.round(pixelCrop.width)
+    canvas.height = Math.round(pixelCrop.height)
+
     if (rotation === 0) {
-      canvas.width = pixelCrop.width
-      canvas.height = pixelCrop.height
+      // Direct crop - highest quality
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
       
       ctx.drawImage(
         image,
-        pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
-        0, 0, pixelCrop.width, pixelCrop.height
+        Math.round(pixelCrop.x), 
+        Math.round(pixelCrop.y), 
+        Math.round(pixelCrop.width), 
+        Math.round(pixelCrop.height),
+        0, 0, 
+        Math.round(pixelCrop.width), 
+        Math.round(pixelCrop.height)
       )
     } else {
-      // Handle rotation
+      // Handle rotation with quality preservation
       const rotRad = (rotation * Math.PI) / 180
       const { width: bBoxWidth, height: bBoxHeight } = rotateSize(image.width, image.height, rotation)
 
-      canvas.width = bBoxWidth
-      canvas.height = bBoxHeight
+      // Create temporary canvas for rotation
+      const tempCanvas = document.createElement('canvas')
+      const tempCtx = tempCanvas.getContext('2d')!
+      tempCanvas.width = bBoxWidth
+      tempCanvas.height = bBoxHeight
 
-      ctx.translate(bBoxWidth / 2, bBoxHeight / 2)
-      ctx.rotate(rotRad)
-      ctx.translate(-image.width / 2, -image.height / 2)
-      ctx.drawImage(image, 0, 0)
+      tempCtx.imageSmoothingEnabled = true
+      tempCtx.imageSmoothingQuality = 'high'
+      tempCtx.translate(bBoxWidth / 2, bBoxHeight / 2)
+      tempCtx.rotate(rotRad)
+      tempCtx.translate(-image.width / 2, -image.height / 2)
+      tempCtx.drawImage(image, 0, 0)
       
-      const data = ctx.getImageData(pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height)
-      canvas.width = pixelCrop.width
-      canvas.height = pixelCrop.height
-      ctx.putImageData(data, 0, 0)
+      // Now crop from rotated image
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(
+        tempCanvas,
+        Math.round(pixelCrop.x), 
+        Math.round(pixelCrop.y), 
+        Math.round(pixelCrop.width), 
+        Math.round(pixelCrop.height),
+        0, 0, 
+        Math.round(pixelCrop.width), 
+        Math.round(pixelCrop.height)
+      )
     }
 
     return new Promise((resolve) => {
@@ -115,7 +177,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         if (blob) {
           resolve({ blob, url: URL.createObjectURL(blob) })
         }
-      }, 'image/jpeg', 0.95) // Higher quality
+      }, 'image/jpeg', 0.98) // Maximum quality
     })
   }
 
@@ -134,7 +196,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     }
 
     try {
-      console.log('Saving crop with dimensions:', croppedAreaPixels)
+      console.log('Saving crop with high quality:', croppedAreaPixels)
       const { blob, url } = await getCroppedImg(image.src, croppedAreaPixels, rotation)
       onCropComplete({
         croppedImage: url,
@@ -154,21 +216,41 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   }
 
   const zoomIn = () => {
-    setZoom(prev => Math.min(prev + 0.2, 3))
+    setZoom(prev => Math.min(prev + 0.2, 5)) // Allow more zoom
   }
 
   const zoomOut = () => {
-    setZoom(prev => Math.max(prev - 0.2, 1))
+    setZoom(prev => Math.max(prev - 0.2, 0.5)) // Allow zoom out more
   }
 
   const handleRotationChange = (newRotation: number) => {
     setRotation(newRotation)
   }
 
+  // Smart crop to detected edges
+  const snapToDetectedEdges = () => {
+    if (image.detectedCorners && image.detectedCorners.length === 4) {
+      const corners = image.detectedCorners
+      const minX = Math.min(...corners.map(c => c.x))
+      const maxX = Math.max(...corners.map(c => c.x))
+      const minY = Math.min(...corners.map(c => c.y))
+      const maxY = Math.max(...corners.map(c => c.y))
+      
+      const scaleX = imageDimensions.width / (image.width || imageDimensions.width)
+      const scaleY = imageDimensions.height / (image.height || imageDimensions.height)
+      
+      const cropX = (minX * scaleX / imageDimensions.width) * 100
+      const cropY = (minY * scaleY / imageDimensions.height) * 100
+      
+      setCrop({ x: cropX, y: cropY })
+      setZoom(2) // Zoom in to show the detected area better
+    }
+  }
+
   if (!imageLoaded) {
     return (
       <div className="h-full flex items-center justify-center bg-black">
-        <div className="text-white text-lg">Loading image...</div>
+        <div className="text-white text-lg">Loading high-quality image...</div>
       </div>
     )
   }
@@ -184,7 +266,9 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
           <ArrowLeft size={20} />
           <span className="text-lg">Back</span>
         </button>
-        <h2 className="text-white text-lg font-medium">Adjust Crop</h2>
+        <h2 className="text-white text-lg font-medium">
+          Adjust Crop {image.detectedCorners ? '(Auto-detected)' : ''}
+        </h2>
         <button 
           onClick={handleCropSave} 
           className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors"
@@ -194,7 +278,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         </button>
       </div>
 
-      {/* Crop Area - Takes most of the screen */}
+      {/* Crop Area */}
       <div ref={cropperContainerRef} className="relative flex-1 min-h-0">
         <Crop
           image={image.src}
@@ -208,6 +292,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
           onZoomChange={setZoom}
           showGrid={true}
           restrictPosition={false}
+          minZoom={0.5}
+          maxZoom={5}
           style={{
             containerStyle: {
               width: '100%',
@@ -216,45 +302,60 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
               position: 'relative'
             },
             cropAreaStyle: {
-              border: '3px solid #10B981',
+              border: image.detectedCorners ? '4px solid #10B981' : '3px solid #3B82F6',
               borderRadius: '8px',
               boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.5)'
             },
             mediaStyle: {
               maxHeight: '100%',
-              maxWidth: '100%'
+              maxWidth: '100%',
+      
             }
           }}
           cropShape="rect"
           objectFit="contain"
         />
         
-        {/* Touch-friendly zoom controls overlay */}
+        {/* Enhanced zoom controls */}
         <div className="absolute bottom-4 right-4 flex flex-col space-y-2">
           <button
             onClick={zoomIn}
-            className="w-12 h-12 bg-black bg-opacity-70 hover:bg-opacity-90 text-white rounded-full flex items-center justify-center"
+            className="w-12 h-12 bg-black bg-opacity-70 hover:bg-opacity-90 text-white rounded-full flex items-center justify-center transition-all"
           >
             <ZoomIn size={20} />
           </button>
           <button
             onClick={zoomOut}
-            className="w-12 h-12 bg-black bg-opacity-70 hover:bg-opacity-90 text-white rounded-full flex items-center justify-center"
+            className="w-12 h-12 bg-black bg-opacity-70 hover:bg-opacity-90 text-white rounded-full flex items-center justify-center transition-all"
           >
             <ZoomOut size={20} />
           </button>
+          
+          {/* Smart snap button for detected edges */}
+          {image.detectedCorners && (
+            <button
+              onClick={snapToDetectedEdges}
+              className="w-12 h-12 bg-green-600 bg-opacity-80 hover:bg-opacity-100 text-white rounded-full flex items-center justify-center transition-all"
+              title="Snap to detected edges"
+            >
+              <Square size={18} />
+            </button>
+          )}
         </div>
 
-        {/* Image info overlay */}
+        {/* Image quality info */}
         <div className="absolute top-4 left-4 bg-black bg-opacity-70 text-white px-3 py-2 rounded-lg text-sm">
-          {imageDimensions.width} × {imageDimensions.height}
+          <div>{imageDimensions.width} × {imageDimensions.height}</div>
+          {image.detectedCorners && (
+            <div className="text-green-400 text-xs">Auto-detected edges</div>
+          )}
         </div>
       </div>
 
-      {/* Controls Panel - Compact but touch-friendly */}
+      {/* Enhanced Controls Panel */}
       <div className="bg-gray-900 p-4 space-y-4 max-h-64 overflow-y-auto">
         
-        {/* Quick Actions */}
+        {/* Aspect Ratios */}
         <div className="flex justify-center space-x-3">
           {aspectRatios.map((ratio) => (
             <button
@@ -299,7 +400,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
                 background: `linear-gradient(to right, #374151 0%, #374151 ${((rotation + 45) / 90) * 100}%, #10B981 ${((rotation + 45) / 90) * 100}%, #10B981 100%)`
               }}
             />
-            {/* Slider thumb styling */}
             <style jsx>{`
               input[type="range"]::-webkit-slider-thumb {
                 appearance: none;
@@ -324,17 +424,38 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
           </div>
         </div>
 
-        {/* Zoom Display */}
+        {/* Zoom and Actions */}
         <div className="flex items-center justify-between text-sm text-gray-300">
           <span>Zoom: {zoom.toFixed(1)}x</span>
-          <button
-            onClick={resetCrop}
-            className="flex items-center space-x-1 text-blue-400 hover:text-blue-300 transition-colors"
-          >
-            <Maximize2 size={16} />
-            <span>Reset All</span>
-          </button>
+          <div className="flex space-x-4">
+            {image.detectedCorners && (
+              <button
+                onClick={snapToDetectedEdges}
+                className="flex items-center space-x-1 text-green-400 hover:text-green-300 transition-colors"
+              >
+                <Square size={16} />
+                <span>Snap to Edges</span>
+              </button>
+            )}
+            <button
+              onClick={resetCrop}
+              className="flex items-center space-x-1 text-blue-400 hover:text-blue-300 transition-colors"
+            >
+              <Maximize2 size={16} />
+              <span>Reset All</span>
+            </button>
+          </div>
         </div>
+
+        {/* Quality Info */}
+        {croppedAreaPixels && (
+          <div className="text-center text-xs text-gray-400">
+            Output: {Math.round(croppedAreaPixels.width)} × {Math.round(croppedAreaPixels.height)} px
+            {image.detectedCorners && (
+              <span className="text-green-400 ml-2">• Auto-cropped to detected document</span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )

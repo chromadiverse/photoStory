@@ -14,7 +14,7 @@ export interface CapturedImage {
   blob: Blob
   width: number
   height: number
-  
+  detectedCorners?: Array<{ x: number; y: number }> // NEW: Pass detected corners to cropper
 }
 
 export interface CroppedImageData {
