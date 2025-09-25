@@ -54,12 +54,14 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const detectionHistory = useRef<DetectedShape[]>([])
   const smoothedShape = useRef<Point[] | null>(null)
 
-  const videoConstraints = {
-    width: { ideal: 1920 },
-    height: { ideal: 1080 },
-    facingMode: facingMode
-  }
-
+const videoConstraints = {
+  width: { ideal: 1920, min: 1280 }, // Ensure minimum quality
+  height: { ideal: 1080, min: 720 },
+  facingMode: facingMode,
+  // Additional quality improvements
+  frameRate: { ideal: 30 },
+  aspectRatio: 16/9
+}
   // Load OpenCV.js
   useEffect(() => {
     const loadOpenCV = async () => {
@@ -527,31 +529,36 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   useEffect(() => {
     if (!isDetectionReady || !hasCamera) return
 
-    const detectShapes = () => {
-      const webcam = webcamRef.current
-      const canvas = canvasRef.current
-      const overlayCanvas = overlayCanvasRef.current
+ const detectShapes = () => {
+  const webcam = webcamRef.current
+  const canvas = canvasRef.current
+  const overlayCanvas = overlayCanvasRef.current
 
-      if (!webcam || !canvas || !overlayCanvas) {
-        animationFrameRef.current = requestAnimationFrame(detectShapes)
-        return
-      }
+  if (!webcam || !canvas || !overlayCanvas) {
+    animationFrameRef.current = requestAnimationFrame(detectShapes)
+    return
+  }
 
-      const video = webcam.video
-      if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
-        animationFrameRef.current = requestAnimationFrame(detectShapes)
-        return
-      }
+  const video = webcam.video
+  if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
+    animationFrameRef.current = requestAnimationFrame(detectShapes)
+    return
+  }
 
-      try {
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return
+  try {
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
 
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    // Improved: Maintain aspect ratio and use consistent sizing
+    const videoAspect = video.videoWidth / video.videoHeight
+    const canvasWidth = 640  // Fixed width for consistent detection
+    const canvasHeight = Math.round(canvasWidth / videoAspect)
+    
+    canvas.width = canvasWidth
+    canvas.height = canvasHeight
+    ctx.drawImage(video, 0, 0, canvasWidth, canvasHeight)
 
-        const shapes = detectDocumentShapes(canvas)
+    const shapes = detectDocumentShapes(canvas)
         setDetectedShapes(shapes)
         
         let currentBest = shapes[0] || null
@@ -707,160 +714,225 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       centerY + 35
     )
   }
+const orderCornersForDocument = (corners: Point[]): Point[] => {
+  // Calculate the center point
+  const centerX = corners.reduce((sum, p) => sum + p.x, 0) / corners.length
+  const centerY = corners.reduce((sum, p) => sum + p.y, 0) / corners.length
 
-  // Perspective correction and cropping function
-  const cropAndCorrectPerspective = (imageSrc: string, corners: Point[], canvas: HTMLCanvasElement): Promise<string> => {
-    return new Promise((resolve) => {
-      const img = new Image()
-      img.onload = () => {
-        try {
-          if (!window.cv) {
-            console.error('OpenCV not loaded')
-            resolve(imageSrc) // Fallback to original image
-            return
-          }
+  // Calculate angles from center to each corner
+  const cornersWithAngles = corners.map(corner => ({
+    point: corner,
+    angle: Math.atan2(corner.y - centerY, corner.x - centerX)
+  }))
 
-          // Create canvas for the full image
-          const fullCanvas = document.createElement('canvas')
-          const fullCtx = fullCanvas.getContext('2d')!
-          fullCanvas.width = img.width
-          fullCanvas.height = img.height
-          fullCtx.drawImage(img, 0, 0)
+  // Sort by angle (clockwise from top-right)
+  cornersWithAngles.sort((a, b) => a.angle - b.angle)
 
-          // Scale corners to match the full resolution image
-          const scaleX = img.width / canvas.width
-          const scaleY = img.height / canvas.height
-          
-          const scaledCorners = corners.map(corner => ({
-            x: corner.x * scaleX,
-            y: corner.y * scaleY
-          }))
-
-          // Create OpenCV matrices
-          const src = window.cv.imread(fullCanvas)
-          const dst = new window.cv.Mat()
-
-          // Determine output dimensions based on the detected rectangle
-          const topWidth = Math.sqrt(
-            Math.pow(scaledCorners[1].x - scaledCorners[0].x, 2) +
-            Math.pow(scaledCorners[1].y - scaledCorners[0].y, 2)
-          )
-          const bottomWidth = Math.sqrt(
-            Math.pow(scaledCorners[2].x - scaledCorners[3].x, 2) +
-            Math.pow(scaledCorners[2].y - scaledCorners[3].y, 2)
-          )
-          const leftHeight = Math.sqrt(
-            Math.pow(scaledCorners[3].x - scaledCorners[0].x, 2) +
-            Math.pow(scaledCorners[3].y - scaledCorners[0].y, 2)
-          )
-          const rightHeight = Math.sqrt(
-            Math.pow(scaledCorners[2].x - scaledCorners[1].x, 2) +
-            Math.pow(scaledCorners[2].y - scaledCorners[1].y, 2)
-          )
-
-          // Use the maximum dimensions for the output
-          const outputWidth = Math.max(topWidth, bottomWidth)
-          const outputHeight = Math.max(leftHeight, rightHeight)
-
-          // Define source points (the detected corners)
-          const srcPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
-            scaledCorners[0].x, scaledCorners[0].y, // Top-left
-            scaledCorners[1].x, scaledCorners[1].y, // Top-right
-            scaledCorners[2].x, scaledCorners[2].y, // Bottom-right
-            scaledCorners[3].x, scaledCorners[3].y  // Bottom-left
-          ])
-
-          // Define destination points (rectangle corners)
-          const dstPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
-            0, 0,                    // Top-left
-            outputWidth, 0,          // Top-right
-            outputWidth, outputHeight, // Bottom-right
-            0, outputHeight          // Bottom-left
-          ])
-
-          // Calculate perspective transformation matrix
-          const transformMatrix = window.cv.getPerspectiveTransform(srcPoints, dstPoints)
-
-          // Apply perspective transformation
-          window.cv.warpPerspective(
-            src, 
-            dst, 
-            transformMatrix, 
-            new window.cv.Size(outputWidth, outputHeight)
-          )
-
-          // Create output canvas
-          const outputCanvas = document.createElement('canvas')
-          outputCanvas.width = outputWidth
-          outputCanvas.height = outputHeight
-          window.cv.imshow(outputCanvas, dst)
-
-          // Convert to blob and create data URL
-          outputCanvas.toBlob((blob) => {
-            if (blob) {
-              const reader = new FileReader()
-              reader.onload = (e) => {
-                resolve(e.target?.result as string)
-              }
-              reader.readAsDataURL(blob)
-            } else {
-              resolve(imageSrc) // Fallback
-            }
-          }, 'image/jpeg', 0.95)
-
-          // Cleanup OpenCV matrices
-          src.delete()
-          dst.delete()
-          srcPoints.delete()
-          dstPoints.delete()
-          transformMatrix.delete()
-
-        } catch (error) {
-          console.error('Error in perspective correction:', error)
-          resolve(imageSrc) // Fallback to original image
-        }
-      }
-      img.src = imageSrc
-    })
+  // Find the corner closest to top-left (minimum x + y)
+  let topLeftIndex = 0
+  let minSum = cornersWithAngles[0].point.x + cornersWithAngles[0].point.y
+  
+  for (let i = 1; i < cornersWithAngles.length; i++) {
+    const sum = cornersWithAngles[i].point.x + cornersWithAngles[i].point.y
+    if (sum < minSum) {
+      minSum = sum
+      topLeftIndex = i
+    }
   }
 
-  const handleCapture = useCallback(async () => {
-    if (!webcamRef.current) return
-    
-    setIsCapturing(true)
-    try {
-      const imageSrc = webcamRef.current.getScreenshot({ width: 1920, height: 1080 })
-      if (imageSrc) {
-        let finalImageSrc = imageSrc
-        let finalBlob: Blob
+  // Reorder starting from top-left, going clockwise
+  const orderedCorners = []
+  for (let i = 0; i < 4; i++) {
+    orderedCorners.push(cornersWithAngles[(topLeftIndex + i) % 4].point)
+  }
 
-        // If we have a detected shape, crop and correct perspective
-        if (bestShape && canvasRef.current) {
-          console.log('Applying perspective correction and cropping...')
-          finalImageSrc = await cropAndCorrectPerspective(imageSrc, bestShape.corners, canvasRef.current)
+  return orderedCorners
+}
+const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeight: number): { width: number, height: number } => {
+  // Calculate actual edge lengths
+  const topEdge = distance(corners[0], corners[1])
+  const rightEdge = distance(corners[1], corners[2]) 
+  const bottomEdge = distance(corners[2], corners[3])
+  const leftEdge = distance(corners[3], corners[0])
+
+  // Use average of opposite edges for more accuracy
+  const avgWidth = (topEdge + bottomEdge) / 2
+  const avgHeight = (rightEdge + leftEdge) / 2
+
+  // Calculate scaling factor to maintain high resolution
+  // Aim for at least 1000px on the shorter side, but don't exceed original image dimensions
+  const minDimension = Math.min(avgWidth, avgHeight)
+  const targetMinSize = 1200 // Increased target size for better quality
+  
+  let scaleFactor = 1
+  if (minDimension < targetMinSize) {
+    scaleFactor = targetMinSize / minDimension
+  }
+  
+  // Apply scale factor but don't exceed original image size
+  let outputWidth = Math.round(avgWidth * scaleFactor)
+  let outputHeight = Math.round(avgHeight * scaleFactor)
+  
+  // Ensure we don't exceed original image dimensions
+  if (outputWidth > maxWidth || outputHeight > maxHeight) {
+    const maxScale = Math.min(maxWidth / avgWidth, maxHeight / avgHeight)
+    outputWidth = Math.round(avgWidth * maxScale)
+    outputHeight = Math.round(avgHeight * maxScale)
+  }
+
+  // Ensure minimum reasonable size
+  outputWidth = Math.max(outputWidth, 800)
+  outputHeight = Math.max(outputHeight, 600)
+
+  return { width: outputWidth, height: outputHeight }
+}
+  // Perspective correction and cropping function
+ const cropAndCorrectPerspective = (imageSrc: string, corners: Point[], canvas: HTMLCanvasElement): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        if (!window.cv) {
+          console.error('OpenCV not loaded')
+          resolve(imageSrc)
+          return
         }
 
-        // Convert the final image to blob
-        const response = await fetch(finalImageSrc)
-        finalBlob = await response.blob()
+        // Create canvas for the full image
+        const fullCanvas = document.createElement('canvas')
+        const fullCtx = fullCanvas.getContext('2d')!
+        fullCanvas.width = img.width
+        fullCanvas.height = img.height
+        fullCtx.drawImage(img, 0, 0)
+
+        // Scale corners to match the full resolution image
+        const scaleX = img.width / canvas.width
+        const scaleY = img.height / canvas.height
         
-        const image = new Image()
-        image.onload = () => {
-          onImageCapture({
-            src: finalImageSrc,
-            blob: finalBlob,
-            width: image.width,
-            height: image.height
-          })
-        }
-        image.src = finalImageSrc
+        const scaledCorners = corners.map(corner => ({
+          x: corner.x * scaleX,
+          y: corner.y * scaleY
+        }))
+
+        // Create OpenCV matrices
+        const src = window.cv.imread(fullCanvas)
+        const dst = new window.cv.Mat()
+
+        // IMPROVED: Better corner sorting that preserves document orientation
+        const properlyOrderedCorners = orderCornersForDocument(scaledCorners)
+
+        // IMPROVED: Calculate proper output dimensions maintaining aspect ratio
+        const { width: outputWidth, height: outputHeight } = calculateOptimalOutputSize(properlyOrderedCorners, img.width, img.height)
+
+        // Define source points (the detected corners in proper order)
+        const srcPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
+          properlyOrderedCorners[0].x, properlyOrderedCorners[0].y, // Top-left
+          properlyOrderedCorners[1].x, properlyOrderedCorners[1].y, // Top-right  
+          properlyOrderedCorners[2].x, properlyOrderedCorners[2].y, // Bottom-right
+          properlyOrderedCorners[3].x, properlyOrderedCorners[3].y  // Bottom-left
+        ])
+
+        // Define destination points (rectangle corners)
+        const dstPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
+          0, 0,                    // Top-left
+          outputWidth, 0,          // Top-right
+          outputWidth, outputHeight, // Bottom-right
+          0, outputHeight          // Bottom-left
+        ])
+
+        // Calculate perspective transformation matrix
+        const transformMatrix = window.cv.getPerspectiveTransform(srcPoints, dstPoints)
+
+        // Apply perspective transformation with high-quality interpolation
+        window.cv.warpPerspective(
+          src, 
+          dst, 
+          transformMatrix, 
+          new window.cv.Size(outputWidth, outputHeight),
+          window.cv.INTER_CUBIC, // Use cubic interpolation for better quality
+          window.cv.BORDER_CONSTANT,
+          new window.cv.Scalar(255, 255, 255, 255) // White background
+        )
+
+        // Create output canvas with proper dimensions
+        const outputCanvas = document.createElement('canvas')
+        outputCanvas.width = outputWidth
+        outputCanvas.height = outputHeight
+        window.cv.imshow(outputCanvas, dst)
+
+        // Convert to blob with high quality
+        outputCanvas.toBlob((blob) => {
+          if (blob) {
+            const reader = new FileReader()
+            reader.onload = (e) => {
+              resolve(e.target?.result as string)
+            }
+            reader.readAsDataURL(blob)
+          } else {
+            resolve(imageSrc)
+          }
+        }, 'image/jpeg', 0.98) // Increased quality to 98%
+
+        // Cleanup OpenCV matrices
+        src.delete()
+        dst.delete()
+        srcPoints.delete()
+        dstPoints.delete()
+        transformMatrix.delete()
+
+      } catch (error) {
+        console.error('Error in perspective correction:', error)
+        resolve(imageSrc)
       }
-    } catch (error) {
-      console.error('Error capturing image:', error)
-    } finally {
-      setIsCapturing(false)
     }
-  }, [onImageCapture, bestShape])
+    img.src = imageSrc
+  })
+}
+ const handleCapture = useCallback(async () => {
+  if (!webcamRef.current) return
+  
+  setIsCapturing(true)
+  try {
+    // Capture at maximum available resolution
+    const imageSrc = webcamRef.current.getScreenshot({ 
+      width: 1920, 
+      height: 1080,
+     
+    })
+    
+    if (imageSrc) {
+      let finalImageSrc = imageSrc
+      let finalBlob: Blob
+
+      // If we have a detected shape, crop and correct perspective
+      if (bestShape && canvasRef.current) {
+        console.log('Applying perspective correction and cropping...')
+        finalImageSrc = await cropAndCorrectPerspective(imageSrc, bestShape.corners, canvasRef.current)
+      }
+
+      // Convert the final image to blob with high quality
+      const response = await fetch(finalImageSrc)
+      finalBlob = await response.blob()
+      
+      const image = new Image()
+      image.onload = () => {
+        console.log('Final cropped image dimensions:', image.width, 'x', image.height)
+        onImageCapture({
+          src: finalImageSrc,
+          blob: finalBlob,
+          width: image.width,
+          height: image.height
+        })
+      }
+      image.src = finalImageSrc
+    }
+  } catch (error) {
+    console.error('Error capturing image:', error)
+  } finally {
+    setIsCapturing(false)
+  }
+}, [onImageCapture, bestShape])
+
 
   const handleFileCapture = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -908,7 +980,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
               className="w-full h-full object-cover"
               onUserMediaError={onUserMediaError}
               screenshotFormat="image/jpeg"
-              screenshotQuality={0.95}
+              screenshotQuality={0.98}
             />
             <canvas ref={canvasRef} className="hidden" />
             <canvas
