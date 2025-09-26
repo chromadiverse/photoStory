@@ -404,72 +404,75 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
           
           {/* Corner handles */}
           <div 
-            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-nw-resize"
-            style={{ top: '-8px', left: '-8px' }}
+            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-nw-resize"
+            style={{ top: '-10px', left: '-10px' }}
             onMouseDown={(e) => handleDragStart(e, 'nw')}
             onTouchStart={(e) => handleDragStart(e, 'nw')}
           />
           <div 
-            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-ne-resize"
-            style={{ top: '-8px', right: '-8px' }}
+            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-ne-resize"
+            style={{ top: '-10px', right: '-10px' }}
             onMouseDown={(e) => handleDragStart(e, 'ne')}
             onTouchStart={(e) => handleDragStart(e, 'ne')}
           />
           <div 
-            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-sw-resize"
-            style={{ bottom: '-8px', left: '-8px' }}
+            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-sw-resize"
+            style={{ bottom: '-10px', left: '-10px' }}
             onMouseDown={(e) => handleDragStart(e, 'sw')}
             onTouchStart={(e) => handleDragStart(e, 'sw')}
           />
           <div 
-            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-se-resize"
-            style={{ bottom: '-8px', right: '-8px' }}
+            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-se-resize"
+            style={{ bottom: '-10px', right: '-10px' }}
             onMouseDown={(e) => handleDragStart(e, 'se')}
             onTouchStart={(e) => handleDragStart(e, 'se')}
           />
           
           {/* Edge handles */}
           <div 
-            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-n-resize"
-            style={{ top: '-8px', left: '50%', transform: 'translateX(-50%)' }}
+            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-n-resize"
+            style={{ top: '-10px', left: '50%', transform: 'translateX(-50%)' }}
             onMouseDown={(e) => handleDragStart(e, 'n')}
             onTouchStart={(e) => handleDragStart(e, 'n')}
           />
           <div 
-            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-s-resize"
-            style={{ bottom: '-8px', left: '50%', transform: 'translateX(-50%)' }}
+            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-s-resize"
+            style={{ bottom: '-10px', left: '50%', transform: 'translateX(-50%)' }}
             onMouseDown={(e) => handleDragStart(e, 's')}
             onTouchStart={(e) => handleDragStart(e, 's')}
           />
           <div 
-            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-w-resize"
-            style={{ top: '50%', left: '-8px', transform: 'translateY(-50%)' }}
+            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-w-resize"
+            style={{ top: '50%', left: '-10px', transform: 'translateY(-50%)' }}
             onMouseDown={(e) => handleDragStart(e, 'w')}
             onTouchStart={(e) => handleDragStart(e, 'w')}
           />
           <div 
-            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-e-resize"
-            style={{ top: '50%', right: '-8px', transform: 'translateY(-50%)' }}
+            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-e-resize"
+            style={{ top: '50%', right: '-10px', transform: 'translateY(-50%)' }}
             onMouseDown={(e) => handleDragStart(e, 'e')}
             onTouchStart={(e) => handleDragStart(e, 'e')}
           />
         </div>
-        
-        {/* Zoom controls */}
-        <div className="absolute bottom-4 right-4 flex flex-col space-y-2">
-          <button
-            onClick={zoomIn}
-            className="w-12 h-12 bg-black bg-opacity-70 hover:bg-opacity-90 text-white rounded-full flex items-center justify-center transition-all"
-            title="Zoom In"
-          >
-            <ZoomIn size={20} />
-          </button>
+      </div>
+
+      {/* Controls */}
+      <div className="bg-gray-900 p-4 space-y-4 max-h-64 overflow-y-auto">
+        {/* Zoom Controls */}
+        <div className="flex justify-center space-x-4">
           <button
             onClick={zoomOut}
             className="w-12 h-12 bg-black bg-opacity-70 hover:bg-opacity-90 text-white rounded-full flex items-center justify-center transition-all"
             title="Zoom Out"
           >
             <ZoomOut size={20} />
+          </button>
+          <button
+            onClick={zoomIn}
+            className="w-12 h-12 bg-black bg-opacity-70 hover:bg-opacity-90 text-white rounded-full flex items-center justify-center transition-all"
+            title="Zoom In"
+          >
+            <ZoomIn size={20} />
           </button>
           <button
             onClick={fitToScreen}
@@ -479,10 +482,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
             <FitScreen size={18} />
           </button>
         </div>
-      </div>
 
-      {/* Controls */}
-      <div className="bg-gray-900 p-4 space-y-4 max-h-64 overflow-y-auto">
         {/* Aspect Ratios */}
         <div className="flex justify-center space-x-3 flex-wrap gap-2">
           {aspectRatios.map((ratio) => (
