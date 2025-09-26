@@ -5,6 +5,7 @@ import CameraView from './components/camera-view'
 import Cropper from './components/cropper' 
 import FilterPanel from './components/filter-panel' 
 import Preview from './components/preview' 
+import WelcomeModal from './components/welcome-modal'  // ADD THIS IMPORT
 import { Camera, Edit3, Sliders, Eye } from 'lucide-react'
 
 type ViewType = 'camera' | 'crop' | 'filter' | 'preview'
@@ -35,6 +36,7 @@ export default function Home() {
   const [currentView, setCurrentView] = useState<ViewType>('camera')
   const [capturedImage, setCapturedImage] = useState<CapturedImage | null>(null)
   const [croppedImageData, setCroppedImageData] = useState<CroppedImageData | null>(null)
+  const [showWelcomeModal, setShowWelcomeModal] = useState(true)  // ADD THIS STATE
   const [filterSettings, setFilterSettings] = useState<FilterSettings>({
     brightness: 100,
     contrast: 100,
@@ -68,6 +70,11 @@ export default function Home() {
       grayscale: 0
     })
     setCurrentView('camera')
+  }
+
+  // ADD THIS FUNCTION
+  const handleCloseModal = () => {
+    setShowWelcomeModal(false)
   }
 
 const renderNavigation = () => (
@@ -117,6 +124,12 @@ const renderNavigation = () => (
 
 return (
   <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    {/* ADD THE WELCOME MODAL HERE */}
+    <WelcomeModal 
+      isVisible={showWelcomeModal} 
+      onClose={handleCloseModal}
+    />
+    
     {renderNavigation()}
     
     <div className="h-[calc(100vh-80px)]">
