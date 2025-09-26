@@ -369,17 +369,39 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
           }}
         />
         
-        {/* Crop overlay */}
+        {/* Grid overlay */}
         <div 
-          className="absolute border-2 border-blue-500 bg-blue-500 bg-opacity-20"
+          className="absolute border-2 border-white"
           style={{
             left: cropLeft,
             top: cropTop,
             width: cropWidth,
             height: cropHeight,
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            background: 'transparent',
           }}
         >
+          {/* Grid lines */}
+          <div className="absolute inset-0">
+            {/* Vertical lines */}
+            {[...Array(3)].map((_, i) => (
+              <div 
+                key={`v-${i}`} 
+                className="absolute top-0 bottom-0 border-l border-white border-opacity-50"
+                style={{ left: `${(i + 1) * 25}%` }}
+              />
+            ))}
+            
+            {/* Horizontal lines */}
+            {[...Array(3)].map((_, i) => (
+              <div 
+                key={`h-${i}`} 
+                className="absolute left-0 right-0 border-t border-white border-opacity-50"
+                style={{ top: `${(i + 1) * 25}%` }}
+              />
+            ))}
+          </div>
+          
           {/* Corner handles */}
           <div 
             className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-nw-resize"
