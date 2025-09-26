@@ -1,521 +1,330 @@
 'use client'
 
-import { useState, useCallback, useEffect, useRef } from 'react'
-import Crop, { Point, Area } from 'react-easy-crop'
-import { RotateCcw, Square, Maximize2, ArrowLeft, Check, ZoomIn, ZoomOut, MonitorCog as FitScreen, RotateCcwIcon } from 'lucide-react'
-import { CapturedImage, CroppedImageData } from '../page'
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { 
+  RotateCcw, 
+  Square, 
+  Maximize2, 
+  ArrowLeft, 
+  Check, 
+  ZoomIn, 
+  ZoomOut, 
+  MonitorCog as FitScreen 
+} from 'lucide-react';
+import { CapturedImage, CroppedImageData } from '../page';
 
 interface CropperProps {
-  image: CapturedImage
-  onCropComplete: (cropData: CroppedImageData) => void
-  onBack: () => void
+  image: CapturedImage;
+  onCropComplete: (cropData: CroppedImageData) => void;
+  onBack: () => void;
 }
 
-interface DetectedCorners {
+interface Point {
   x: number;
   y: number;
 }
 
+interface CropArea {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface DragState {
+  isDragging: boolean;
+  dragType: 'none' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e' | 'move';
+  start: Point;
+  initialCrop: CropArea;
+}
+
 const aspectRatios = [
   { label: 'Free', value: null },
-  { label: '1', value: 1 },
-  { label: '4/3', value: 4/3 },
-  { label: '3/2', value: 3/2 },
-  { label: '16/9', value: 16/9 },
-]
+  { label: 'Square', value: 1 },
+  { label: 'Document', value: 4/3 },
+  { label: 'Photo', value: 3/2 },
+  { label: 'Wide', value: 16/9 },
+];
 
 const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
-  const [crop, setCrop] = useState<Point>({ x: 0, y: 0 })
-  const [rotation, setRotation] = useState(0)
-  const [zoom, setZoom] = useState(1)
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null)
-  const [aspect, setAspect] = useState<number | null>(null)
-  const [imageLoaded, setImageLoaded] = useState(false)
-  const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 })
-  const [minZoom, setMinZoom] = useState(0.1)
-  const [manualCropArea, setManualCropArea] = useState<Area | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragType, setDragType] = useState<'none' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e' | 'move'>('none')
-  const [startDrag, setStartDrag] = useState({ x: 0, y: 0, area: { x: 0, y: 0, width: 0, height: 0 } })
-  const cropperContainerRef = useRef<HTMLDivElement>(null)
+  const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
+  const [cropArea, setCropArea] = useState<CropArea>({ x: 0, y: 0, width: 0, height: 0 });
+  const [rotation, setRotation] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [aspect, setAspect] = useState<number | null>(null);
+  const [dragState, setDragState] = useState<DragState>({ 
+    isDragging: false, 
+    dragType: 'none', 
+    start: { x: 0, y: 0 }, 
+    initialCrop: { x: 0, y: 0, width: 0, height: 0 } 
+  });
+  const [imageLoaded, setImageLoaded] = useState(false);
+  
+  const containerRef = useRef<HTMLDivElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
 
-  // Calculate optimal zoom to fit entire image
-  const calculateFitZoom = useCallback((containerWidth: number, containerHeight: number, imageWidth: number, imageHeight: number) => {
-    const scaleX = containerWidth / imageWidth
-    const scaleY = containerHeight / imageHeight
-    return Math.min(scaleX, scaleY) * 0.8 // 80% to leave some padding
-  }, [])
-
-  // Load image and initialize crop based on detected edges
+  // Initialize image dimensions and crop area
   useEffect(() => {
-    const img = new Image()
+    const img = new Image();
     img.onload = () => {
-      setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight })
-      setImageLoaded(true)
+      const { width, height } = img;
+      setImageDimensions({ width, height });
+      setImageLoaded(true);
       
-      // Calculate dynamic minimum zoom based on container size
-      if (cropperContainerRef.current) {
-        const containerRect = cropperContainerRef.current.getBoundingClientRect()
-        const fitZoom = calculateFitZoom(
-          containerRect.width, 
-          containerRect.height, 
-          img.naturalWidth, 
-          img.naturalHeight
-        )
-        
-        // Set minimum zoom to allow seeing the entire image
-        const calculatedMinZoom = Math.max(0.05, fitZoom)
-        setMinZoom(calculatedMinZoom)
-        
-        // Initialize with a reasonable zoom that shows more of the image
-        if (image.detectedCorners && image.detectedCorners.length === 4) {
-          const corners = image.detectedCorners
-          
-          // Find bounding box of detected corners
-          const minX = Math.min(...corners.map(c => c.x))
-          const maxX = Math.max(...corners.map(c => c.x))
-          const minY = Math.min(...corners.map(c => c.y))
-          const maxY = Math.max(...corners.map(c => c.y))
-          
-          // Convert detection coordinates to image coordinates
-          const scaleX = img.naturalWidth / (image.width || img.naturalWidth)
-          const scaleY = img.naturalHeight / (image.height || img.naturalHeight)
-          
-          const scaledMinX = minX * scaleX
-          const scaledMinY = minY * scaleY
-          const scaledMaxX = maxX * scaleX
-          const scaledMaxY = maxY * scaleY
-          
-          // Calculate crop parameters as percentages
-          const cropX = (scaledMinX / img.naturalWidth) * 100
-          const cropY = (scaledMinY / img.naturalHeight) * 100
-          const cropWidth = ((scaledMaxX - scaledMinX) / img.naturalWidth) * 100
-          const cropHeight = ((scaledMaxY - scaledMinY) / img.naturalHeight) * 100
-          
-          // Set initial crop to detected area with small padding
-          const padding = 2 // 2% padding
-          setCrop({ 
-            x: Math.max(0, cropX - padding), 
-            y: Math.max(0, cropY - padding)
-          })
-          
-          // FIXED: Use more conservative zoom that allows user to see context
-          const detectedAreaZoom = Math.max(calculatedMinZoom * 1.2, Math.min(1.5, 60 / Math.min(cropWidth, cropHeight)))
-          setZoom(detectedAreaZoom)
-          
-          console.log('Initialized crop with detected corners:', {
-            originalCorners: corners,
-            cropArea: { x: cropX, y: cropY, width: cropWidth, height: cropHeight },
-            initialZoom: detectedAreaZoom,
-            minZoom: calculatedMinZoom
-          })
-        } else {
-          // Fallback: Start with fit-to-screen zoom
-          setCrop({ x: 0, y: 0 })
-          setZoom(Math.max(calculatedMinZoom * 1.1, 0.3))
-        }
+      // Set initial crop area to full image
+      setCropArea({
+        x: 0,
+        y: 0,
+        width: width,
+        height: height
+      });
+    };
+    img.src = image.src;
+  }, [image.src]);
+
+  // Handle drag start
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent, dragType: DragState['dragType']) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    setDragState({
+      isDragging: true,
+      dragType,
+      start: { x: clientX, y: clientY },
+      initialCrop: { ...cropArea }
+    });
+  };
+
+  // Handle drag movement
+  const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
+    if (!dragState.isDragging || !containerRef.current) return;
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    const deltaX = clientX - dragState.start.x;
+    const deltaY = clientY - dragState.start.y;
+    
+    let newCrop = { ...dragState.initialCrop };
+    
+    switch (dragState.dragType) {
+      case 'nw':
+        newCrop.x += deltaX;
+        newCrop.y += deltaY;
+        newCrop.width -= deltaX;
+        newCrop.height -= deltaY;
+        break;
+      case 'ne':
+        newCrop.y += deltaY;
+        newCrop.width += deltaX;
+        newCrop.height -= deltaY;
+        break;
+      case 'sw':
+        newCrop.x += deltaX;
+        newCrop.width -= deltaX;
+        newCrop.height += deltaY;
+        break;
+      case 'se':
+        newCrop.width += deltaX;
+        newCrop.height += deltaY;
+        break;
+      case 'n':
+        newCrop.y += deltaY;
+        newCrop.height -= deltaY;
+        break;
+      case 's':
+        newCrop.height += deltaY;
+        break;
+      case 'w':
+        newCrop.x += deltaX;
+        newCrop.width -= deltaX;
+        break;
+      case 'e':
+        newCrop.width += deltaX;
+        break;
+      case 'move':
+        newCrop.x += deltaX;
+        newCrop.y += deltaY;
+        break;
+    }
+    
+    // Apply aspect ratio if set
+    if (aspect && dragState.dragType !== 'move') {
+      const aspectRatio = aspect;
+      if (['n', 's', 'move'].includes(dragState.dragType)) {
+        newCrop.width = newCrop.height * aspectRatio;
+      } else {
+        newCrop.height = newCrop.width / aspectRatio;
       }
     }
-    img.src = image.src
-  }, [image.src, image.detectedCorners, image.width, image.height, calculateFitZoom])
-
-  const onCropCompleteHandler = useCallback((croppedArea: Area, croppedAreaPixels: Area) => {
-    setCroppedAreaPixels(croppedAreaPixels)
-    console.log('Crop area updated:', croppedAreaPixels)
     
-    // Update manual crop area when react-easy-crop updates
-    if (!isDragging) {
-      setManualCropArea(croppedAreaPixels)
-    }
-  }, [isDragging])
-
-  const createImage = (url: string): Promise<HTMLImageElement> =>
-    new Promise((resolve, reject) => {
-      const image = new Image()
-      image.addEventListener('load', () => resolve(image))
-      image.addEventListener('error', error => reject(error))
-      image.src = url
-    })
-
-  // FIXED: Higher quality cropping with better canvas handling
-  const getCroppedImg = async (
-    imageSrc: string,
-    pixelCrop: Area,
-    rotation = 0
-  ): Promise<{ blob: Blob; url: string }> => {
-    const image = await createImage(imageSrc)
-    const canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-
-    if (!ctx) {
-      throw new Error('Could not get canvas context')
-    }
-
-    // Set canvas to exact crop dimensions for maximum quality
-    canvas.width = Math.round(pixelCrop.width)
-    canvas.height = Math.round(pixelCrop.height)
-
-    if (rotation === 0) {
-      // Direct crop - highest quality
-      ctx.imageSmoothingEnabled = true
-      ctx.imageSmoothingQuality = 'high'
-      
-      ctx.drawImage(
-        image,
-        Math.round(pixelCrop.x), 
-        Math.round(pixelCrop.y), 
-        Math.round(pixelCrop.width), 
-        Math.round(pixelCrop.height),
-        0, 0, 
-        Math.round(pixelCrop.width), 
-        Math.round(pixelCrop.height)
-      )
-    } else {
-      // Handle rotation with quality preservation
-      const rotRad = (rotation * Math.PI) / 180
-      const { width: bBoxWidth, height: bBoxHeight } = rotateSize(image.width, image.height, rotation)
-
-      // Create temporary canvas for rotation
-      const tempCanvas = document.createElement('canvas')
-      const tempCtx = tempCanvas.getContext('2d')!
-      tempCanvas.width = bBoxWidth
-      tempCanvas.height = bBoxHeight
-
-      tempCtx.imageSmoothingEnabled = true
-      tempCtx.imageSmoothingQuality = 'high'
-      tempCtx.translate(bBoxWidth / 2, bBoxHeight / 2)
-      tempCtx.rotate(rotRad)
-      tempCtx.translate(-image.width / 2, -image.height / 2)
-      tempCtx.drawImage(image, 0, 0)
-      
-      // Now crop from rotated image
-      ctx.imageSmoothingEnabled = true
-      ctx.imageSmoothingQuality = 'high'
-      ctx.drawImage(
-        tempCanvas,
-        Math.round(pixelCrop.x), 
-        Math.round(pixelCrop.y), 
-        Math.round(pixelCrop.width), 
-        Math.round(pixelCrop.height),
-        0, 0, 
-        Math.round(pixelCrop.width), 
-        Math.round(pixelCrop.height)
-      )
-    }
-
-    return new Promise((resolve) => {
-      canvas.toBlob((blob) => {
-        if (blob) {
-          resolve({ blob, url: URL.createObjectURL(blob) })
-        }
-      }, 'image/jpeg', 0.98) // Maximum quality
-    })
-  }
-
-  const rotateSize = (width: number, height: number, rotation: number) => {
-    const rotRad = (rotation * Math.PI) / 180
-    return {
-      width: Math.abs(Math.cos(rotRad) * width) + Math.abs(Math.sin(rotRad) * height),
-      height: Math.abs(Math.sin(rotRad) * width) + Math.abs(Math.cos(rotRad) * height),
-    }
-  }
-
-  const handleCropSave = async () => {
-    if (!croppedAreaPixels) {
-      console.error('No crop area defined')
-      return
-    }
-
-    try {
-      console.log('Saving crop with high quality:', croppedAreaPixels)
-      const { blob, url } = await getCroppedImg(image.src, croppedAreaPixels, rotation)
-      onCropComplete({
-        croppedImage: url,
-        croppedBlob: blob,
-        rotation
-      })
-    } catch (error) {
-      console.error('Error cropping image:', error)
-    }
-  }
-
-  const resetCrop = () => {
-    setCrop({ x: 0, y: 0 })
-    setZoom(Math.max(minZoom * 1.1, 0.3))
-    setRotation(0)
-    setAspect(null)
-    setManualCropArea(null)
-  }
-
-  // FIXED: Better zoom controls with wider range
-  const zoomIn = () => {
-    setZoom(prev => Math.min(prev + 0.3, 8)) // Allow more zoom range
-  }
-
-  const zoomOut = () => {
-    setZoom(prev => Math.max(prev - 0.3, minZoom)) // Use dynamic minimum
-  }
-
-  // NEW: Fit to screen function
-  const fitToScreen = () => {
-    if (cropperContainerRef.current) {
-      const containerRect = cropperContainerRef.current.getBoundingClientRect()
-      const fitZoom = calculateFitZoom(
-        containerRect.width, 
-        containerRect.height, 
-        imageDimensions.width, 
-        imageDimensions.height
-      )
-      setZoom(Math.max(fitZoom, minZoom))
-      setCrop({ x: 0, y: 0 })
-    }
-  }
-
-  const handleRotationChange = (newRotation: number) => {
-    setRotation(newRotation)
-  }
-
-  // Smart crop to detected edges
-  const snapToDetectedEdges = () => {
-    if (image.detectedCorners && image.detectedCorners.length === 4) {
-      const corners = image.detectedCorners
-      const minX = Math.min(...corners.map(c => c.x))
-      const maxX = Math.max(...corners.map(c => c.x))
-      const minY = Math.min(...corners.map(c => c.y))
-      const maxY = Math.max(...corners.map(c => c.y))
-      
-      const scaleX = imageDimensions.width / (image.width || imageDimensions.width)
-      const scaleY = imageDimensions.height / (image.height || imageDimensions.height)
-      
-      const cropX = (minX * scaleX / imageDimensions.width) * 100
-      const cropY = (minY * scaleY / imageDimensions.height) * 100
-      
-      setCrop({ x: cropX, y: cropY })
-      // FIXED: More reasonable zoom for detected edges
-      setZoom(Math.max(1.5, minZoom * 3))
-    }
-  }
-
-  // Manual crop area adjustment handlers
-  const handleMouseDown = (e: React.MouseEvent, type: 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e' | 'move') => {
-    e.preventDefault()
-    setIsDragging(true)
-    setDragType(type)
+    // Boundary checks
+    newCrop.x = Math.max(0, Math.min(imageDimensions.width - newCrop.width, newCrop.x));
+    newCrop.y = Math.max(0, Math.min(imageDimensions.height - newCrop.height, newCrop.y));
+    newCrop.width = Math.max(20, Math.min(imageDimensions.width - newCrop.x, newCrop.width));
+    newCrop.height = Math.max(20, Math.min(imageDimensions.height - newCrop.y, newCrop.height));
     
-    // Get current crop area in pixels
-    const rect = e.currentTarget.getBoundingClientRect()
-    const containerWidth = rect.width
-    const containerHeight = rect.height
-    
-    // Calculate current crop area in pixels
-    const currentCropArea = manualCropArea || {
-      x: Math.round((crop.x / 100) * imageDimensions.width),
-      y: Math.round((crop.y / 100) * imageDimensions.height),
-      width: Math.round((aspect ? 100 : 100) * imageDimensions.width / zoom),
-      height: Math.round((aspect ? 100 / (aspect || 1) : 100) * imageDimensions.height / zoom)
-    }
-    
-    setStartDrag({
-      x: e.clientX,
-      y: e.clientY,
-      area: { ...currentCropArea }
-    })
-  }
+    setCropArea(newCrop);
+  }, [dragState, aspect, imageDimensions]);
 
-  const handleTouchStart = (e: React.TouchEvent, type: 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e' | 'move') => {
-    e.preventDefault()
-    setIsDragging(true)
-    setDragType(type)
-    
-    // Get current crop area in pixels
-    const rect = e.currentTarget.getBoundingClientRect()
-    const containerWidth = rect.width
-    const containerHeight = rect.height
-    
-    // Calculate current crop area in pixels
-    const currentCropArea = manualCropArea || {
-      x: Math.round((crop.x / 100) * imageDimensions.width),
-      y: Math.round((crop.y / 100) * imageDimensions.height),
-      width: Math.round((aspect ? 100 : 100) * imageDimensions.width / zoom),
-      height: Math.round((aspect ? 100 / (aspect || 1) : 100) * imageDimensions.height / zoom)
-    }
-    
-    setStartDrag({
-      x: e.touches[0].clientX,
-      y: e.touches[0].clientY,
-      area: { ...currentCropArea }
-    })
-  }
+  // Handle drag end
+  const handleDragEnd = useCallback(() => {
+    setDragState(prev => ({ ...prev, isDragging: false }));
+  }, []);
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging || !cropperContainerRef.current) return
-    
-    const rect = cropperContainerRef.current.getBoundingClientRect()
-    const containerWidth = rect.width
-    const containerHeight = rect.height
-    
-    const deltaX = e.clientX - startDrag.x
-    const deltaY = e.clientY - startDrag.y
-    
-    // Calculate new crop area based on drag type
-    let newArea = { ...startDrag.area }
-    
-    switch (dragType) {
-      case 'nw':
-        newArea.x += deltaX
-        newArea.y += deltaY
-        newArea.width -= deltaX
-        newArea.height -= deltaY
-        break
-      case 'ne':
-        newArea.y += deltaY
-        newArea.width += deltaX
-        newArea.height -= deltaY
-        break
-      case 'sw':
-        newArea.x += deltaX
-        newArea.width -= deltaX
-        newArea.height += deltaY
-        break
-      case 'se':
-        newArea.width += deltaX
-        newArea.height += deltaY
-        break
-      case 'n':
-        newArea.y += deltaY
-        newArea.height -= deltaY
-        break
-      case 's':
-        newArea.height += deltaY
-        break
-      case 'w':
-        newArea.x += deltaX
-        newArea.width -= deltaX
-        break
-      case 'e':
-        newArea.width += deltaX
-        break
-      case 'move':
-        newArea.x += deltaX
-        newArea.y += deltaY
-        break
-    }
-    
-    // Ensure crop area stays within image bounds
-    newArea.x = Math.max(0, Math.min(imageDimensions.width - newArea.width, newArea.x))
-    newArea.y = Math.max(0, Math.min(imageDimensions.height - newArea.height, newArea.y))
-    newArea.width = Math.max(20, Math.min(imageDimensions.width - newArea.x, newArea.width))
-    newArea.height = Math.max(20, Math.min(imageDimensions.height - newArea.y, newArea.height))
-    
-    setManualCropArea(newArea)
-    
-    // Update react-easy-crop crop position
-    const newCropX = (newArea.x / imageDimensions.width) * 100
-    const newCropY = (newArea.y / imageDimensions.height) * 100
-    setCrop({ x: newCropX, y: newCropY })
-  }, [isDragging, startDrag, dragType, imageDimensions])
-
-  const handleTouchMove = useCallback((e: TouchEvent) => {
-    if (!isDragging || !cropperContainerRef.current) return
-    
-    const rect = cropperContainerRef.current.getBoundingClientRect()
-    const containerWidth = rect.width
-    const containerHeight = rect.height
-    
-    const deltaX = e.touches[0].clientX - startDrag.x
-    const deltaY = e.touches[0].clientY - startDrag.y
-    
-    // Calculate new crop area based on drag type
-    let newArea = { ...startDrag.area }
-    
-    switch (dragType) {
-      case 'nw':
-        newArea.x += deltaX
-        newArea.y += deltaY
-        newArea.width -= deltaX
-        newArea.height -= deltaY
-        break
-      case 'ne':
-        newArea.y += deltaY
-        newArea.width += deltaX
-        newArea.height -= deltaY
-        break
-      case 'sw':
-        newArea.x += deltaX
-        newArea.width -= deltaX
-        newArea.height += deltaY
-        break
-      case 'se':
-        newArea.width += deltaX
-        newArea.height += deltaY
-        break
-      case 'n':
-        newArea.y += deltaY
-        newArea.height -= deltaY
-        break
-      case 's':
-        newArea.height += deltaY
-        break
-      case 'w':
-        newArea.x += deltaX
-        newArea.width -= deltaX
-        break
-      case 'e':
-        newArea.width += deltaX
-        break
-      case 'move':
-        newArea.x += deltaX
-        newArea.y += deltaY
-        break
-    }
-    
-    // Ensure crop area stays within image bounds
-    newArea.x = Math.max(0, Math.min(imageDimensions.width - newArea.width, newArea.x))
-    newArea.y = Math.max(0, Math.min(imageDimensions.height - newArea.height, newArea.y))
-    newArea.width = Math.max(20, Math.min(imageDimensions.width - newArea.x, newArea.width))
-    newArea.height = Math.max(20, Math.min(imageDimensions.height - newArea.y, newArea.height))
-    
-    setManualCropArea(newArea)
-    
-    // Update react-easy-crop crop position
-    const newCropX = (newArea.x / imageDimensions.width) * 100
-    const newCropY = (newArea.y / imageDimensions.height) * 100
-    setCrop({ x: newCropX, y: newCropY })
-  }, [isDragging, startDrag, dragType, imageDimensions])
-
-  const handleMouseUp = useCallback(() => {
-    setIsDragging(false)
-    setDragType('none')
-  }, [])
-
-  const handleTouchEnd = useCallback(() => {
-    setIsDragging(false)
-    setDragType('none')
-  }, [])
-
-  // Add event listeners for drag interactions
+  // Add event listeners for drag operations
   useEffect(() => {
-    if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove)
-      window.addEventListener('mouseup', handleMouseUp)
-      window.addEventListener('touchmove', handleTouchMove, { passive: false })
-      window.addEventListener('touchend', handleTouchEnd)
+    if (dragState.isDragging) {
+      window.addEventListener('mousemove', handleDragMove);
+      window.addEventListener('touchmove', handleDragMove, { passive: false });
+      window.addEventListener('mouseup', handleDragEnd);
+      window.addEventListener('touchend', handleDragEnd);
       
       return () => {
-        window.removeEventListener('mousemove', handleMouseMove)
-        window.removeEventListener('mouseup', handleMouseUp)
-        window.removeEventListener('touchmove', handleTouchMove)
-        window.removeEventListener('touchend', handleTouchEnd)
-      }
+        window.removeEventListener('mousemove', handleDragMove);
+        window.removeEventListener('touchmove', handleDragMove);
+        window.removeEventListener('mouseup', handleDragEnd);
+        window.removeEventListener('touchend', handleDragEnd);
+      };
     }
-  }, [isDragging, handleMouseMove, handleMouseUp, handleTouchMove, handleTouchEnd])
+  }, [dragState.isDragging, handleDragMove, handleDragEnd]);
+
+  // Handle image save
+  const handleSave = async () => {
+    if (!imageRef.current) return;
+    
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    if (!ctx) return;
+    
+    // Calculate actual crop area considering rotation
+    const rotatedCrop = calculateRotatedCrop(cropArea, rotation, imageDimensions);
+    
+    canvas.width = rotatedCrop.width;
+    canvas.height = rotatedCrop.height;
+    
+    // Draw rotated image
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.drawImage(
+      imageRef.current,
+      -rotatedCrop.x,
+      -rotatedCrop.y,
+      imageDimensions.width,
+      imageDimensions.height
+    );
+    ctx.restore();
+    
+    // Crop to desired area
+    const croppedCanvas = document.createElement('canvas');
+    const croppedCtx = croppedCanvas.getContext('2d');
+    
+    if (!croppedCtx) return;
+    
+    croppedCanvas.width = cropArea.width;
+    croppedCanvas.height = cropArea.height;
+    
+    croppedCtx.drawImage(
+      canvas,
+      rotatedCrop.x,
+      rotatedCrop.y,
+      cropArea.width,
+      cropArea.height,
+      0,
+      0,
+      cropArea.width,
+      cropArea.height
+    );
+    
+    croppedCanvas.toBlob((blob) => {
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        onCropComplete({
+          croppedImage: url,
+          croppedBlob: blob,
+          rotation
+        });
+      }
+    }, 'image/jpeg', 0.95);
+  };
+
+  // Calculate rotated crop area
+  const calculateRotatedCrop = (crop: CropArea, rotation: number, dims: { width: number, height: number }) => {
+    const rad = (rotation * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    
+    // Calculate rotated dimensions
+    const newWidth = Math.abs(dims.width * cos) + Math.abs(dims.height * sin);
+    const newHeight = Math.abs(dims.width * sin) + Math.abs(dims.height * cos);
+    
+    // Calculate new crop position
+    const newX = crop.x * (newWidth / dims.width);
+    const newY = crop.y * (newHeight / dims.height);
+    const newCropWidth = crop.width * (newWidth / dims.width);
+    const newCropHeight = crop.height * (newHeight / dims.height);
+    
+    return {
+      x: newX,
+      y: newY,
+      width: newCropWidth,
+      height: newCropHeight
+    };
+  };
+
+  // Reset crop to full image
+  const resetCrop = () => {
+    setCropArea({
+      x: 0,
+      y: 0,
+      width: imageDimensions.width,
+      height: imageDimensions.height
+    });
+  };
+
+  // Apply auto-straighten (simplified version)
+  const autoStraighten = () => {
+    // In a real implementation, this would use image analysis
+    // For now, we'll just reset rotation
+    setRotation(0);
+  };
+
+  // Zoom controls
+  const zoomIn = () => setZoom(prev => Math.min(prev + 0.1, 3));
+  const zoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.1));
+  const fitToScreen = () => setZoom(1);
+
+  // Calculate crop area position and size in percentage for the UI
+  const containerRect = containerRef.current?.getBoundingClientRect();
+  const containerWidth = containerRect?.width || 400;
+  const containerHeight = containerRect?.height || 400;
+  
+  const scaleX = containerWidth / imageDimensions.width;
+  const scaleY = containerHeight / imageDimensions.height;
+  const scale = Math.min(scaleX, scaleY) * zoom;
+  
+  const displayWidth = imageDimensions.width * scale;
+  const displayHeight = imageDimensions.height * scale;
+  
+  const offsetX = (containerWidth - displayWidth) / 2;
+  const offsetY = (containerHeight - displayHeight) / 2;
+  
+  const cropLeft = offsetX + cropArea.x * scale;
+  const cropTop = offsetY + cropArea.y * scale;
+  const cropWidth = cropArea.width * scale;
+  const cropHeight = cropArea.height * scale;
 
   if (!imageLoaded) {
     return (
       <div className="h-full flex items-center justify-center bg-black">
-        <div className="text-white text-lg">Loading high-quality image...</div>
+        <div className="text-white text-lg">Loading image...</div>
       </div>
-    )
+    );
   }
 
   return (
@@ -529,11 +338,9 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
           <ArrowLeft size={20} />
           <span className="text-lg">Back</span>
         </button>
-        <h2 className="text-white text-lg font-medium">
-          Adjust Crop {image.detectedCorners ? '(Auto-detected)' : ''}
-        </h2>
+        <h2 className="text-white text-lg font-medium">Adjust Crop</h2>
         <button 
-          onClick={handleCropSave} 
+          onClick={handleSave} 
           className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors"
         >
           <Check size={20} />
@@ -542,110 +349,91 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       </div>
 
       {/* Crop Area */}
-      <div ref={cropperContainerRef} className="relative flex-1 min-h-0">
-        <Crop
-          image={image.src}
-          crop={crop}
-          rotation={rotation}
-          zoom={zoom}
-          aspect={aspect || undefined}
-          onCropChange={setCrop}
-          onRotationChange={setRotation}
-          onCropComplete={onCropCompleteHandler}
-          onZoomChange={setZoom}
-          showGrid={true}
-          restrictPosition={false}
-          minZoom={minZoom} // Dynamic minimum zoom
-          maxZoom={8} // Increased maximum zoom
+      <div 
+        ref={containerRef}
+        className="relative flex-1 min-h-0 bg-gray-800 overflow-hidden"
+      >
+        {/* Background image */}
+        <img
+          ref={imageRef}
+          src={image.src}
+          alt="Crop source"
+          className="absolute"
           style={{
-            containerStyle: {
-              width: '100%',
-              height: '100%',
-              backgroundColor: '#000',
-              position: 'relative'
-            },
-            cropAreaStyle: {
-              border: image.detectedCorners ? '4px solid #10B981' : '3px solid #3B82F6',
-              borderRadius: '8px',
-              boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.5)',
-              position: 'relative',
-            },
-            mediaStyle: {
-              maxHeight: '100%',
-              maxWidth: '100%',
-            }
+            width: displayWidth,
+            height: displayHeight,
+            left: offsetX,
+            top: offsetY,
+            transform: `rotate(${rotation}deg)`,
+            transformOrigin: 'center center',
           }}
-          cropShape="rect"
-          objectFit="contain"
         />
         
-        {/* Manual crop handles overlay */}
-        {!aspect && manualCropArea && (
+        {/* Crop overlay */}
+        <div 
+          className="absolute border-2 border-blue-500 bg-blue-500 bg-opacity-20"
+          style={{
+            left: cropLeft,
+            top: cropTop,
+            width: cropWidth,
+            height: cropHeight,
+            pointerEvents: 'none'
+          }}
+        >
+          {/* Corner handles */}
           <div 
-            className="absolute border-2 border-blue-500 bg-blue-500 bg-opacity-10"
-            style={{
-              left: `${(manualCropArea.x / imageDimensions.width) * 100}%`,
-              top: `${(manualCropArea.y / imageDimensions.height) * 100}%`,
-              width: `${(manualCropArea.width / imageDimensions.width) * 100}%`,
-              height: `${(manualCropArea.height / imageDimensions.height) * 100}%`,
-              pointerEvents: 'all',
-            }}
-          >
-            {/* Corner handles */}
-            <div 
-              className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-nw-resize"
-              style={{ top: '-8px', left: '-8px' }}
-              onMouseDown={(e) => handleMouseDown(e, 'nw')}
-              onTouchStart={(e) => handleTouchStart(e, 'nw')}
-            />
-            <div 
-              className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-ne-resize"
-              style={{ top: '-8px', right: '-8px' }}
-              onMouseDown={(e) => handleMouseDown(e, 'ne')}
-              onTouchStart={(e) => handleTouchStart(e, 'ne')}
-            />
-            <div 
-              className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-sw-resize"
-              style={{ bottom: '-8px', left: '-8px' }}
-              onMouseDown={(e) => handleMouseDown(e, 'sw')}
-              onTouchStart={(e) => handleTouchStart(e, 'sw')}
-            />
-            <div 
-              className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-se-resize"
-              style={{ bottom: '-8px', right: '-8px' }}
-              onMouseDown={(e) => handleMouseDown(e, 'se')}
-              onTouchStart={(e) => handleTouchStart(e, 'se')}
-            />
-            
-            {/* Edge handles */}
-            <div 
-              className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-n-resize"
-              style={{ top: '-8px', left: '50%', transform: 'translateX(-50%)' }}
-              onMouseDown={(e) => handleMouseDown(e, 'n')}
-              onTouchStart={(e) => handleTouchStart(e, 'n')}
-            />
-            <div 
-              className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-s-resize"
-              style={{ bottom: '-8px', left: '50%', transform: 'translateX(-50%)' }}
-              onMouseDown={(e) => handleMouseDown(e, 's')}
-              onTouchStart={(e) => handleTouchStart(e, 's')}
-            />
-            <div 
-              className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-w-resize"
-              style={{ top: '50%', left: '-8px', transform: 'translateY(-50%)' }}
-              onMouseDown={(e) => handleMouseDown(e, 'w')}
-              onTouchStart={(e) => handleTouchStart(e, 'w')}
-            />
-            <div 
-              className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-e-resize"
-              style={{ top: '50%', right: '-8px', transform: 'translateY(-50%)' }}
-              onMouseDown={(e) => handleMouseDown(e, 'e')}
-              onTouchStart={(e) => handleTouchStart(e, 'e')}
-            />
-          </div>
-        )}
+            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-nw-resize"
+            style={{ top: '-8px', left: '-8px' }}
+            onMouseDown={(e) => handleDragStart(e, 'nw')}
+            onTouchStart={(e) => handleDragStart(e, 'nw')}
+          />
+          <div 
+            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-ne-resize"
+            style={{ top: '-8px', right: '-8px' }}
+            onMouseDown={(e) => handleDragStart(e, 'ne')}
+            onTouchStart={(e) => handleDragStart(e, 'ne')}
+          />
+          <div 
+            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-sw-resize"
+            style={{ bottom: '-8px', left: '-8px' }}
+            onMouseDown={(e) => handleDragStart(e, 'sw')}
+            onTouchStart={(e) => handleDragStart(e, 'sw')}
+          />
+          <div 
+            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-se-resize"
+            style={{ bottom: '-8px', right: '-8px' }}
+            onMouseDown={(e) => handleDragStart(e, 'se')}
+            onTouchStart={(e) => handleDragStart(e, 'se')}
+          />
+          
+          {/* Edge handles */}
+          <div 
+            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-n-resize"
+            style={{ top: '-8px', left: '50%', transform: 'translateX(-50%)' }}
+            onMouseDown={(e) => handleDragStart(e, 'n')}
+            onTouchStart={(e) => handleDragStart(e, 'n')}
+          />
+          <div 
+            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-s-resize"
+            style={{ bottom: '-8px', left: '50%', transform: 'translateX(-50%)' }}
+            onMouseDown={(e) => handleDragStart(e, 's')}
+            onTouchStart={(e) => handleDragStart(e, 's')}
+          />
+          <div 
+            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-w-resize"
+            style={{ top: '50%', left: '-8px', transform: 'translateY(-50%)' }}
+            onMouseDown={(e) => handleDragStart(e, 'w')}
+            onTouchStart={(e) => handleDragStart(e, 'w')}
+          />
+          <div 
+            className="absolute w-4 h-4 bg-white border-2 border-blue-500 cursor-e-resize"
+            style={{ top: '50%', right: '-8px', transform: 'translateY(-50%)' }}
+            onMouseDown={(e) => handleDragStart(e, 'e')}
+            onTouchStart={(e) => handleDragStart(e, 'e')}
+          />
+        </div>
         
-        {/* Enhanced zoom controls */}
+        {/* Zoom controls */}
         <div className="absolute bottom-4 right-4 flex flex-col space-y-2">
           <button
             onClick={zoomIn}
@@ -661,41 +449,18 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
           >
             <ZoomOut size={20} />
           </button>
-          
-          {/* NEW: Fit to screen button */}
           <button
             onClick={fitToScreen}
             className="w-12 h-12 bg-blue-600 bg-opacity-80 hover:bg-opacity-100 text-white rounded-full flex items-center justify-center transition-all"
-            title="Fit entire image to screen"
+            title="Fit to Screen"
           >
             <FitScreen size={18} />
           </button>
-          
-          {/* Smart snap button for detected edges */}
-          {image.detectedCorners && (
-            <button
-              onClick={snapToDetectedEdges}
-              className="w-12 h-12 bg-green-600 bg-opacity-80 hover:bg-opacity-100 text-white rounded-full flex items-center justify-center transition-all"
-              title="Snap to detected edges"
-            >
-              <Square size={18} />
-            </button>
-          )}
-        </div>
-
-        {/* Image quality info */}
-        <div className="absolute top-4 left-4 bg-black bg-opacity-70 text-white px-3 py-2 rounded-lg text-sm">
-          <div>{imageDimensions.width} × {imageDimensions.height}</div>
-          {image.detectedCorners && (
-            <div className="text-green-400 text-xs">Auto-detected edges</div>
-          )}
-          <div className="text-blue-400 text-xs">Zoom: {zoom.toFixed(1)}x (min: {minZoom.toFixed(2)}x)</div>
         </div>
       </div>
 
-      {/* Enhanced Controls Panel */}
+      {/* Controls */}
       <div className="bg-gray-900 p-4 space-y-4 max-h-64 overflow-y-auto">
-        
         {/* Aspect Ratios */}
         <div className="flex justify-center space-x-3 flex-wrap gap-2">
           {aspectRatios.map((ratio) => (
@@ -713,26 +478,18 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
           ))}
         </div>
 
-        {/* Zoom Control - NEW */}
+        {/* Zoom Control */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium text-gray-300">
               Zoom: {zoom.toFixed(1)}x
             </label>
-            <button
-              onClick={fitToScreen}
-              className="flex items-center space-x-1 text-sm text-blue-400 hover:text-blue-300 transition-colors"
-            >
-              <FitScreen size={16} />
-              <span>Fit Screen</span>
-            </button>
           </div>
-          
           <div className="relative">
             <input
               type="range"
-              min={minZoom}
-              max="8"
+              min="0.1"
+              max="3"
               step="0.1"
               value={zoom}
               onChange={(e) => setZoom(Number(e.target.value))}
@@ -748,14 +505,13 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
               Rotation: {rotation.toFixed(0)}°
             </label>
             <button
-              onClick={() => setRotation(0)}
+              onClick={autoStraighten}
               className="flex items-center space-x-1 text-sm text-blue-400 hover:text-blue-300 transition-colors"
             >
               <RotateCcw size={16} />
-              <span>Reset</span>
+              <span>Auto-Straighten</span>
             </button>
           </div>
-          
           <div className="relative">
             <input
               type="range"
@@ -763,54 +519,25 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
               max="45"
               step="0.5"
               value={rotation}
-              onChange={(e) => handleRotationChange(Number(e.target.value))}
+              onChange={(e) => setRotation(Number(e.target.value))}
               className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer"
             />
           </div>
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-between text-sm text-gray-300">
-          <span>Min Zoom: {minZoom.toFixed(2)}x</span>
-          <div className="flex space-x-4">
-            <button
-              onClick={fitToScreen}
-              className="flex items-center space-x-1 text-blue-400 hover:text-blue-300 transition-colors"
-            >
-              <FitScreen size={16} />
-              <span>Fit Screen</span>
-            </button>
-            {image.detectedCorners && (
-              <button
-                onClick={snapToDetectedEdges}
-                className="flex items-center space-x-1 text-green-400 hover:text-green-300 transition-colors"
-              >
-                <Square size={16} />
-                <span>Snap to Edges</span>
-              </button>
-            )}
-            <button
-              onClick={resetCrop}
-              className="flex items-center space-x-1 text-blue-400 hover:text-blue-300 transition-colors"
-            >
-              <Maximize2 size={16} />
-              <span>Reset All</span>
-            </button>
-          </div>
+        <div className="flex justify-center space-x-4">
+          <button
+            onClick={resetCrop}
+            className="flex items-center space-x-1 text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            <Maximize2 size={16} />
+            <span>Reset Crop</span>
+          </button>
         </div>
-
-        {/* Quality Info */}
-        {croppedAreaPixels && (
-          <div className="text-center text-xs text-gray-400">
-            Output: {Math.round(croppedAreaPixels.width)} × {Math.round(croppedAreaPixels.height)} px
-            {image.detectedCorners && (
-              <span className="text-green-400 ml-2">• Auto-cropped to detected document</span>
-            )}
-          </div>
-        )}
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default Cropper
+export default Cropper;
