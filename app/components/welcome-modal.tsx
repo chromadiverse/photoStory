@@ -7,10 +7,24 @@ import {
   Palette, 
   Upload, 
   X, 
-  ChevronRight 
+  ChevronRight, 
+  LucideIcon
 } from 'lucide-react'
 
-const tips = [
+interface WelcomeModalProps{
+    isVisible: boolean
+    onClose:()=> void
+}
+interface TipItem {
+    icon: LucideIcon
+    title: string
+    description:string
+}
+interface WelcomeModalProps {
+    isVisible:boolean 
+    onClose:()=>void
+}
+const tips:TipItem[] = [
   {
     icon: Lightbulb,
     title: "Find Perfect Lighting",
@@ -43,7 +57,7 @@ const tips = [
   }
 ]
 
-export default function WelcomeModal({ isVisible, onClose }) {
+export default function WelcomeModal({ isVisible, onClose } :WelcomeModalProps) {
   const [currentTip, setCurrentTip] = useState(0)
   const [isAnimating, setIsAnimating] = useState(false)
 
