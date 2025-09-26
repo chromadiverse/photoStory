@@ -171,92 +171,98 @@ const Preview: React.FC<PreviewProps> = ({
   }
 
   return (
-    <div className="h-full flex flex-col bg-black">
-      {/* Image Preview */}
-      <div className="flex-1 flex items-center justify-center p-4">
-        <div className="relative">
-          <img
-            src={imageData.croppedImage}
-            alt="Final Preview"
-            className="max-w-full max-h-full object-contain shadow-2xl rounded-lg"
-            style={{ filter: applyFilters() }}
-          />
-          {isProcessing && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-lg">
-              <div className="flex flex-col items-center space-y-2">
-                <div className="w-8 h-8 border-2 border-white rounded-full animate-spin border-t-transparent"></div>
-                <span className="text-white text-sm">Processing...</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Status Messages */}
-      {saveStatus !== 'idle' && (
-        <div className="px-4 pb-2">
-          <div
-            className={`p-3 rounded-lg text-center transition-all duration-300 ${
-              saveStatus === 'success'
-                ? 'bg-green-600 text-white'
-                : 'bg-red-600 text-white'
-            }`}
-          >
-            {saveStatus === 'success'
-              ? 'Action completed successfully!'
-              : 'Action failed. Please try again.'}
+   <div className="h-full flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
+  {/* Image Preview */}
+  <div className="flex-1 flex items-center justify-center p-4">
+    <div className="relative">
+      <img
+        src={imageData.croppedImage}
+        alt="Final Preview"
+        className="max-w-full max-h-full object-contain shadow-lg rounded-lg"
+        style={{ filter: applyFilters() }}
+      />
+      {isProcessing && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-lg">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-8 h-8 border-2 border-white rounded-full animate-spin border-t-transparent"></div>
+            <span className="text-white text-sm font-medium">Processing...</span>
           </div>
         </div>
       )}
+    </div>
+  </div>
 
-      {/* Action Buttons */}
-      <div className="bg-gray-900 p-4 space-y-4">
-        {/* Primary Actions Grid */}
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            onClick={handleDownload}
-            disabled={isProcessing}
-            className="flex flex-col items-center space-y-2 p-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg transition-colors"
-          >
-            <Download size={24} />
-            <span className="text-sm font-medium">Download</span>
-          </button>
-
-          <button
-            onClick={handleShare}
-            disabled={isProcessing}
-            className="flex flex-col items-center space-y-2 p-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg transition-colors"
-          >
-            <Share2 size={24} />
-            <span className="text-sm font-medium">Share</span>
-          </button>
-        </div>
-
-        {/* Secondary Actions */}
-        <div className="grid grid-cols-1 gap-3">
-          <button
-            onClick={handleCopyToClipboard}
-            disabled={isProcessing}
-            className="flex items-center justify-center space-x-2 p-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded-lg transition-colors"
-          >
-            <Copy size={20} />
-            <span className="text-sm font-medium">Copy to Clipboard</span>
-          </button>
-        </div>
-
-        {/* Navigation Buttons */}
-        <div className="flex justify-between pt-4 border-t border-gray-700">
-          <button onClick={onBack} className="btn-secondary flex items-center space-x-2">
-            <ArrowLeft size={20} />
-            <span>Back to Filters</span>
-          </button>
-          <button onClick={onStartOver} className="btn-primary flex items-center space-x-2">
-            <RotateCcw size={20} />
-            <span>Start Over</span>
-          </button>
-        </div>
+  {/* Status Messages */}
+  {saveStatus !== 'idle' && (
+    <div className="px-4 pb-2">
+      <div
+        className={`p-3 rounded-lg text-center transition-all duration-300 font-medium ${
+          saveStatus === 'success'
+            ? 'bg-green-600 text-white'
+            : 'bg-red-600 text-white'
+        }`}
+      >
+        {saveStatus === 'success'
+          ? 'Action completed successfully!'
+          : 'Action failed. Please try again.'}
       </div>
     </div>
+  )}
+
+  {/* Action Buttons */}
+  <div className="bg-white/90 backdrop-blur-sm shadow-sm p-4 space-y-4">
+    {/* Primary Actions Grid */}
+    <div className="grid grid-cols-2 gap-3">
+      <button
+        onClick={handleDownload}
+        disabled={isProcessing}
+        className="flex flex-col items-center gap-2 p-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
+      >
+        <Download className="w-6 h-6" />
+        <span className="text-sm font-medium">Download</span>
+      </button>
+
+      <button
+        onClick={handleShare}
+        disabled={isProcessing}
+        className="flex flex-col items-center gap-2 p-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
+      >
+        <Share2 className="w-6 h-6" />
+        <span className="text-sm font-medium">Share</span>
+      </button>
+    </div>
+
+    {/* Secondary Actions */}
+    <div className="grid grid-cols-1 gap-3">
+      <button
+        onClick={handleCopyToClipboard}
+        disabled={isProcessing}
+        className="flex items-center justify-center gap-2 p-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
+      >
+        <Copy className="w-5 h-5" />
+        <span className="text-sm font-medium">Copy to Clipboard</span>
+      </button>
+    </div>
+
+    {/* Navigation Buttons */}
+    <div className="flex justify-between pt-4 border-t border-gray-200">
+      <button 
+        onClick={onBack} 
+        className="flex items-center gap-2 bg-white/60 hover:bg-white/80 border border-gray-200 text-gray-700 px-4 py-2 rounded-lg transition-colors font-medium"
+      >
+        <ArrowLeft className="w-5 h-5" />
+        <span>Back to Filters</span>
+      </button>
+      <button 
+        onClick={onStartOver} 
+        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium"
+      >
+        <RotateCcw className="w-5 h-5" />
+        <span>Start Over</span>
+      </button>
+    </div>
+  </div>
+</div>
   )
 }
 
