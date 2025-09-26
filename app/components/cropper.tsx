@@ -164,8 +164,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     // Boundary checks
     newCrop.x = Math.max(0, Math.min(imageDimensions.width - newCrop.width, newCrop.x));
     newCrop.y = Math.max(0, Math.min(imageDimensions.height - newCrop.height, newCrop.y));
-    newCrop.width = Math.max(20, Math.min(imageDimensions.width - newCrop.x, newCrop.width));
-    newCrop.height = Math.max(20, Math.min(imageDimensions.height - newCrop.y, newCrop.height));
+    newCrop.width = Math.max(50, Math.min(imageDimensions.width - newCrop.x, newCrop.width));
+    newCrop.height = Math.max(50, Math.min(imageDimensions.height - newCrop.y, newCrop.height));
     
     setCropArea(newCrop);
   }, [dragState, aspect, imageDimensions]);
@@ -404,56 +404,68 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
           
           {/* Corner handles */}
           <div 
-            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-nw-resize"
-            style={{ top: '-10px', left: '-10px' }}
+            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-nw-resize"
+            style={{ top: '-12px', left: '-12px' }}
             onMouseDown={(e) => handleDragStart(e, 'nw')}
             onTouchStart={(e) => handleDragStart(e, 'nw')}
           />
           <div 
-            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-ne-resize"
-            style={{ top: '-10px', right: '-10px' }}
+            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-ne-resize"
+            style={{ top: '-12px', right: '-12px' }}
             onMouseDown={(e) => handleDragStart(e, 'ne')}
             onTouchStart={(e) => handleDragStart(e, 'ne')}
           />
           <div 
-            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-sw-resize"
-            style={{ bottom: '-10px', left: '-10px' }}
+            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-sw-resize"
+            style={{ bottom: '-12px', left: '-12px' }}
             onMouseDown={(e) => handleDragStart(e, 'sw')}
             onTouchStart={(e) => handleDragStart(e, 'sw')}
           />
           <div 
-            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-se-resize"
-            style={{ bottom: '-10px', right: '-10px' }}
+            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-se-resize"
+            style={{ bottom: '-12px', right: '-12px' }}
             onMouseDown={(e) => handleDragStart(e, 'se')}
             onTouchStart={(e) => handleDragStart(e, 'se')}
           />
           
           {/* Edge handles */}
           <div 
-            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-n-resize"
-            style={{ top: '-10px', left: '50%', transform: 'translateX(-50%)' }}
+            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-n-resize"
+            style={{ top: '-12px', left: '50%', transform: 'translateX(-50%)' }}
             onMouseDown={(e) => handleDragStart(e, 'n')}
             onTouchStart={(e) => handleDragStart(e, 'n')}
           />
           <div 
-            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-s-resize"
-            style={{ bottom: '-10px', left: '50%', transform: 'translateX(-50%)' }}
+            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-s-resize"
+            style={{ bottom: '-12px', left: '50%', transform: 'translateX(-50%)' }}
             onMouseDown={(e) => handleDragStart(e, 's')}
             onTouchStart={(e) => handleDragStart(e, 's')}
           />
           <div 
-            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-w-resize"
-            style={{ top: '50%', left: '-10px', transform: 'translateY(-50%)' }}
+            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-w-resize"
+            style={{ top: '50%', left: '-12px', transform: 'translateY(-50%)' }}
             onMouseDown={(e) => handleDragStart(e, 'w')}
             onTouchStart={(e) => handleDragStart(e, 'w')}
           />
           <div 
-            className="absolute w-5 h-5 bg-white border-2 border-blue-500 cursor-e-resize"
-            style={{ top: '50%', right: '-10px', transform: 'translateY(-50%)' }}
+            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-e-resize"
+            style={{ top: '50%', right: '-12px', transform: 'translateY(-50%)' }}
             onMouseDown={(e) => handleDragStart(e, 'e')}
             onTouchStart={(e) => handleDragStart(e, 'e')}
           />
         </div>
+        
+        {/* Center move handle */}
+        <div 
+          className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-move"
+          style={{
+            left: cropLeft + cropWidth / 2 - 12,
+            top: cropTop + cropHeight / 2 - 12,
+            pointerEvents: 'all'
+          }}
+          onMouseDown={(e) => handleDragStart(e, 'move')}
+          onTouchStart={(e) => handleDragStart(e, 'move')}
+        />
       </div>
 
       {/* Controls */}
