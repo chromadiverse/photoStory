@@ -82,6 +82,34 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     img.src = image.src;
   }, [image.src]);
 
+  // Convert screen coordinates to image coordinates
+  const screenToImageCoords = useCallback((screenX: number, screenY: number) => {
+    if (!containerRef.current) return { x: 0, y: 0 };
+    
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const containerWidth = containerRect.width;
+    const containerHeight = containerRect.height;
+    
+    const scaleX = containerWidth / imageDimensions.width;
+    const scaleY = containerHeight / imageDimensions.height;
+    const scale = Math.min(scaleX, scaleY) * zoom;
+    
+    const displayWidth = imageDimensions.width * scale;
+    const displayHeight = imageDimensions.height * scale;
+    
+    const offsetX = (containerWidth - displayWidth) / 2;
+    const offsetY = (containerHeight - displayHeight) / 2;
+    
+    // Convert screen coordinates to image coordinates
+    const relativeX = screenX - containerRect.left - offsetX;
+    const relativeY = screenY - containerRect.top - offsetY;
+    
+    const imageX = relativeX / scale;
+    const imageY = relativeY / scale;
+    
+    return { x: imageX, y: imageY };
+  }, [imageDimensions, zoom]);
+
   // Handle drag start
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent, dragType: DragState['dragType']) => {
     e.preventDefault();
@@ -102,73 +130,97 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
     if (!dragState.isDragging || !containerRef.current) return;
     
+    // Prevent default to avoid scrolling on touch devices
+    e.preventDefault();
+    
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
     
     const deltaX = clientX - dragState.start.x;
     const deltaY = clientY - dragState.start.y;
     
+    // Convert delta to image coordinates
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const containerWidth = containerRect.width;
+    const containerHeight = containerRect.height;
+    const scaleX = containerWidth / imageDimensions.width;
+    const scaleY = containerHeight / imageDimensions.height;
+    const scale = Math.min(scaleX, scaleY) * zoom;
+    
+    const imageDeltaX = deltaX / scale;
+    const imageDeltaY = deltaY / scale;
+    
     let newCrop = { ...dragState.initialCrop };
     
     switch (dragState.dragType) {
       case 'nw':
-        newCrop.x += deltaX;
-        newCrop.y += deltaY;
-        newCrop.width -= deltaX;
-        newCrop.height -= deltaY;
+        newCrop.x += imageDeltaX;
+        newCrop.y += imageDeltaY;
+        newCrop.width -= imageDeltaX;
+        newCrop.height -= imageDeltaY;
         break;
       case 'ne':
-        newCrop.y += deltaY;
-        newCrop.width += deltaX;
-        newCrop.height -= deltaY;
+        newCrop.y += imageDeltaY;
+        newCrop.width += imageDeltaX;
+        newCrop.height -= imageDeltaY;
         break;
       case 'sw':
-        newCrop.x += deltaX;
-        newCrop.width -= deltaX;
-        newCrop.height += deltaY;
+        newCrop.x += imageDeltaX;
+        newCrop.width -= imageDeltaX;
+        newCrop.height += imageDeltaY;
         break;
       case 'se':
-        newCrop.width += deltaX;
-        newCrop.height += deltaY;
+        newCrop.width += imageDeltaX;
+        newCrop.height += imageDeltaY;
         break;
       case 'n':
-        newCrop.y += deltaY;
-        newCrop.height -= deltaY;
+        newCrop.y += imageDeltaY;
+        newCrop.height -= imageDeltaY;
         break;
       case 's':
-        newCrop.height += deltaY;
+        newCrop.height += imageDeltaY;
         break;
       case 'w':
-        newCrop.x += deltaX;
-        newCrop.width -= deltaX;
+        newCrop.x += imageDeltaX;
+        newCrop.width -= imageDeltaX;
         break;
       case 'e':
-        newCrop.width += deltaX;
+        newCrop.width += imageDeltaX;
         break;
       case 'move':
-        newCrop.x += deltaX;
-        newCrop.y += deltaY;
+        newCrop.x += imageDeltaX;
+        newCrop.y += imageDeltaY;
         break;
     }
     
     // Apply aspect ratio if set
     if (aspect && dragState.dragType !== 'move') {
       const aspectRatio = aspect;
-      if (['n', 's', 'move'].includes(dragState.dragType)) {
+      if (['n', 's'].includes(dragState.dragType)) {
         newCrop.width = newCrop.height * aspectRatio;
+      } else if (['w', 'e'].includes(dragState.dragType)) {
+        newCrop.height = newCrop.width / aspectRatio;
       } else {
+        // For corner handles, maintain aspect ratio based on width change
         newCrop.height = newCrop.width / aspectRatio;
       }
     }
     
-    // Boundary checks
+    // Boundary checks with minimum size
+    const minSize = 50;
+    newCrop.width = Math.max(minSize, newCrop.width);
+    newCrop.height = Math.max(minSize, newCrop.height);
+    
+    // Keep within image bounds
     newCrop.x = Math.max(0, Math.min(imageDimensions.width - newCrop.width, newCrop.x));
     newCrop.y = Math.max(0, Math.min(imageDimensions.height - newCrop.height, newCrop.y));
-    newCrop.width = Math.max(50, Math.min(imageDimensions.width - newCrop.x, newCrop.width));
-    newCrop.height = Math.max(50, Math.min(imageDimensions.height - newCrop.y, newCrop.height));
+    
+    // Adjust size if it goes beyond bounds
+    newCrop.width = Math.min(imageDimensions.width - newCrop.x, newCrop.width);
+    newCrop.height = Math.min(imageDimensions.height - newCrop.y, newCrop.height);
     
     setCropArea(newCrop);
-  }, [dragState, aspect, imageDimensions]);
+  }, [dragState, aspect, imageDimensions, zoom]);
 
   // Handle drag end
   const handleDragEnd = useCallback(() => {
@@ -178,14 +230,20 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   // Add event listeners for drag operations
   useEffect(() => {
     if (dragState.isDragging) {
-      window.addEventListener('mousemove', handleDragMove);
-      window.addEventListener('touchmove', handleDragMove, { passive: false });
+      const handleMouseMove = (e: MouseEvent) => handleDragMove(e);
+      const handleTouchMove = (e: TouchEvent) => {
+        e.preventDefault(); // Prevent scrolling
+        handleDragMove(e);
+      };
+      
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('touchmove', handleTouchMove, { passive: false });
       window.addEventListener('mouseup', handleDragEnd);
       window.addEventListener('touchend', handleDragEnd);
       
       return () => {
-        window.removeEventListener('mousemove', handleDragMove);
-        window.removeEventListener('touchmove', handleDragMove);
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('touchmove', handleTouchMove);
         window.removeEventListener('mouseup', handleDragEnd);
         window.removeEventListener('touchend', handleDragEnd);
       };
@@ -299,7 +357,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const zoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.1));
   const fitToScreen = () => setZoom(1);
 
-  // Calculate crop area position and size in percentage for the UI
+  // Calculate crop area position and size for the UI
   const containerRect = containerRef.current?.getBoundingClientRect();
   const containerWidth = containerRect?.width || 400;
   const containerHeight = containerRect?.height || 400;
@@ -351,14 +409,15 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       {/* Crop Area */}
       <div 
         ref={containerRef}
-        className="relative flex-1 min-h-0 bg-gray-800 overflow-hidden"
+        className="relative flex-1 min-h-0 bg-gray-800 overflow-hidden touch-none"
+        style={{ touchAction: 'none' }}
       >
         {/* Background image */}
         <img
           ref={imageRef}
           src={image.src}
           alt="Crop source"
-          className="absolute"
+          className="absolute pointer-events-none select-none"
           style={{
             width: displayWidth,
             height: displayHeight,
@@ -367,9 +426,10 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
             transform: `rotate(${rotation}deg)`,
             transformOrigin: 'center center',
           }}
+          draggable={false}
         />
         
-        {/* Grid overlay */}
+        {/* Crop overlay - REMOVED pointerEvents: 'none' */}
         <div 
           className="absolute border-2 border-white border-opacity-70"
           style={{
@@ -377,12 +437,11 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
             top: cropTop,
             width: cropWidth,
             height: cropHeight,
-            pointerEvents: 'none',
             background: 'transparent',
           }}
         >
           {/* Grid lines */}
-          <div className="absolute inset-0">
+          <div className="absolute inset-0 pointer-events-none">
             {/* Vertical lines */}
             {[...Array(2)].map((_, i) => (
               <div 
@@ -402,70 +461,118 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
             ))}
           </div>
           
-          {/* Corner handles */}
+          {/* Corner handles - Made larger for touch */}
           <div 
-            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-nw-resize"
-            style={{ top: '-12px', left: '-12px' }}
+            className="absolute w-8 h-8 bg-white border-2 border-blue-500 cursor-nw-resize touch-manipulation"
+            style={{ 
+              top: '-16px', 
+              left: '-16px',
+              borderRadius: '50%',
+              touchAction: 'none'
+            }}
             onMouseDown={(e) => handleDragStart(e, 'nw')}
             onTouchStart={(e) => handleDragStart(e, 'nw')}
           />
           <div 
-            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-ne-resize"
-            style={{ top: '-12px', right: '-12px' }}
+            className="absolute w-8 h-8 bg-white border-2 border-blue-500 cursor-ne-resize touch-manipulation"
+            style={{ 
+              top: '-16px', 
+              right: '-16px',
+              borderRadius: '50%',
+              touchAction: 'none'
+            }}
             onMouseDown={(e) => handleDragStart(e, 'ne')}
             onTouchStart={(e) => handleDragStart(e, 'ne')}
           />
           <div 
-            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-sw-resize"
-            style={{ bottom: '-12px', left: '-12px' }}
+            className="absolute w-8 h-8 bg-white border-2 border-blue-500 cursor-sw-resize touch-manipulation"
+            style={{ 
+              bottom: '-16px', 
+              left: '-16px',
+              borderRadius: '50%',
+              touchAction: 'none'
+            }}
             onMouseDown={(e) => handleDragStart(e, 'sw')}
             onTouchStart={(e) => handleDragStart(e, 'sw')}
           />
           <div 
-            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-se-resize"
-            style={{ bottom: '-12px', right: '-12px' }}
+            className="absolute w-8 h-8 bg-white border-2 border-blue-500 cursor-se-resize touch-manipulation"
+            style={{ 
+              bottom: '-16px', 
+              right: '-16px',
+              borderRadius: '50%',
+              touchAction: 'none'
+            }}
             onMouseDown={(e) => handleDragStart(e, 'se')}
             onTouchStart={(e) => handleDragStart(e, 'se')}
           />
           
-          {/* Edge handles */}
+          {/* Edge handles - Made larger for touch */}
           <div 
-            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-n-resize"
-            style={{ top: '-12px', left: '50%', transform: 'translateX(-50%)' }}
+            className="absolute w-8 h-6 bg-white border-2 border-blue-500 cursor-n-resize touch-manipulation"
+            style={{ 
+              top: '-12px', 
+              left: '50%', 
+              transform: 'translateX(-50%)',
+              borderRadius: '4px',
+              touchAction: 'none'
+            }}
             onMouseDown={(e) => handleDragStart(e, 'n')}
             onTouchStart={(e) => handleDragStart(e, 'n')}
           />
           <div 
-            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-s-resize"
-            style={{ bottom: '-12px', left: '50%', transform: 'translateX(-50%)' }}
+            className="absolute w-8 h-6 bg-white border-2 border-blue-500 cursor-s-resize touch-manipulation"
+            style={{ 
+              bottom: '-12px', 
+              left: '50%', 
+              transform: 'translateX(-50%)',
+              borderRadius: '4px',
+              touchAction: 'none'
+            }}
             onMouseDown={(e) => handleDragStart(e, 's')}
             onTouchStart={(e) => handleDragStart(e, 's')}
           />
           <div 
-            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-w-resize"
-            style={{ top: '50%', left: '-12px', transform: 'translateY(-50%)' }}
+            className="absolute w-6 h-8 bg-white border-2 border-blue-500 cursor-w-resize touch-manipulation"
+            style={{ 
+              top: '50%', 
+              left: '-12px', 
+              transform: 'translateY(-50%)',
+              borderRadius: '4px',
+              touchAction: 'none'
+            }}
             onMouseDown={(e) => handleDragStart(e, 'w')}
             onTouchStart={(e) => handleDragStart(e, 'w')}
           />
           <div 
-            className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-e-resize"
-            style={{ top: '50%', right: '-12px', transform: 'translateY(-50%)' }}
+            className="absolute w-6 h-8 bg-white border-2 border-blue-500 cursor-e-resize touch-manipulation"
+            style={{ 
+              top: '50%', 
+              right: '-12px', 
+              transform: 'translateY(-50%)',
+              borderRadius: '4px',
+              touchAction: 'none'
+            }}
             onMouseDown={(e) => handleDragStart(e, 'e')}
             onTouchStart={(e) => handleDragStart(e, 'e')}
           />
         </div>
         
-        {/* Center move handle */}
+        {/* Center move handle - Made larger for touch */}
         <div 
-          className="absolute w-6 h-6 bg-white border-2 border-blue-500 cursor-move"
+          className="absolute w-10 h-10 bg-white bg-opacity-80 border-2 border-blue-500 cursor-move touch-manipulation"
           style={{
-            left: cropLeft + cropWidth / 2 - 12,
-            top: cropTop + cropHeight / 2 - 12,
-            pointerEvents: 'all'
+            left: cropLeft + cropWidth / 2 - 20,
+            top: cropTop + cropHeight / 2 - 20,
+            borderRadius: '50%',
+            touchAction: 'none',
+            backdropFilter: 'blur(2px)'
           }}
           onMouseDown={(e) => handleDragStart(e, 'move')}
           onTouchStart={(e) => handleDragStart(e, 'move')}
-        />
+        >
+          <div className="absolute inset-2 bg-blue-500 rounded-full opacity-60"></div>
+        </div>
       </div>
 
       {/* Controls */}
@@ -474,21 +581,21 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         <div className="flex justify-center space-x-4">
           <button
             onClick={zoomOut}
-            className="w-12 h-12 bg-black bg-opacity-70 hover:bg-opacity-90 text-white rounded-full flex items-center justify-center transition-all"
+            className="w-12 h-12 bg-black bg-opacity-70 hover:bg-opacity-90 text-white rounded-full flex items-center justify-center transition-all touch-manipulation"
             title="Zoom Out"
           >
             <ZoomOut size={20} />
           </button>
           <button
             onClick={zoomIn}
-            className="w-12 h-12 bg-black bg-opacity-70 hover:bg-opacity-90 text-white rounded-full flex items-center justify-center transition-all"
+            className="w-12 h-12 bg-black bg-opacity-70 hover:bg-opacity-90 text-white rounded-full flex items-center justify-center transition-all touch-manipulation"
             title="Zoom In"
           >
             <ZoomIn size={20} />
           </button>
           <button
             onClick={fitToScreen}
-            className="w-12 h-12 bg-blue-600 bg-opacity-80 hover:bg-opacity-100 text-white rounded-full flex items-center justify-center transition-all"
+            className="w-12 h-12 bg-blue-600 bg-opacity-80 hover:bg-opacity-100 text-white rounded-full flex items-center justify-center transition-all touch-manipulation"
             title="Fit to Screen"
           >
             <FitScreen size={18} />
@@ -501,7 +608,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
             <button
               key={ratio.label}
               onClick={() => setAspect(ratio.value)}
-              className={`px-4 py-3 rounded-lg text-sm font-medium transition-all ${
+              className={`px-4 py-3 rounded-lg text-sm font-medium transition-all touch-manipulation ${
                 aspect === ratio.value 
                   ? 'bg-blue-600 text-white ring-2 ring-blue-400' 
                   : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
@@ -527,7 +634,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
               step="0.1"
               value={zoom}
               onChange={(e) => setZoom(Number(e.target.value))}
-              className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              className="w-full h-6 bg-gray-700 rounded-lg appearance-none cursor-pointer touch-manipulation"
             />
           </div>
         </div>
@@ -540,7 +647,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
             </label>
             <button
               onClick={autoStraighten}
-              className="flex items-center space-x-1 text-sm text-blue-400 hover:text-blue-300 transition-colors"
+              className="flex items-center space-x-1 text-sm text-blue-400 hover:text-blue-300 transition-colors touch-manipulation"
             >
               <RotateCcw size={16} />
               <span>Auto-Straighten</span>
@@ -554,7 +661,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
               step="0.5"
               value={rotation}
               onChange={(e) => setRotation(Number(e.target.value))}
-              className="w-full h-3 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+              className="w-full h-6 bg-gray-700 rounded-lg appearance-none cursor-pointer touch-manipulation"
             />
           </div>
         </div>
@@ -563,7 +670,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         <div className="flex justify-center space-x-4">
           <button
             onClick={resetCrop}
-            className="flex items-center space-x-1 text-blue-400 hover:text-blue-300 transition-colors"
+            className="flex items-center space-x-1 text-blue-400 hover:text-blue-300 transition-colors touch-manipulation"
           >
             <Maximize2 size={16} />
             <span>Reset Crop</span>
