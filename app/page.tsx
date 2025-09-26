@@ -70,87 +70,105 @@ export default function Home() {
     setCurrentView('camera')
   }
 
-  const renderNavigation = () => (
-    <div className="flex justify-center space-x-2 p-4 bg-gray-800">
-      <button
-        onClick={() => setCurrentView('camera')}
-        className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-          currentView === 'camera' ? 'bg-blue-600' : 'bg-gray-600'
-        } text-white transition-colors`}
-        disabled={!capturedImage && currentView !== 'camera'}
-      >
-        <Camera size={20} />
-        <span>Camera</span>
-      </button>
-      <button
-        onClick={() => setCurrentView('crop')}
-        className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-          currentView === 'crop' ? 'bg-blue-600' : 'bg-gray-600'
-        } text-white transition-colors`}
-        disabled={!capturedImage}
-      >
-        <Edit3 size={20} />
-        <span>Crop</span>
-      </button>
-      <button
-        onClick={() => setCurrentView('filter')}
-        className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-          currentView === 'filter' ? 'bg-blue-600' : 'bg-gray-600'
-        } text-white transition-colors`}
-        disabled={!croppedImageData}
-      >
-        <Sliders size={20} />
-        <span>Filters</span>
-      </button>
-      <button
-        onClick={() => setCurrentView('preview')}
-        className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-          currentView === 'preview' ? 'bg-blue-600' : 'bg-gray-600'
-        } text-white transition-colors`}
-        disabled={!croppedImageData}
-      >
-        <Eye size={20} />
-        <span>Preview</span>
-      </button>
-    </div>
-  )
-
-  return (
-    <main className="min-h-screen bg-black text-white">
-      {renderNavigation()}
-      
-      <div className="h-[calc(100vh-80px)]">
-        {currentView === 'camera' && (
-          <CameraView onImageCapture={handleImageCapture} />
-        )}
-        
-        {currentView === 'crop' && capturedImage && (
-          <Cropper
-            image={capturedImage}
-            onCropComplete={handleCropComplete}
-            onBack={() => setCurrentView('camera')}
-          />
-        )}
-        
-        {currentView === 'filter' && croppedImageData && (
-          <FilterPanel
-            imageData={croppedImageData}
-            filterSettings={filterSettings}
-            onFilterChange={setFilterSettings}
-            onComplete={handleFilterComplete}
-            onBack={() => setCurrentView('crop')}
-          />
-        )}
-        
-        {currentView === 'preview' && croppedImageData && (
-          <Preview
-            imageData={croppedImageData}
-            filterSettings={filterSettings}
-            onStartOver={handleStartOver}
-            onBack={() => setCurrentView('filter')}
-          />
-        )}
+const renderNavigation = () => (
+  <header className="bg-white/90 backdrop-blur-sm shadow-sm border-b border-gray-200">
+    <div className="container mx-auto px-4 py-4">
+      <div className="flex justify-center gap-3 sm:gap-4">
+        <button
+          onClick={() => setCurrentView('camera')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm sm:text-base ${
+            currentView === 'camera' 
+              ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+              : 'bg-white/60 hover:bg-white/80 text-gray-700 border border-gray-200'
+          }`}
+          disabled={!capturedImage && currentView !== 'camera'}
+        >
+          <Camera className="w-4 h-4" />
+          <span>Camera</span>
+        </button>
+        <button
+          onClick={() => setCurrentView('crop')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm sm:text-base ${
+            currentView === 'crop' 
+              ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+              : capturedImage
+                ? 'bg-white/60 hover:bg-white/80 text-gray-700 border border-gray-200'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+          }`}
+          disabled={!capturedImage}
+        >
+          <Edit3 className="w-4 h-4" />
+          <span>Crop</span>
+        </button>
+        <button
+          onClick={() => setCurrentView('filter')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm sm:text-base ${
+            currentView === 'filter' 
+              ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+              : croppedImageData
+                ? 'bg-white/60 hover:bg-white/80 text-gray-700 border border-gray-200'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+          }`}
+          disabled={!croppedImageData}
+        >
+          <Sliders className="w-4 h-4" />
+          <span>Filters</span>
+        </button>
+        <button
+          onClick={() => setCurrentView('preview')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm sm:text-base ${
+            currentView === 'preview' 
+              ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+              : croppedImageData
+                ? 'bg-white/60 hover:bg-white/80 text-gray-700 border border-gray-200'
+                : 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+          }`}
+          disabled={!croppedImageData}
+        >
+          <Eye className="w-4 h-4" />
+          <span>Preview</span>
+        </button>
       </div>
-    </main>
-  )
+    </div>
+  </header>
+)
+
+return (
+  <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    {renderNavigation()}
+    
+    <div className="container mx-auto px-4 py-4 sm:py-6">
+      {currentView === 'camera' && (
+        <CameraView onImageCapture={handleImageCapture} />
+      )}
+      
+      {currentView === 'crop' && capturedImage && (
+        <Cropper
+          image={capturedImage}
+          onCropComplete={handleCropComplete}
+          onBack={() => setCurrentView('camera')}
+        />
+      )}
+      
+      {currentView === 'filter' && croppedImageData && (
+        <FilterPanel
+          imageData={croppedImageData}
+          filterSettings={filterSettings}
+          onFilterChange={setFilterSettings}
+          onComplete={handleFilterComplete}
+          onBack={() => setCurrentView('crop')}
+        />
+      )}
+      
+      {currentView === 'preview' && croppedImageData && (
+        <Preview
+          imageData={croppedImageData}
+          filterSettings={filterSettings}
+          onStartOver={handleStartOver}
+          onBack={() => setCurrentView('filter')}
+        />
+      )}
+    </div>
+  </main>
+)
 }
