@@ -259,81 +259,54 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     
     if (!ctx) return;
     
-    // Calculate actual crop area considering rotation
-    const rotatedCrop = calculateRotatedCrop(cropArea, rotation, imageDimensions);
+    // Set canvas size to the crop area dimensions
+    canvas.width = cropArea.width;
+    canvas.height = cropArea.height;
     
-    canvas.width = rotatedCrop.width;
-    canvas.height = rotatedCrop.height;
+    if (rotation !== 0) {
+      // Handle rotation case
+      ctx.save();
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((rotation * Math.PI) / 180);
+      
+      // Draw the rotated image, cropping to the selected area
+      ctx.drawImage(
+        imageRef.current,
+        cropArea.x - imageDimensions.width / 2,
+        cropArea.y - imageDimensions.height / 2,
+        imageDimensions.width,
+        imageDimensions.height
+      );
+      
+      ctx.restore();
+    } else {
+      // Simple crop without rotation
+      ctx.drawImage(
+        imageRef.current,
+        cropArea.x,           // Source X
+        cropArea.y,           // Source Y
+        cropArea.width,       // Source Width
+        cropArea.height,      // Source Height
+        0,                    // Destination X
+        0,                    // Destination Y
+        cropArea.width,       // Destination Width
+        cropArea.height       // Destination Height
+      );
+    }
     
-    // Draw rotated image
-    ctx.save();
-    ctx.translate(canvas.width / 2, canvas.height / 2);
-    ctx.rotate((rotation * Math.PI) / 180);
-    ctx.drawImage(
-      imageRef.current,
-      -rotatedCrop.x,
-      -rotatedCrop.y,
-      imageDimensions.width,
-      imageDimensions.height
-    );
-    ctx.restore();
-    
-    // Crop to desired area
-    const croppedCanvas = document.createElement('canvas');
-    const croppedCtx = croppedCanvas.getContext('2d');
-    
-    if (!croppedCtx) return;
-    
-    croppedCanvas.width = cropArea.width;
-    croppedCanvas.height = cropArea.height;
-    
-    croppedCtx.drawImage(
-      canvas,
-      rotatedCrop.x,
-      rotatedCrop.y,
-      cropArea.width,
-      cropArea.height,
-      0,
-      0,
-      cropArea.width,
-      cropArea.height
-    );
-    
-    croppedCanvas.toBlob((blob) => {
+    canvas.toBlob((blob) => {
       if (blob) {
         const url = URL.createObjectURL(blob);
         onCropComplete({
           croppedImage: url,
           croppedBlob: blob,
-          rotation
+          rotation: 0 // Reset rotation since it's been applied
         });
       }
     }, 'image/jpeg', 0.95);
   };
 
-  // Calculate rotated crop area
-  const calculateRotatedCrop = (crop: CropArea, rotation: number, dims: { width: number, height: number }) => {
-    const rad = (rotation * Math.PI) / 180;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    
-    // Calculate rotated dimensions
-    const newWidth = Math.abs(dims.width * cos) + Math.abs(dims.height * sin);
-    const newHeight = Math.abs(dims.width * sin) + Math.abs(dims.height * cos);
-    
-    // Calculate new crop position
-    const newX = crop.x * (newWidth / dims.width);
-    const newY = crop.y * (newHeight / dims.height);
-    const newCropWidth = crop.width * (newWidth / dims.width);
-    const newCropHeight = crop.height * (newHeight / dims.height);
-    
-    return {
-      x: newX,
-      y: newY,
-      width: newCropWidth,
-      height: newCropHeight
-    };
-  };
+
 
   // Reset crop to full image
   const resetCrop = () => {
