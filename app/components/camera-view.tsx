@@ -115,51 +115,49 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       }
     }
   }, [])
-const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
+  const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
   if (!window.cv || !canvas) return []
 
   try {
     const src = window.cv.imread(canvas)
     const gray = new window.cv.Mat()
     const blurred = new window.cv.Mat()
+    const edges = new window.cv.Mat()
     
-    // Convert to grayscale
     window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY)
+    window.cv.GaussianBlur(gray, blurred, new window.cv.Size(5, 5), 0)
     
-    // Apply bilateral filter to reduce noise while keeping edges sharp
-    window.cv.bilateralFilter(gray, blurred, 9, 75, 75)
+    const edges1 = new window.cv.Mat()
+    const edges2 = new window.cv.Mat()
+    const edges3 = new window.cv.Mat()
     
-    // Apply adaptive threshold for better edge detection in varying light
-    const thresh = new window.cv.Mat()
-    window.cv.adaptiveThreshold(
-      blurred, 
-      thresh, 
-      255, 
-      window.cv.ADAPTIVE_THRESH_GAUSSIAN_C, 
-      window.cv.THRESH_BINARY, 
-      11, 
-      2
-    )
+    window.cv.Canny(blurred, edges1, 30, 100, 3, true)
+    window.cv.Canny(blurred, edges2, 50, 150, 3, true) 
+    window.cv.Canny(blurred, edges3, 80, 200, 3, true)
     
-    // Find contours with hierarchy to identify parent-child relationships
+    window.cv.bitwise_or(edges1, edges2, edges)
+    window.cv.bitwise_or(edges, edges3, edges)
+    
+    const kernel1 = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(3, 3))
+    const kernel2 = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(5, 5))
+    
+    window.cv.morphologyEx(edges, edges, window.cv.MORPH_CLOSE, kernel1)
+    window.cv.dilate(edges, edges, kernel2)
+    
+    // Use RETR_CCOMP to get hierarchy information
     const contours = new window.cv.MatVector()
     const hierarchy = new window.cv.Mat()
-    window.cv.findContours(
-      thresh, 
-      contours, 
-      hierarchy, 
-      window.cv.RETR_CCOMP, // Retrieve all contours and arrange by hierarchy
-      window.cv.CHAIN_APPROX_SIMPLE
-    )
+    window.cv.findContours(edges, contours, hierarchy, window.cv.RETR_CCOMP, window.cv.CHAIN_APPROX_SIMPLE)
     
-    // Create an array to hold contour data with hierarchy info
+    // Create array to hold contour data with hierarchy info
     const contourData = []
+    const h = hierarchy.data32S
+    
     for (let i = 0; i < contours.size(); i++) {
       const contour = contours.get(i)
       const area = window.cv.contourArea(contour)
       
       // Get hierarchy info: [Next, Previous, First_Child, Parent]
-      const h = hierarchy.data32S
       const offset = i * 4
       const parentIdx = h[offset + 3]
       
@@ -179,75 +177,75 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
     contourData.sort((a, b) => b.area - a.area)
     
     const detectedShapes: DetectedShape[] = []
-    const minArea = canvas.width * canvas.height * MIN_CONTOUR_AREA
-    const maxArea = canvas.width * canvas.height * MAX_CONTOUR_AREA
+    const minArea = canvas.width * canvas.height * 0.05
+    const maxArea = canvas.width * canvas.height * 0.95
     
-    // Only process the largest contour (likely the outermost document)
+    // Process contours in descending area order
     for (const { contour, area } of contourData) {
       if (area < minArea || area > maxArea) {
         continue
       }
       
-      // Approximate contour to polygon
-      const peri = window.cv.arcLength(contour, true)
-      const approx = new window.cv.Mat()
-      
-      // Try multiple epsilon values for better approximation
-      let epsilon = 0.02 * peri
-      window.cv.approxPolyDP(contour, approx, epsilon, true)
-      
-      // Only consider quadrilaterals
-      if (approx.rows === 4) {
-        const points = []
-        for (let j = 0; j < approx.rows; j++) {
-          points.push({
-            x: approx.data32S[j * 2],
-            y: approx.data32S[j * 2 + 1]
-          })
-        }
-        
-        // Validate the quadrilateral
-        if (isValidQuadrilateral(points)) {
-          const sortedCorners = sortCorners(points)
-          const aspectRatio = calculateAspectRatio(sortedCorners)
-          
-          // Calculate confidence based on geometric properties
-          const confidence = calculateImprovedConfidence(
-            sortedCorners, 
-            area, 
-            canvas.width, 
-            canvas.height, 
-            peri
-          )
-          
-          const type = classifyShape(sortedCorners, aspectRatio)
-          
-          if (confidence >= CONFIDENCE_THRESHOLD) {
-            detectedShapes.push({
-              corners: sortedCorners,
-              area: area,
-              aspectRatio: aspectRatio,
-              confidence: confidence,
-              type: type
-            })
-            break // Only take the largest valid contour
-          }
-        }
+      const perimeter = window.cv.arcLength(contour, true)
+      if (perimeter < 100) {
+        continue
       }
       
-      // Cleanup
-      approx.delete()
+      const epsilonLevels = [0.01, 0.015, 0.02, 0.025, 0.03, 0.04]
+      
+      for (const epsilonFactor of epsilonLevels) {
+        const approx = new window.cv.Mat()
+        const epsilon = epsilonFactor * perimeter
+        window.cv.approxPolyDP(contour, approx, epsilon, true)
+        
+        if (approx.rows >= 4 && approx.rows <= 8) {
+          const corners: Point[] = []
+          for (let j = 0; j < approx.rows; j++) {
+            corners.push({
+              x: approx.data32S[j * 2],
+              y: approx.data32S[j * 2 + 1]
+            })
+          }
+          
+          let finalCorners = corners
+          if (corners.length > 4) {
+            finalCorners = findBestQuadrilateral(corners)
+          }
+          
+          if (finalCorners.length === 4 && isValidQuadrilateral(finalCorners)) {
+            const sortedCorners = sortCorners(finalCorners)
+            const aspectRatio = calculateAspectRatio(sortedCorners)
+            const confidence = calculateImprovedConfidence(sortedCorners, area, canvas.width, canvas.height, perimeter)
+            const type = classifyShape(sortedCorners, aspectRatio)
+            
+            if (confidence >= CONFIDENCE_THRESHOLD) {
+              detectedShapes.push({
+                corners: sortedCorners,
+                area: area,
+                aspectRatio: aspectRatio,
+                confidence: confidence,
+                type: type
+              })
+              break // Only take the first valid shape from largest contour
+            }
+          }
+        }
+        approx.delete()
+      }
     }
     
-    // Cleanup
     src.delete()
     gray.delete()
     blurred.delete()
-    thresh.delete()
+    edges.delete()
+    edges1.delete()
+    edges2.delete()
+    edges3.delete()
     contours.delete()
     hierarchy.delete()
+    kernel1.delete()
+    kernel2.delete()
     
-    // Sort by confidence and return top 5
     return detectedShapes.sort((a, b) => b.confidence - a.confidence).slice(0, 5)
     
   } catch (error) {
