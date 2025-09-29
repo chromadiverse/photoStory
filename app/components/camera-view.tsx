@@ -36,17 +36,17 @@ interface DetectedShape {
 
 // Enhanced detection parameters
 const DETECTION_WIDTH = 640;
-const STABILITY_THRESHOLD = 35;
-const MIN_STABLE_FRAMES = 3;
-const CONFIDENCE_THRESHOLD = 30;
-const DETECTION_HISTORY_SIZE = 10;
+const STABILITY_THRESHOLD = 80;
+const MIN_STABLE_FRAMES = 2;
+const CONFIDENCE_THRESHOLD = 20;
+const DETECTION_HISTORY_SIZE = 5;
 
 // Add these new parameters for better detection
 const MIN_CONTOUR_AREA = 0.05; // 5% of image area
 const MAX_CONTOUR_AREA = 0.95; // 95% of image area
 const MIN_RECTANGLE_AREA_RATIO = 0.7; // Minimum area ratio for a valid rectangle
 const CORNER_ANGLE_TOLERANCE = 20; // Degrees tolerance for right angles
-const MIN_CONTOUR_AREA_RATIO = 0.005; // Minimum 2% of image area
+const MIN_CONTOUR_AREA_RATIO = 0.03;
 const MAX_CONTOUR_ASPECT_RATIO = 5.0; // Avoid extremely long/short shapes
 const CONTOUR_SIMPLICITY_THRESHOLD = 0.05; // How simple/complex the contour should be
 const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
@@ -85,7 +85,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         }
 
         const script = document.createElement('script')
-        script.src = 'https://docs.opencv.org/4.8.0/opencv.js'
+        script.src = 'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.8.0-release.1/opencv.js'
         script.async = true
         
         document.head.appendChild(script)
@@ -162,7 +162,7 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
     
     // Combine Canny and binary edges
     const cannyEdges = new window.cv.Mat()
-    window.cv.Canny(blurred, cannyEdges, 50, 150, 3, true)
+    window.cv.Canny(blurred, edges, 30, 100, 3, false)
     
     window.cv.bitwise_or(cannyEdges, binary, edges)
     
@@ -197,7 +197,7 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
       
       // Approximate contour to polygon
       const approx = new window.cv.Mat()
-      const epsilon = 0.015 * perimeter // Reduced epsilon for better approximation
+      const epsilon = 0.04 * perimeter // Reduced epsilon for better approximation
       window.cv.approxPolyDP(contour, approx, epsilon, true)
       
       // Only consider contours with 4-8 points (likely to be rectangles)
