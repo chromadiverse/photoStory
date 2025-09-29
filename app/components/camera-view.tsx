@@ -34,12 +34,18 @@ interface DetectedShape {
   type: 'rectangle' | 'square' | 'document';
 }
 
-// Optimized parameters
-const DETECTION_WIDTH = 640; // Small size for fast detection
+// Enhanced detection parameters
+const DETECTION_WIDTH = 640;
 const STABILITY_THRESHOLD = 35;
 const MIN_STABLE_FRAMES = 3;
 const CONFIDENCE_THRESHOLD = 30;
 const DETECTION_HISTORY_SIZE = 10;
+
+// Add these new parameters for better detection
+const MIN_CONTOUR_AREA = 0.05; // 5% of image area
+const MAX_CONTOUR_AREA = 0.95; // 95% of image area
+const MIN_RECTANGLE_AREA_RATIO = 0.7; // Minimum area ratio for a valid rectangle
+const CORNER_ANGLE_TOLERANCE = 20; // Degrees tolerance for right angles
 
 const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const webcamRef = useRef<Webcam>(null)
@@ -110,122 +116,124 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     }
   }, [])
 
-  const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
-    if (!window.cv || !canvas) return []
+const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
+  if (!window.cv || !canvas) return []
 
-    try {
-      const src = window.cv.imread(canvas)
-      const gray = new window.cv.Mat()
-      const blurred = new window.cv.Mat()
-      const edges = new window.cv.Mat()
+  try {
+    const src = window.cv.imread(canvas)
+    const gray = new window.cv.Mat()
+    const blurred = new window.cv.Mat()
+    
+    // Convert to grayscale
+    window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY)
+    
+    // Apply bilateral filter to reduce noise while keeping edges sharp
+    window.cv.bilateralFilter(gray, blurred, 9, 75, 75)
+    
+    // Apply adaptive threshold for better edge detection in varying light
+    const thresh = new window.cv.Mat()
+    window.cv.adaptiveThreshold(
+      blurred, 
+      thresh, 
+      255, 
+      window.cv.ADAPTIVE_THRESH_GAUSSIAN_C, 
+      window.cv.THRESH_BINARY, 
+      11, 
+      2
+    )
+    
+    // Find contours
+    const contours = new window.cv.MatVector()
+    const hierarchy = new window.cv.Mat()
+    window.cv.findContours(
+      thresh, 
+      contours, 
+      hierarchy, 
+      window.cv.RETR_EXTERNAL, 
+      window.cv.CHAIN_APPROX_SIMPLE
+    )
+    
+    const detectedShapes: DetectedShape[] = []
+    const minArea = canvas.width * canvas.height * MIN_CONTOUR_AREA
+    const maxArea = canvas.width * canvas.height * MAX_CONTOUR_AREA
+    
+    for (let i = 0; i < contours.size(); i++) {
+      const contour = contours.get(i)
+      const area = window.cv.contourArea(contour)
       
-      window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY)
-      window.cv.GaussianBlur(gray, blurred, new window.cv.Size(5, 5), 0)
-      
-      const edges1 = new window.cv.Mat()
-      const edges2 = new window.cv.Mat()
-      const edges3 = new window.cv.Mat()
-      
-      window.cv.Canny(blurred, edges1, 30, 100, 3, true)
-      window.cv.Canny(blurred, edges2, 50, 150, 3, true) 
-      window.cv.Canny(blurred, edges3, 80, 200, 3, true)
-      
-      window.cv.bitwise_or(edges1, edges2, edges)
-      window.cv.bitwise_or(edges, edges3, edges)
-      
-      const kernel1 = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(3, 3))
-      const kernel2 = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(5, 5))
-      
-      window.cv.morphologyEx(edges, edges, window.cv.MORPH_CLOSE, kernel1)
-      window.cv.dilate(edges, edges, kernel2)
-      
-      const contours = new window.cv.MatVector()
-      const hierarchy = new window.cv.Mat()
-      window.cv.findContours(edges, contours, hierarchy, window.cv.RETR_LIST, window.cv.CHAIN_APPROX_SIMPLE)
-      
-      const detectedShapes: DetectedShape[] = []
-      const minArea = canvas.width * canvas.height * 0.05
-      const maxArea = canvas.width * canvas.height * 0.95
-      
-      for (let i = 0; i < contours.size(); i++) {
-        const contour = contours.get(i)
-        const area = window.cv.contourArea(contour)
-        
-        if (area < minArea || area > maxArea) {
-          contour.delete()
-          continue
-        }
-        
-        const perimeter = window.cv.arcLength(contour, true)
-        if (perimeter < 100) {
-          contour.delete()
-          continue
-        }
-        
-        const epsilonLevels = [0.01, 0.015, 0.02, 0.025, 0.03, 0.04]
-        
-        for (const epsilonFactor of epsilonLevels) {
-          const approx = new window.cv.Mat()
-          const epsilon = epsilonFactor * perimeter
-          window.cv.approxPolyDP(contour, approx, epsilon, true)
-          
-          if (approx.rows >= 4 && approx.rows <= 8) {
-            const corners: Point[] = []
-            for (let j = 0; j < approx.rows; j++) {
-              corners.push({
-                x: approx.data32S[j * 2],
-                y: approx.data32S[j * 2 + 1]
-              })
-            }
-            
-            let finalCorners = corners
-            if (corners.length > 4) {
-              finalCorners = findBestQuadrilateral(corners)
-            }
-            
-            if (finalCorners.length === 4 && isValidQuadrilateral(finalCorners)) {
-              const sortedCorners = sortCorners(finalCorners)
-              const aspectRatio = calculateAspectRatio(sortedCorners)
-              const confidence = calculateImprovedConfidence(sortedCorners, area, canvas.width, canvas.height, perimeter)
-              const type = classifyShape(sortedCorners, aspectRatio)
-              
-              if (confidence >= CONFIDENCE_THRESHOLD) {
-                detectedShapes.push({
-                  corners: sortedCorners,
-                  area: area,
-                  aspectRatio: aspectRatio,
-                  confidence: confidence,
-                  type: type
-                })
-                break
-              }
-            }
-          }
-          approx.delete()
-        }
+      // Filter by area
+      if (area < minArea || area > maxArea) {
         contour.delete()
+        continue
       }
       
-      src.delete()
-      gray.delete()
-      blurred.delete()
-      edges.delete()
-      edges1.delete()
-      edges2.delete()
-      edges3.delete()
-      contours.delete()
-      hierarchy.delete()
-      kernel1.delete()
-      kernel2.delete()
+      // Approximate contour to polygon
+      const peri = window.cv.arcLength(contour, true)
+      const approx = new window.cv.Mat()
       
-      return detectedShapes.sort((a, b) => b.confidence - a.confidence).slice(0, 5)
+      // Try multiple epsilon values for better approximation
+      let epsilon = 0.02 * peri
+      window.cv.approxPolyDP(contour, approx, epsilon, true)
       
-    } catch (error) {
-      console.error('Error in shape detection:', error)
-      return []
+      // Only consider quadrilaterals
+      if (approx.rows === 4) {
+        const points = []
+        for (let j = 0; j < approx.rows; j++) {
+          points.push({
+            x: approx.data32S[j * 2],
+            y: approx.data32S[j * 2 + 1]
+          })
+        }
+        
+        // Validate the quadrilateral
+        if (isValidQuadrilateral(points)) {
+          const sortedCorners = sortCorners(points)
+          const aspectRatio = calculateAspectRatio(sortedCorners)
+          
+          // Calculate confidence based on geometric properties
+          const confidence = calculateEnhancedConfidence(
+            sortedCorners, 
+            area, 
+            canvas.width, 
+            canvas.height, 
+            peri
+          )
+          
+          const type = classifyShape(sortedCorners, aspectRatio)
+          
+          if (confidence >= CONFIDENCE_THRESHOLD) {
+            detectedShapes.push({
+              corners: sortedCorners,
+              area: area,
+              aspectRatio: aspectRatio,
+              confidence: confidence,
+              type: type
+            })
+          }
+        }
+      }
+      
+      // Cleanup
+      approx.delete()
+      contour.delete()
     }
+    
+    // Cleanup
+    src.delete()
+    gray.delete()
+    blurred.delete()
+    thresh.delete()
+    contours.delete()
+    hierarchy.delete()
+    
+    // Sort by confidence and return top 5
+    return detectedShapes.sort((a, b) => b.confidence - a.confidence).slice(0, 5)
+    
+  } catch (error) {
+    console.error('Error in shape detection:', error)
+    return []
   }
-
+}
   const findBestQuadrilateral = (points: Point[]): Point[] => {
     if (points.length <= 4) return points
     
