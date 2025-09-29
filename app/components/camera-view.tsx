@@ -212,7 +212,7 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
           const aspectRatio = calculateAspectRatio(sortedCorners)
           
           // Calculate confidence based on geometric properties
-          const confidence = calculateEnhancedConfidence(
+          const confidence = calculateImprovedConfidence(
             sortedCorners, 
             area, 
             canvas.width, 
