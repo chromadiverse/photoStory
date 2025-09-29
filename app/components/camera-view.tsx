@@ -59,10 +59,9 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const stableFrameCount = useRef(0)
   const detectionHistory = useRef<DetectedShape[]>([])
 
-  // HIGH QUALITY video constraints for capture
   const videoConstraints = {
-    width: { ideal: 2560, min: 1280 },
-    height: { ideal: 1440, min: 720 },
+    width: { ideal: 1920, min: 1280 },
+    height: { ideal: 1080, min: 720 },
     facingMode: facingMode,
     frameRate: { ideal: 30, max: 30 },
     aspectRatio: 16/9
@@ -826,15 +825,11 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     
     setIsCapturing(true)
     try {
-      // Capture at FULL video resolution (not detection resolution)
-      const video = webcamRef.current.video!
-      const canvas = document.createElement('canvas')
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      const ctx = canvas.getContext('2d')!
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-      
-      const imageSrc = canvas.toDataURL('image/jpeg', 0.98)
+      // Capture using getScreenshot for consistent quality
+      const imageSrc = webcamRef.current.getScreenshot({ 
+        width: 1920, 
+        height: 1080,
+      })
 
       if (imageSrc) {
         let finalImageSrc = imageSrc
