@@ -55,10 +55,11 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const smoothedShape = useRef<Point[] | null>(null)
 
 const videoConstraints = {
-  width: { ideal: 2560, min: 1280 }, // Increased ideal width
-  height: { ideal: 1440, min: 720 }, // Increased ideal height
+  width: { ideal: 1920, min: 1280 }, // Ensure minimum quality
+  height: { ideal: 1080, min: 720 },
   facingMode: facingMode,
-  frameRate: { ideal: 30, max: 30 },
+  // Additional quality improvements
+  frameRate: { ideal: 30 },
   aspectRatio: 16/9
 }
   // Load OpenCV.js
@@ -525,127 +526,123 @@ const videoConstraints = {
   }
 
   // Detection loop with improved stability
- useEffect(() => {
-  if (!isDetectionReady || !hasCamera) return
+  useEffect(() => {
+    if (!isDetectionReady || !hasCamera) return
 
-  const detectShapes = () => {
-    const webcam = webcamRef.current
-    const canvas = canvasRef.current
-    const overlayCanvas = overlayCanvasRef.current
+ const detectShapes = () => {
+  const webcam = webcamRef.current
+  const canvas = canvasRef.current
+  const overlayCanvas = overlayCanvasRef.current
 
-    if (!webcam || !canvas || !overlayCanvas) {
-      animationFrameRef.current = requestAnimationFrame(detectShapes)
-      return
-    }
-
-    const video = webcam.video
-    if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
-      animationFrameRef.current = requestAnimationFrame(detectShapes)
-      return
-    }
-
-    try {
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-
-      // Use higher resolution for detection (maintaining aspect ratio)
-      const videoAspect = video.videoWidth / video.videoHeight
-      const canvasWidth = Math.min(video.videoWidth, 1280) // Use actual video width up to 1280
-      const canvasHeight = Math.round(canvasWidth / videoAspect)
-      
-      canvas.width = canvasWidth
-      canvas.height = canvasHeight
-      ctx.drawImage(video, 0, 0, canvasWidth, canvasHeight)
-
-      const shapes = detectDocumentShapes(canvas)
-      setDetectedShapes(shapes)
-      
-      let currentBest = shapes[0] || null
-      
-      if (currentBest) {
-        const smoothedCorners = smoothShapeWithHistory(currentBest.corners)
-        currentBest = { ...currentBest, corners: smoothedCorners }
-      }
-      
-      const previousBest = bestShape
-      if (currentBest && previousBest && areShapesSimilar(currentBest, previousBest)) {
-        stableFrameCount.current = Math.min(stableFrameCount.current + 1, MIN_STABLE_FRAMES * 3)
-      } else {
-        stableFrameCount.current = Math.max(stableFrameCount.current - 1, 0)
-      }
-      
-      const newStability = stableFrameCount.current >= MIN_STABLE_FRAMES
-      if (newStability !== isShapeStable) {
-        setIsShapeStable(newStability)
-      }
-      
-      setBestShape(currentBest)
-      drawOverlay(overlayCanvas, shapes, currentBest)
-      
-    } catch (error) {
-      console.error('Detection error:', error)
-    }
-
+  if (!webcam || !canvas || !overlayCanvas) {
     animationFrameRef.current = requestAnimationFrame(detectShapes)
+    return
   }
 
-  detectShapes()
+  const video = webcam.video
+  if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
+    animationFrameRef.current = requestAnimationFrame(detectShapes)
+    return
+  }
 
-  return () => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current)
+  try {
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    // Improved: Maintain aspect ratio and use consistent sizing
+    const videoAspect = video.videoWidth / video.videoHeight
+    const canvasWidth = 640  // Fixed width for consistent detection
+    const canvasHeight = Math.round(canvasWidth / videoAspect)
+    
+    canvas.width = canvasWidth
+    canvas.height = canvasHeight
+    ctx.drawImage(video, 0, 0, canvasWidth, canvasHeight)
+
+    const shapes = detectDocumentShapes(canvas)
+        setDetectedShapes(shapes)
+        
+        let currentBest = shapes[0] || null
+        
+        if (currentBest) {
+          // Apply history-based smoothing
+          const smoothedCorners = smoothShapeWithHistory(currentBest.corners)
+          currentBest = { ...currentBest, corners: smoothedCorners }
+        }
+        
+        // Improved stability tracking
+        const previousBest = bestShape
+        if (currentBest && previousBest && areShapesSimilar(currentBest, previousBest)) {
+          stableFrameCount.current = Math.min(stableFrameCount.current + 1, MIN_STABLE_FRAMES * 3)
+        } else {
+          stableFrameCount.current = Math.max(stableFrameCount.current - 1, 0)
+        }
+        
+        const newStability = stableFrameCount.current >= MIN_STABLE_FRAMES
+        if (newStability !== isShapeStable) {
+          setIsShapeStable(newStability)
+        }
+        
+        setBestShape(currentBest)
+        drawOverlay(overlayCanvas, shapes, currentBest)
+        
+      } catch (error) {
+        console.error('Detection error:', error)
+      }
+
+      animationFrameRef.current = requestAnimationFrame(detectShapes)
     }
-  }
-}, [isDetectionReady, hasCamera, bestShape])
+
+    detectShapes()
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
+      }
+    }
+  }, [isDetectionReady, hasCamera, bestShape])
 
   // Enhanced overlay drawing
   const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], bestShape: DetectedShape | null) => {
-  const overlayCtx = overlayCanvas.getContext('2d')
-  if (!overlayCtx) return
+    const overlayCtx = overlayCanvas.getContext('2d')
+    if (!overlayCtx) return
 
-  overlayCanvas.width = canvasRef.current?.width || 0
-  overlayCanvas.height = canvasRef.current?.height || 0
-  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
+    overlayCanvas.width = canvasRef.current?.width || 0
+    overlayCanvas.height = canvasRef.current?.height || 0
+    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
 
-  if (!bestShape) {
-    // Center guidance elements
-    const centerX = overlayCanvas.width / 2
-    const centerY = overlayCanvas.height / 2
-    
-    // Draw semi-transparent overlay
-    overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.6)'
-    overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height)
-    
-    // Draw guide rectangle in center
-    const guideWidth = Math.min(overlayCanvas.width * 0.8, 800) // Limit max width
-    const guideHeight = Math.min(overlayCanvas.height * 0.6, 600) // Limit max height
-    const guideX = (overlayCanvas.width - guideWidth) / 2
-    const guideY = (overlayCanvas.height - guideHeight) / 2
-    
-    overlayCtx.strokeStyle = '#FFFFFF'
-    overlayCtx.lineWidth = 3
-    overlayCtx.setLineDash([10, 10])
-    overlayCtx.strokeRect(guideX, guideY, guideWidth, guideHeight)
-    overlayCtx.setLineDash([])
-    
-    // Centered text
-    overlayCtx.fillStyle = '#FFFFFF'
-    overlayCtx.font = 'bold 28px Arial'
-    overlayCtx.textAlign = 'center'
-    overlayCtx.textBaseline = 'middle'
-    overlayCtx.fillText(
-      'Position document in frame',
-      centerX,
-      guideY - 40
-    )
-    overlayCtx.font = '20px Arial'
-    overlayCtx.fillText(
-      'Works with monitors, papers, books, photos',
-      centerX,
-      guideY + guideHeight + 40
-    )
-    return
-  }
+    if (!bestShape) {
+      // Guidance overlay
+      overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.6)'
+      overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height)
+      
+      // Draw guide rectangle in center
+      const guideWidth = overlayCanvas.width * 0.7
+      const guideHeight = overlayCanvas.height * 0.5
+      const guideX = (overlayCanvas.width - guideWidth) / 2
+      const guideY = (overlayCanvas.height - guideHeight) / 2
+      
+      overlayCtx.strokeStyle = '#FFFFFF'
+      overlayCtx.lineWidth = 3
+      overlayCtx.setLineDash([10, 10])
+      overlayCtx.strokeRect(guideX, guideY, guideWidth, guideHeight)
+      overlayCtx.setLineDash([])
+      
+      overlayCtx.fillStyle = '#FFFFFF'
+      overlayCtx.font = 'bold 28px Arial'
+      overlayCtx.textAlign = 'center'
+      overlayCtx.fillText(
+        'Position document in frame',
+        overlayCanvas.width / 2,
+        guideY - 40
+      )
+      overlayCtx.font = '20px Arial'
+      overlayCtx.fillText(
+        'Works with monitors, papers, books, photos',
+        overlayCanvas.width / 2,
+        guideY + guideHeight + 40
+      )
+      return
+    }
 
     const corners = bestShape.corners
     const isStable = isShapeStable
@@ -790,6 +787,7 @@ const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeigh
   return { width: outputWidth, height: outputHeight }
 }
 
+  // Perspective correction and cropping function
  const cropAndCorrectPerspective = (imageSrc: string, corners: Point[], canvas: HTMLCanvasElement): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image()
@@ -801,9 +799,12 @@ const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeigh
           return
         }
 
-        // Create OpenCV matrices
-        const src = window.cv.imread(img)
-        const dst = new window.cv.Mat()
+        // Create canvas for the full image
+        const fullCanvas = document.createElement('canvas')
+        const fullCtx = fullCanvas.getContext('2d')!
+        fullCanvas.width = img.width
+        fullCanvas.height = img.height
+        fullCtx.drawImage(img, 0, 0)
 
         // Scale corners to match the full resolution image
         const scaleX = img.width / canvas.width
@@ -814,17 +815,17 @@ const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeigh
           y: corner.y * scaleY
         }))
 
-        // Properly order corners for document perspective
+        // Create OpenCV matrices
+        const src = window.cv.imread(fullCanvas)
+        const dst = new window.cv.Mat()
+
+        // IMPROVED: Better corner sorting that preserves document orientation
         const properlyOrderedCorners = orderCornersForDocument(scaledCorners)
 
-        // Calculate output dimensions maintaining aspect ratio
-        const { width: outputWidth, height: outputHeight } = calculateOptimalOutputSize(
-          properlyOrderedCorners, 
-          img.width, 
-          img.height
-        )
+        // IMPROVED: Calculate proper output dimensions maintaining aspect ratio
+        const { width: outputWidth, height: outputHeight } = calculateOptimalOutputSize(properlyOrderedCorners, img.width, img.height)
 
-        // Define source and destination points
+        // Define source points (the detected corners in proper order)
         const srcPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
           properlyOrderedCorners[0].x, properlyOrderedCorners[0].y, // Top-left
           properlyOrderedCorners[1].x, properlyOrderedCorners[1].y, // Top-right  
@@ -832,6 +833,7 @@ const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeigh
           properlyOrderedCorners[3].x, properlyOrderedCorners[3].y  // Bottom-left
         ])
 
+        // Define destination points (rectangle corners)
         const dstPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
           0, 0,                    // Top-left
           outputWidth, 0,          // Top-right
@@ -848,7 +850,7 @@ const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeigh
           dst, 
           transformMatrix, 
           new window.cv.Size(outputWidth, outputHeight),
-          window.cv.INTER_CUBIC, // High-quality interpolation
+          window.cv.INTER_CUBIC, // Use cubic interpolation for better quality
           window.cv.BORDER_CONSTANT,
           new window.cv.Scalar(255, 255, 255, 255) // White background
         )
@@ -859,7 +861,7 @@ const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeigh
         outputCanvas.height = outputHeight
         window.cv.imshow(outputCanvas, dst)
 
-        // Convert to high-quality image
+        // Convert to blob with high quality
         outputCanvas.toBlob((blob) => {
           if (blob) {
             const reader = new FileReader()
@@ -870,9 +872,9 @@ const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeigh
           } else {
             resolve(imageSrc)
           }
-        }, 'image/jpeg', 0.98) // High quality
+        }, 'image/jpeg', 0.98) // Increased quality to 98%
 
-        // Cleanup
+        // Cleanup OpenCV matrices
         src.delete()
         dst.delete()
         srcPoints.delete()
@@ -887,29 +889,25 @@ const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeigh
     img.src = imageSrc
   })
 }
-
  const handleCapture = useCallback(async () => {
   if (!webcamRef.current) return
   
   setIsCapturing(true)
   try {
-    // Capture at maximum available resolution of the camera
-    const video = webcamRef.current.video!
-    const canvas = document.createElement('canvas')
-    canvas.width = video.videoWidth
-    canvas.height = video.videoHeight
-    const ctx = canvas.getContext('2d')!
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    // Capture at maximum available resolution
+    const imageSrc = webcamRef.current.getScreenshot({ 
+      width: 1920, 
+      height: 1080,
+     
+    })
     
-    // Convert to high-quality image
-    const imageSrc = canvas.toDataURL('image/jpeg', 0.98)
-
     if (imageSrc) {
       let finalImageSrc = imageSrc
       let finalBlob: Blob
 
       // If we have a detected shape, crop and correct perspective
       if (bestShape && canvasRef.current) {
+        console.log('Applying perspective correction and cropping...')
         finalImageSrc = await cropAndCorrectPerspective(imageSrc, bestShape.corners, canvasRef.current)
       }
 
@@ -919,6 +917,7 @@ const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeigh
       
       const image = new Image()
       image.onload = () => {
+        console.log('Final cropped image dimensions:', image.width, 'x', image.height)
         onImageCapture({
           src: finalImageSrc,
           blob: finalBlob,
