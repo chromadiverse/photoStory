@@ -115,7 +115,6 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       }
     }
   }, [])
-
 const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
   if (!window.cv || !canvas) return []
 
@@ -142,28 +141,50 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
       2
     )
     
-    // Find contours
+    // Find contours with hierarchy to identify parent-child relationships
     const contours = new window.cv.MatVector()
     const hierarchy = new window.cv.Mat()
     window.cv.findContours(
       thresh, 
       contours, 
       hierarchy, 
-      window.cv.RETR_EXTERNAL, 
+      window.cv.RETR_CCOMP, // Retrieve all contours and arrange by hierarchy
       window.cv.CHAIN_APPROX_SIMPLE
     )
+    
+    // Create an array to hold contour data with hierarchy info
+    const contourData = []
+    for (let i = 0; i < contours.size(); i++) {
+      const contour = contours.get(i)
+      const area = window.cv.contourArea(contour)
+      
+      // Get hierarchy info: [Next, Previous, First_Child, Parent]
+      const h = hierarchy.data32S
+      const offset = i * 4
+      const parentIdx = h[offset + 3]
+      
+      // Only consider top-level contours (no parent or parent is -1)
+      if (parentIdx === -1) {
+        contourData.push({
+          contour,
+          area,
+          index: i
+        })
+      } else {
+        contour.delete() // Clean up child contours
+      }
+    }
+    
+    // Sort contours by area in descending order
+    contourData.sort((a, b) => b.area - a.area)
     
     const detectedShapes: DetectedShape[] = []
     const minArea = canvas.width * canvas.height * MIN_CONTOUR_AREA
     const maxArea = canvas.width * canvas.height * MAX_CONTOUR_AREA
     
-    for (let i = 0; i < contours.size(); i++) {
-      const contour = contours.get(i)
-      const area = window.cv.contourArea(contour)
-      
-      // Filter by area
+    // Only process the largest contour (likely the outermost document)
+    for (const { contour, area } of contourData) {
       if (area < minArea || area > maxArea) {
-        contour.delete()
         continue
       }
       
@@ -209,13 +230,13 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
               confidence: confidence,
               type: type
             })
+            break // Only take the largest valid contour
           }
         }
       }
       
       // Cleanup
       approx.delete()
-      contour.delete()
     }
     
     // Cleanup
