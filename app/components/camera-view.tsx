@@ -85,7 +85,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         }
 
         const script = document.createElement('script')
-        script.src = 'https://cdn.jsdelivr.net/npm/@techstark/opencv-js@4.8.0-release.1/opencv.js'
+        script.src = 'https://docs.opencv.org/4.8.0/opencv.js'
         script.async = true
         
         document.head.appendChild(script)
