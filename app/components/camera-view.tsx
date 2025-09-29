@@ -525,7 +525,7 @@ const videoConstraints = {
   }
 
   // Detection loop with improved stability
-  useEffect(() => {
+ useEffect(() => {
   if (!isDetectionReady || !hasCamera) return
 
   const detectShapes = () => {
@@ -790,7 +790,6 @@ const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeigh
   return { width: outputWidth, height: outputHeight }
 }
 
-  // Perspective correction and cropping function
  const cropAndCorrectPerspective = (imageSrc: string, corners: Point[], canvas: HTMLCanvasElement): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image()
@@ -888,7 +887,8 @@ const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeigh
     img.src = imageSrc
   })
 }
-const handleCapture = useCallback(async () => {
+
+ const handleCapture = useCallback(async () => {
   if (!webcamRef.current) return
   
   setIsCapturing(true)
