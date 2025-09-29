@@ -71,16 +71,65 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       setImageDimensions({ width, height });
       setImageLoaded(true);
       
-      // Set initial crop area to full image
-      setCropArea({
-        x: 0,
-        y: 0,
-        width: width,
-        height: height
-      });
+      // Set initial crop area to center of image
+      centerImage(width, height);
     };
     img.src = image.src;
   }, [image.src]);
+
+  // Center the image in the crop area
+  const centerImage = (imgWidth: number, imgHeight: number) => {
+    // Calculate the crop area to center the image
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    if (!containerRect) return;
+    
+    const containerWidth = containerRect.width;
+    const containerHeight = containerRect.height;
+    
+    // Calculate the scaled dimensions of the image
+    const scaleX = containerWidth / imgWidth;
+    const scaleY = containerHeight / imgHeight;
+    const scale = Math.min(scaleX, scaleY) * zoom;
+    
+    const displayWidth = imgWidth * scale;
+    const displayHeight = imgHeight * scale;
+    
+    // Calculate the centered position
+    const offsetX = (containerWidth - displayWidth) / 2;
+    const offsetY = (containerHeight - displayHeight) / 2;
+    
+    // Calculate the crop area dimensions (initially full image)
+    let cropWidth = imgWidth;
+    let cropHeight = imgHeight;
+    
+    // Adjust crop area if aspect ratio is set
+    if (aspect) {
+      if (aspect > 1) { // Landscape
+        cropHeight = imgWidth / aspect;
+        if (cropHeight > imgHeight) {
+          cropHeight = imgHeight;
+          cropWidth = imgHeight * aspect;
+        }
+      } else { // Portrait or square
+        cropWidth = imgHeight * aspect;
+        if (cropWidth > imgWidth) {
+          cropWidth = imgWidth;
+          cropHeight = imgWidth / aspect;
+        }
+      }
+    }
+    
+    // Center the crop area
+    const cropX = Math.max(0, (imgWidth - cropWidth) / 2);
+    const cropY = Math.max(0, (imgHeight - cropHeight) / 2);
+    
+    setCropArea({
+      x: cropX,
+      y: cropY,
+      width: cropWidth,
+      height: cropHeight
+    });
+  };
 
   // Convert screen coordinates to image coordinates
   const screenToImageCoords = useCallback((screenX: number, screenY: number) => {
@@ -306,16 +355,9 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     }, 'image/jpeg', 0.95);
   };
 
-
-
   // Reset crop to full image
   const resetCrop = () => {
-    setCropArea({
-      x: 0,
-      y: 0,
-      width: imageDimensions.width,
-      height: imageDimensions.height
-    });
+    centerImage(imageDimensions.width, imageDimensions.height);
   };
 
   // Apply auto-straighten (simplified version)
@@ -328,7 +370,18 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   // Zoom controls
   const zoomIn = () => setZoom(prev => Math.min(prev + 0.1, 3));
   const zoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.1));
-  const fitToScreen = () => setZoom(1);
+  const fitToScreen = () => {
+    setZoom(1);
+    // Center the image after zooming
+    setTimeout(() => centerImage(imageDimensions.width, imageDimensions.height), 0);
+  };
+
+  // Center image when zoom changes
+  useEffect(() => {
+    if (imageLoaded) {
+      centerImage(imageDimensions.width, imageDimensions.height);
+    }
+  }, [zoom, aspect, imageLoaded]);
 
   // Calculate crop area position and size for the UI
   const containerRect = containerRef.current?.getBoundingClientRect();
