@@ -46,7 +46,7 @@ const MIN_CONTOUR_AREA = 0.05; // 5% of image area
 const MAX_CONTOUR_AREA = 0.95; // 95% of image area
 const MIN_RECTANGLE_AREA_RATIO = 0.7; // Minimum area ratio for a valid rectangle
 const CORNER_ANGLE_TOLERANCE = 20; // Degrees tolerance for right angles
-const MIN_CONTOUR_AREA_RATIO = 0.02; // Minimum 2% of image area
+const MIN_CONTOUR_AREA_RATIO = 0.005; // Minimum 2% of image area
 const MAX_CONTOUR_ASPECT_RATIO = 5.0; // Avoid extremely long/short shapes
 const CONTOUR_SIMPLICITY_THRESHOLD = 0.05; // How simple/complex the contour should be
 const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
@@ -143,7 +143,6 @@ const isRectangularContour = (contour: any, corners: Point[]): boolean => {
   
   return true
 }
-
 const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
   if (!window.cv || !canvas) return []
 
@@ -180,8 +179,8 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
     
     // Calculate image dimensions
     const imgArea = canvas.width * canvas.height
-    const minArea = imgArea * MIN_CONTOUR_AREA_RATIO
-    const maxArea = imgArea * 0.95 // Don't exceed 95% of image
+    const minArea = imgArea * 0.005; // Reduced minimum area
+    const maxArea = imgArea * 0.95
     
     const detectedShapes: DetectedShape[] = []
     
@@ -194,15 +193,15 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
       if (area < minArea || area > maxArea) continue
       
       const perimeter = window.cv.arcLength(contour, true)
-      if (perimeter < 100) continue // Skip tiny contours
+      if (perimeter < 50) continue // Reduced minimum perimeter
       
       // Approximate contour to polygon
       const approx = new window.cv.Mat()
-      const epsilon = 0.02 * perimeter // Adjust approximation tolerance
+      const epsilon = 0.015 * perimeter // Reduced epsilon for better approximation
       window.cv.approxPolyDP(contour, approx, epsilon, true)
       
-      // Only consider contours with 4-6 points (likely to be rectangles)
-      if (approx.rows >= 4 && approx.rows <= 6) {
+      // Only consider contours with 4-8 points (likely to be rectangles)
+      if (approx.rows >= 4 && approx.rows <= 8) {
         const corners: Point[] = []
         for (let j = 0; j < approx.rows; j++) {
           corners.push({
@@ -273,6 +272,7 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
     return []
   }
 }
+
   const findBestQuadrilateral = (points: Point[]): Point[] => {
     if (points.length <= 4) return points
     
