@@ -87,7 +87,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     img.src = image.src;
   }, [image.src]);
 
-  // Resize the original image to match the selected aspect ratio
+  // Resize the original image to match the selected aspect ratio (with padding)
   const resizeImageToRatio = useCallback(async (targetRatio: number | null) => {
     if (!imageRef.current || targetRatio === null) {
       // For 'Free' ratio, reset to original
@@ -108,18 +108,18 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
     let newWidth: number, newHeight: number;
 
-    // Calculate new dimensions that match the target ratio
+    // Calculate new dimensions that match the target ratio (with padding)
     if (originalRatio > targetRatio) {
-      // Original is wider than target - crop width
-      newHeight = originalHeight;
-      newWidth = originalHeight * targetRatio;
-    } else {
-      // Original is taller than target - crop height  
+      // Original is wider than target - add vertical padding
       newWidth = originalWidth;
       newHeight = originalWidth / targetRatio;
+    } else {
+      // Original is taller than target - add horizontal padding
+      newHeight = originalHeight;
+      newWidth = originalHeight * targetRatio;
     }
 
-    // Create canvas to crop and resize
+    // Create canvas to resize with padding
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -127,17 +127,21 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     canvas.width = newWidth;
     canvas.height = newHeight;
 
-    // Draw the cropped portion of the original image
+    // Fill with white background
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, newWidth, newHeight);
+
+    // Calculate position to center the original image
+    const offsetX = (newWidth - originalWidth) / 2;
+    const offsetY = (newHeight - originalHeight) / 2;
+
+    // Draw the original image centered
     ctx.drawImage(
       imageRef.current,
-      (originalWidth - newWidth) / 2, // Source X
-      (originalHeight - newHeight) / 2, // Source Y
-      newWidth, // Source Width
-      newHeight, // Source Height
-      0, // Destination X
-      0, // Destination Y
-      newWidth, // Destination Width
-      newHeight  // Destination Height
+      offsetX, // Destination X
+      offsetY, // Destination Y
+      originalWidth, // Destination Width
+      originalHeight  // Destination Height
     );
 
     // Convert to blob and create object URL
