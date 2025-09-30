@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { ArrowLeft, Check, RotateCcw, ChevronDown, ChevronUp, X } from 'lucide-react'
 
 interface CroppedImageData {
@@ -33,7 +33,17 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isProcessing, setIsProcessing] = useState(false)
-  const [isFiltersExpanded, setIsFiltersExpanded] = useState(false) // Changed to false by default
+  const [isFiltersExpanded, setIsFiltersExpanded] = useState(false)
+  const [imageScale, setImageScale] = useState(1)
+
+  // Update image scale when filters expand/collapse
+  useEffect(() => {
+    if (isFiltersExpanded) {
+      setImageScale(0.85) // Slightly smaller when filters are open
+    } else {
+      setImageScale(1)
+    }
+  }, [isFiltersExpanded])
 
   // Add custom styles for enhanced sliders
   const sliderStyles = `
@@ -194,7 +204,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
 
       {/* Image Preview */}
       <div 
-        className="flex items-center justify-center p-4 bg-white/60 transition-all duration-300 ease-in-out flex-shrink-0"
+        className="flex items-center justify-center p-4 bg-white/60 transition-all duration-500 ease-in-out flex-shrink-0"
         style={{ 
           height: isFiltersExpanded ? '40%' : '70%',
           minHeight: 0
@@ -204,10 +214,11 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           <img
             src={imageData.croppedImage}
             alt="Preview"
-            className={`max-w-full max-h-full object-contain rounded-lg shadow-lg transition-all duration-300 ${
-              isFiltersExpanded ? 'scale-90' : 'scale-100'
-            }`}
-            style={{ filter: applyFilters() }}
+            className="max-w-full max-h-full object-contain rounded-lg shadow-lg transition-transform duration-500 ease-in-out"
+            style={{ 
+              filter: applyFilters(),
+              transform: `scale(${imageScale})`
+            }}
           />
           {isProcessing && (
             <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
@@ -221,7 +232,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       <div className="bg-white/90 backdrop-blur-sm shadow-sm flex-grow overflow-hidden flex flex-col">
         {/* Filter Controls */}
         <div 
-          className="overflow-y-auto overscroll-contain scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent"
+          className="overflow-y-auto overscroll-contain scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent transition-all duration-500 ease-in-out"
           style={{ 
             maxHeight: isFiltersExpanded ? '60vh' : '0',
             opacity: isFiltersExpanded ? 1 : 0,
@@ -370,7 +381,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
               disabled={isProcessing}
             >
               <span>Filters</span>
-              <ChevronUp className="w-5 h-5" />
+              <ChevronDown className="w-5 h-5" />
             </button>
           )}
         </div>
