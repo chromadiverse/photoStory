@@ -29,7 +29,7 @@ export interface FilterSettings {
   contrast: number
   saturation: number
   hue: number
-  grayscale: number
+
 }
 
 export default function Home() {
@@ -42,7 +42,7 @@ export default function Home() {
     contrast: 100,
     saturation: 100,
     hue: 0,
-    grayscale: 0
+ 
   })
 
   const handleImageCapture = (image: CapturedImage) => {
@@ -67,7 +67,7 @@ export default function Home() {
       contrast: 100,
       saturation: 100,
       hue: 0,
-      grayscale: 0
+    
     })
     setCurrentView('camera')
   }
