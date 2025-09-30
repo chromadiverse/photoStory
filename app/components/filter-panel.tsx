@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { ArrowLeft, Check, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, Check, RotateCcw, ChevronDown, ChevronUp, X } from 'lucide-react'
 
 interface CroppedImageData {
   croppedImage: string
@@ -33,7 +33,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isProcessing, setIsProcessing] = useState(false)
-  const [isFiltersExpanded, setIsFiltersExpanded] = useState(true)
+  const [isFiltersExpanded, setIsFiltersExpanded] = useState(false) // Changed to false by default
 
   // Add custom styles for enhanced sliders
   const sliderStyles = `
@@ -353,18 +353,27 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         </div>
 
         {/* Filter Controls Toggle Button - Always Visible */}
-        <button
-          onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
-          className="py-3 flex items-center justify-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium border-t border-gray-200 flex-shrink-0"
-          disabled={isProcessing}
-        >
-          <span>Filters</span>
+        <div className="flex-shrink-0">
           {isFiltersExpanded ? (
-            <ChevronDown className="w-5 h-5" />
+            <button
+              onClick={() => setIsFiltersExpanded(false)}
+              className="w-full py-3 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
+              disabled={isProcessing}
+            >
+              <X className="w-5 h-5" />
+              <span>Close Filters</span>
+            </button>
           ) : (
-            <ChevronUp className="w-5 h-5" />
+            <button
+              onClick={() => setIsFiltersExpanded(true)}
+              className="w-full py-3 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
+              disabled={isProcessing}
+            >
+              <span>Filters</span>
+              <ChevronUp className="w-5 h-5" />
+            </button>
           )}
-        </button>
+        </div>
       </div>
 
       {/* Hidden canvas for processing */}
