@@ -176,35 +176,16 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         </div>
       </div>
 
-      {/* Filter Controls Toggle Button */}
+      {/* Filter Controls Container */}
       <div className="bg-white/90 backdrop-blur-sm shadow-sm">
-        <button
-          onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
-          className="w-full py-3 flex items-center justify-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium border-t border-gray-200"
-          disabled={isProcessing}
+        {/* Filter Controls */}
+        <div 
+          className="overflow-hidden transition-all duration-300 ease-in-out"
+          style={{
+            maxHeight: isFiltersExpanded ? '60vh' : '0',
+            opacity: isFiltersExpanded ? 1 : 0
+          }}
         >
-          {isFiltersExpanded ? (
-            <>
-              <span>Hide Filters</span>
-              <ChevronDown className="w-5 h-5" />
-            </>
-          ) : (
-            <>
-              <span>Show Filters</span>
-              <ChevronUp className="w-5 h-5" />
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* Filter Controls */}
-      <div 
-        className="bg-white/90 backdrop-blur-sm shadow-sm overflow-hidden transition-all duration-300 ease-in-out"
-        style={{
-          maxHeight: isFiltersExpanded ? '60vh' : '0',
-          opacity: isFiltersExpanded ? 1 : 0
-        }}
-      >
         <div className="p-6 space-y-6 overflow-y-auto" style={{ maxHeight: '60vh' }}>
           {/* Brightness */}
           <div className="space-y-3">
@@ -318,15 +299,35 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Filter Controls Toggle Button - Always Visible */}
+        <button
+          onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
+          className="w-full py-3 flex items-center justify-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium border-t border-gray-200"
+          disabled={isProcessing}
+        >
+          {isFiltersExpanded ? (
+            <>
+              <span>Hide Filters</span>
+              <ChevronDown className="w-5 h-5" />
+            </>
+          ) : (
+            <>
+              <span>Show Filters</span>
+              <ChevronUp className="w-5 h-5" />
+            </>
+          )}
+        </button>
       </div>
 
       {/* Hidden canvas for processing */}
-      <canvas 
+     <canvas 
         ref={canvasRef} 
         className="hidden" 
       />
-    </div>
-  )
+    </div>  {/* This closes the Filter Controls Container */}
+  </div>    {/* ← Add this to close the main container */}
+)
 }
 
 export default FilterPanel
