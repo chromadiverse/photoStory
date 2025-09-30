@@ -35,6 +35,43 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
   const [isProcessing, setIsProcessing] = useState(false)
   const [isFiltersExpanded, setIsFiltersExpanded] = useState(true)
 
+  // Add custom styles for enhanced sliders
+  const sliderStyles = `
+    .slider-enhanced::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #3b82f6;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border: 3px solid white;
+    }
+    
+    .slider-enhanced::-moz-range-thumb {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #3b82f6;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border: 3px solid white;
+    }
+    
+    .slider-enhanced:active::-webkit-slider-thumb {
+      width: 36px;
+      height: 36px;
+      box-shadow: 0 3px 12px rgba(59,130,246,0.5);
+    }
+    
+    .slider-enhanced:active::-moz-range-thumb {
+      width: 36px;
+      height: 36px;
+      box-shadow: 0 3px 12px rgba(59,130,246,0.5);
+    }
+  `
+
   const applyFilters = () => {
     const { brightness, contrast, saturation, hue } = filterSettings
     return `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%) hue-rotate(${hue}deg)`
@@ -131,6 +168,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
 
   return (
     <div className="h-full flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
+      <style>{sliderStyles}</style>
       {/* Header */}
       <div className="bg-white/90 backdrop-blur-sm shadow-sm px-4 py-3 flex items-center justify-between">
         <button 
@@ -186,10 +224,10 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             opacity: isFiltersExpanded ? 1 : 0
           }}
         >
-        <div className="p-6 space-y-6 overflow-y-auto" style={{ maxHeight: '60vh' }}>
+        <div className="p-6 space-y-8 overflow-y-auto overscroll-contain" style={{ maxHeight: '60vh', touchAction: 'pan-y' }}>
           {/* Brightness */}
-          <div className="space-y-3">
-            <div className="flex justify-between items-center min-h-[28px]">
+          <div className="space-y-4 px-2">
+            <div className="flex justify-between items-center min-h-[32px]">
               <label className="text-base font-semibold text-gray-700">
                 Brightness
               </label>
@@ -197,24 +235,26 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
                 {filterSettings.brightness}%
               </span>
             </div>
-            <input
-              type="range"
-              min="0"
-              max="200"
-              value={filterSettings.brightness}
-              onChange={(e) => handleSliderChange('brightness', Number(e.target.value))}
-              disabled={isProcessing}
-              className="w-full h-4 bg-gray-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
-              style={{
-                WebkitAppearance: 'none',
-                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(filterSettings.brightness / 200) * 100}%, #e5e7eb ${(filterSettings.brightness / 200) * 100}%, #e5e7eb 100%)`
-              }}
-            />
+            <div className="py-2" style={{ touchAction: 'none' }}>
+              <input
+                type="range"
+                min="0"
+                max="200"
+                value={filterSettings.brightness}
+                onChange={(e) => handleSliderChange('brightness', Number(e.target.value))}
+                disabled={isProcessing}
+                className="w-full h-10 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-enhanced"
+                style={{
+                  WebkitAppearance: 'none',
+                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(filterSettings.brightness / 200) * 100}%, #e5e7eb ${(filterSettings.brightness / 200) * 100}%, #e5e7eb 100%)`
+                }}
+              />
+            </div>
           </div>
 
           {/* Contrast */}
-          <div className="space-y-3">
-            <div className="flex justify-between items-center min-h-[28px]">
+          <div className="space-y-4 px-2">
+            <div className="flex justify-between items-center min-h-[32px]">
               <label className="text-base font-semibold text-gray-700">
                 Contrast
               </label>
@@ -222,24 +262,26 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
                 {filterSettings.contrast}%
               </span>
             </div>
-            <input
-              type="range"
-              min="0"
-              max="200"
-              value={filterSettings.contrast}
-              onChange={(e) => handleSliderChange('contrast', Number(e.target.value))}
-              disabled={isProcessing}
-              className="w-full h-4 bg-gray-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
-              style={{
-                WebkitAppearance: 'none',
-                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(filterSettings.contrast / 200) * 100}%, #e5e7eb ${(filterSettings.contrast / 200) * 100}%, #e5e7eb 100%)`
-              }}
-            />
+            <div className="py-2" style={{ touchAction: 'none' }}>
+              <input
+                type="range"
+                min="0"
+                max="200"
+                value={filterSettings.contrast}
+                onChange={(e) => handleSliderChange('contrast', Number(e.target.value))}
+                disabled={isProcessing}
+                className="w-full h-10 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-enhanced"
+                style={{
+                  WebkitAppearance: 'none',
+                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(filterSettings.contrast / 200) * 100}%, #e5e7eb ${(filterSettings.contrast / 200) * 100}%, #e5e7eb 100%)`
+                }}
+              />
+            </div>
           </div>
 
           {/* Saturation */}
-          <div className="space-y-3">
-            <div className="flex justify-between items-center min-h-[28px]">
+          <div className="space-y-4 px-2">
+            <div className="flex justify-between items-center min-h-[32px]">
               <label className="text-base font-semibold text-gray-700">
                 Saturation
               </label>
@@ -247,24 +289,26 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
                 {filterSettings.saturation}%
               </span>
             </div>
-            <input
-              type="range"
-              min="0"
-              max="200"
-              value={filterSettings.saturation}
-              onChange={(e) => handleSliderChange('saturation', Number(e.target.value))}
-              disabled={isProcessing}
-              className="w-full h-4 bg-gray-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
-              style={{
-                WebkitAppearance: 'none',
-                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(filterSettings.saturation / 200) * 100}%, #e5e7eb ${(filterSettings.saturation / 200) * 100}%, #e5e7eb 100%)`
-              }}
-            />
+            <div className="py-2" style={{ touchAction: 'none' }}>
+              <input
+                type="range"
+                min="0"
+                max="200"
+                value={filterSettings.saturation}
+                onChange={(e) => handleSliderChange('saturation', Number(e.target.value))}
+                disabled={isProcessing}
+                className="w-full h-10 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-enhanced"
+                style={{
+                  WebkitAppearance: 'none',
+                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(filterSettings.saturation / 200) * 100}%, #e5e7eb ${(filterSettings.saturation / 200) * 100}%, #e5e7eb 100%)`
+                }}
+              />
+            </div>
           </div>
 
           {/* Hue */}
-          <div className="space-y-3">
-            <div className="flex justify-between items-center min-h-[28px]">
+          <div className="space-y-4 px-2">
+            <div className="flex justify-between items-center min-h-[32px]">
               <label className="text-base font-semibold text-gray-700">
                 Hue
               </label>
@@ -272,19 +316,21 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
                 {filterSettings.hue > 0 ? '+' : ''}{filterSettings.hue}°
               </span>
             </div>
-            <input
-              type="range"
-              min="-180"
-              max="180"
-              value={filterSettings.hue}
-              onChange={(e) => handleSliderChange('hue', Number(e.target.value))}
-              disabled={isProcessing}
-              className="w-full h-4 bg-gray-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
-              style={{
-                WebkitAppearance: 'none',
-                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((filterSettings.hue + 180) / 360) * 100}%, #e5e7eb ${((filterSettings.hue + 180) / 360) * 100}%, #e5e7eb 100%)`
-              }}
-            />
+            <div className="py-2" style={{ touchAction: 'none' }}>
+              <input
+                type="range"
+                min="-180"
+                max="180"
+                value={filterSettings.hue}
+                onChange={(e) => handleSliderChange('hue', Number(e.target.value))}
+                disabled={isProcessing}
+                className="w-full h-10 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-enhanced"
+                style={{
+                  WebkitAppearance: 'none',
+                  background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((filterSettings.hue + 180) / 360) * 100}%, #e5e7eb ${((filterSettings.hue + 180) / 360) * 100}%, #e5e7eb 100%)`
+                }}
+              />
+            </div>
           </div>
 
           {/* Reset Button */}
@@ -298,6 +344,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
               <span>Reset All Filters</span>
             </button>
           </div>
+        </div>
         </div>
 
         {/* Filter Controls Toggle Button - Always Visible */}
@@ -326,8 +373,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         className="hidden" 
       />
     </div> 
-  </div>  
-)
+  )
 }
 
 export default FilterPanel
