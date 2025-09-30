@@ -63,6 +63,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   });
   const [imageLoaded, setImageLoaded] = useState(false);
   const [processedImage, setProcessedImage] = useState<string | null>(null);
+  const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -74,6 +75,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       const { width, height } = img;
       setOriginalDimensions({ width, height });
       setImageDimensions({ width, height });
+      setOriginalImageSrc(image.src); // Store original source
       setImageLoaded(true);
       
       // Set initial crop area to full image
@@ -89,7 +91,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
   // Resize the original image to match the selected aspect ratio (with padding)
   const resizeImageToRatio = useCallback(async (targetRatio: number | null) => {
-    if (!imageRef.current || targetRatio === null) {
+    if (!originalImageSrc || targetRatio === null) {
       // For 'Free' ratio, reset to original
       setProcessedImage(null);
       setImageDimensions({ width: originalDimensions.width, height: originalDimensions.height });
@@ -131,13 +133,22 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, newWidth, newHeight);
 
+    // Create temporary image from original source
+    const tempImg = new Image();
+    tempImg.src = originalImageSrc;
+    
+    // Wait for image to load
+    await new Promise<void>((resolve) => {
+      tempImg.onload = () => resolve();
+    });
+
     // Calculate position to center the original image
     const offsetX = (newWidth - originalWidth) / 2;
     const offsetY = (newHeight - originalHeight) / 2;
 
     // Draw the original image centered
     ctx.drawImage(
-      imageRef.current,
+      tempImg,
       offsetX, // Destination X
       offsetY, // Destination Y
       originalWidth, // Destination Width
@@ -167,7 +178,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         height: newHeight
       });
     }
-  }, [originalDimensions]);
+  }, [originalImageSrc, originalDimensions]);
 
   // Handle ratio selection
   const handleRatioSelect = (ratioOption: typeof printRatios[0]) => {
