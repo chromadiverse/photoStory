@@ -49,6 +49,7 @@ const printRatios = [
 
 const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
+  const [originalDimensions, setOriginalDimensions] = useState({ width: 0, height: 0 });
   const [cropArea, setCropArea] = useState<CropArea>({ x: 0, y: 0, width: 0, height: 0 });
   const [rotation, setRotation] = useState(0);
   const [zoom, setZoom] = useState(0.5);
@@ -61,7 +62,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     initialCrop: { x: 0, y: 0, width: 0, height: 0 } 
   });
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [processedImage, setProcessedImage] = useState<string | null>(null); // This will hold the ratio-adjusted image
+  const [processedImage, setProcessedImage] = useState<string | null>(null);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -71,11 +72,17 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     const img = new Image();
     img.onload = () => {
       const { width, height } = img;
+      setOriginalDimensions({ width, height });
       setImageDimensions({ width, height });
       setImageLoaded(true);
       
-      // Set initial crop area to center of image
-      centerImage(width, height);
+      // Set initial crop area to full image
+      setCropArea({
+        x: 0,
+        y: 0,
+        width: width,
+        height: height
+      });
     };
     img.src = image.src;
   }, [image.src]);
@@ -83,19 +90,25 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   // Resize the original image to match the selected aspect ratio
   const resizeImageToRatio = useCallback(async (targetRatio: number | null) => {
     if (!imageRef.current || targetRatio === null) {
-      // For 'Free' ratio, just use original image
+      // For 'Free' ratio, reset to original
       setProcessedImage(null);
-      setImageDimensions({ width: imageRef.current?.naturalWidth || 0, height: imageRef.current?.naturalHeight || 0 });
+      setImageDimensions({ width: originalDimensions.width, height: originalDimensions.height });
+      setCropArea({
+        x: 0,
+        y: 0,
+        width: originalDimensions.width,
+        height: originalDimensions.height
+      });
       return;
     }
-    
-    const originalWidth = imageRef.current.naturalWidth;
-    const originalHeight = imageRef.current.naturalHeight;
+
+    const originalWidth = originalDimensions.width;
+    const originalHeight = originalDimensions.height;
     const originalRatio = originalWidth / originalHeight;
-    
+
     let newWidth: number, newHeight: number;
-    
-    // Calculate new dimensions that fit the target ratio
+
+    // Calculate new dimensions that match the target ratio
     if (originalRatio > targetRatio) {
       // Original is wider than target - crop width
       newHeight = originalHeight;
@@ -105,35 +118,33 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       newWidth = originalWidth;
       newHeight = originalWidth / targetRatio;
     }
-    
-    // Ensure we don't exceed original dimensions
-    newWidth = Math.min(newWidth, originalWidth);
-    newHeight = Math.min(newHeight, originalHeight);
-    
-    // Calculate crop area for the original image
-    const cropX = (originalWidth - newWidth) / 2;
-    const cropY = (originalHeight - newHeight) / 2;
-    
+
     // Create canvas to crop and resize
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    
+
     canvas.width = newWidth;
     canvas.height = newHeight;
-    
+
     // Draw the cropped portion of the original image
     ctx.drawImage(
       imageRef.current,
-      cropX, cropY, newWidth, newHeight,
-      0, 0, newWidth, newHeight
+      (originalWidth - newWidth) / 2, // Source X
+      (originalHeight - newHeight) / 2, // Source Y
+      newWidth, // Source Width
+      newHeight, // Source Height
+      0, // Destination X
+      0, // Destination Y
+      newWidth, // Destination Width
+      newHeight  // Destination Height
     );
-    
+
     // Convert to blob and create object URL
     const blob = await new Promise<Blob | null>((resolve) => {
       canvas.toBlob(resolve, 'image/jpeg', 0.95);
     });
-    
+
     if (blob) {
       const url = URL.createObjectURL(blob);
       setProcessedImage(url);
@@ -152,7 +163,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         height: newHeight
       });
     }
-  }, []);
+  }, [originalDimensions]);
 
   // Handle ratio selection
   const handleRatioSelect = (ratioOption: typeof printRatios[0]) => {
@@ -161,59 +172,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     
     // Resize the original image to match this ratio
     resizeImageToRatio(ratioOption.value);
-  };
-
-  // Center the image in the crop area
-  const centerImage = (imgWidth: number, imgHeight: number) => {
-    const containerRect = containerRef.current?.getBoundingClientRect();
-    if (!containerRect) return;
-    
-    const containerWidth = containerRect.width;
-    const containerHeight = containerRect.height;
-    
-    // Calculate the scaled dimensions of the image
-    const scaleX = containerWidth / imgWidth;
-    const scaleY = containerHeight / imgHeight;
-    const scale = Math.min(scaleX, scaleY) * zoom;
-    
-    const displayWidth = imgWidth * scale;
-    const displayHeight = imgHeight * scale;
-    
-    // Calculate the centered position
-    const offsetX = (containerWidth - displayWidth) / 2;
-    const offsetY = (containerHeight - displayHeight) / 2;
-    
-    // Calculate the crop area dimensions (initially full image)
-    let cropWidth = imgWidth;
-    let cropHeight = imgHeight;
-    
-    // Adjust crop area if aspect ratio is set
-    if (aspect) {
-      if (aspect > 1) { // Landscape
-        cropHeight = imgWidth / aspect;
-        if (cropHeight > imgHeight) {
-          cropHeight = imgHeight;
-          cropWidth = imgHeight * aspect;
-        }
-      } else { // Portrait or square
-        cropWidth = imgHeight * aspect;
-        if (cropWidth > imgWidth) {
-          cropWidth = imgWidth;
-          cropHeight = imgWidth / aspect;
-        }
-      }
-    }
-    
-    // Center the crop area
-    const cropX = Math.max(0, (imgWidth - cropWidth) / 2);
-    const cropY = Math.max(0, (imgHeight - cropHeight) / 2);
-    
-    setCropArea({
-      x: cropX,
-      y: cropY,
-      width: cropWidth,
-      height: cropHeight
-    });
   };
 
   // Convert screen coordinates to image coordinates
@@ -448,17 +406,12 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
   // Reset crop to full image
   const resetCrop = () => {
-    // If we have a processed image, reset to that
-    if (processedImage) {
-      setCropArea({
-        x: 0,
-        y: 0,
-        width: imageDimensions.width,
-        height: imageDimensions.height
-      });
-    } else {
-      centerImage(imageDimensions.width, imageDimensions.height);
-    }
+    setCropArea({
+      x: 0,
+      y: 0,
+      width: imageDimensions.width,
+      height: imageDimensions.height
+    });
   };
 
   // Apply auto-straighten (simplified version)
@@ -471,16 +424,26 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const zoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.1));
   const fitToScreen = () => {
     setZoom(1);
-    // Center the image after zooming
-    setTimeout(() => centerImage(imageDimensions.width, imageDimensions.height), 0);
+    // Reset crop area to full image after zooming
+    setCropArea({
+      x: 0,
+      y: 0,
+      width: imageDimensions.width,
+      height: imageDimensions.height
+    });
   };
 
   // Center image when zoom changes
   useEffect(() => {
     if (imageLoaded) {
-      centerImage(imageDimensions.width, imageDimensions.height);
+      setCropArea({
+        x: 0,
+        y: 0,
+        width: imageDimensions.width,
+        height: imageDimensions.height
+      });
     }
-  }, [zoom, aspect, imageLoaded]);
+  }, [imageDimensions]);
 
   // Calculate crop area position and size for the UI
   const containerRect = containerRef.current?.getBoundingClientRect();
