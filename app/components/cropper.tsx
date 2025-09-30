@@ -36,7 +36,11 @@ interface DragState {
   dragType: 'none' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e' | 'move';
   start: Point;
   initialCrop: CropArea;
+ 
+  initialMouse: Point;
+  initialCropStart: Point;
 }
+
 
 // Only the priority ratios as requested
 const printRatios = [
@@ -55,12 +59,14 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const [zoom, setZoom] = useState(0.5);
   const [aspect, setAspect] = useState<number | null>(null);
   const [selectedRatio, setSelectedRatio] = useState<string | null>(null);
-  const [dragState, setDragState] = useState<DragState>({ 
-    isDragging: false, 
-    dragType: 'none', 
-    start: { x: 0, y: 0 }, 
-    initialCrop: { x: 0, y: 0, width: 0, height: 0 } 
-  });
+const [dragState, setDragState] = useState<DragState>({ 
+  isDragging: false, 
+  dragType: 'none', 
+  start: { x: 0, y: 0 }, 
+  initialCrop: { x: 0, y: 0, width: 0, height: 0 },
+  initialMouse: { x: 0, y: 0 },
+  initialCropStart: { x: 0, y: 0 }
+});
   const [imageLoaded, setImageLoaded] = useState(false);
   const [processedImage, setProcessedImage] = useState<string | null>(null);
   const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null);
@@ -218,116 +224,125 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   }, [imageDimensions, zoom]);
 
   // Handle drag start
-  const handleDragStart = (e: React.MouseEvent | React.TouchEvent, dragType: DragState['dragType']) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    
-    setDragState({
-      isDragging: true,
-      dragType,
-      start: { x: clientX, y: clientY },
-      initialCrop: { ...cropArea }
-    });
-  };
-
-  // Handle drag movement
-  const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
-    if (!dragState.isDragging || !containerRef.current) return;
-    
-    // Prevent default to avoid scrolling on touch devices
-    e.preventDefault();
-    
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    
-    const deltaX = clientX - dragState.start.x;
-    const deltaY = clientY - dragState.start.y;
-    
-    // Convert delta to image coordinates
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const containerWidth = containerRect.width;
-    const containerHeight = containerRect.height;
-    const scaleX = containerWidth / imageDimensions.width;
-    const scaleY = containerHeight / imageDimensions.height;
-    const scale = Math.min(scaleX, scaleY) * zoom;
-    
-    const imageDeltaX = deltaX / scale;
-    const imageDeltaY = deltaY / scale;
-    
-    let newCrop = { ...dragState.initialCrop };
-    
-    switch (dragState.dragType) {
-      case 'nw':
-        newCrop.x += imageDeltaX;
-        newCrop.y += imageDeltaY;
-        newCrop.width -= imageDeltaX;
-        newCrop.height -= imageDeltaY;
-        break;
-      case 'ne':
-        newCrop.y += imageDeltaY;
-        newCrop.width += imageDeltaX;
-        newCrop.height -= imageDeltaY;
-        break;
-      case 'sw':
-        newCrop.x += imageDeltaX;
-        newCrop.width -= imageDeltaX;
-        newCrop.height += imageDeltaY;
-        break;
-      case 'se':
-        newCrop.width += imageDeltaX;
-        newCrop.height += imageDeltaY;
-        break;
-      case 'n':
-        newCrop.y += imageDeltaY;
-        newCrop.height -= imageDeltaY;
-        break;
-      case 's':
-        newCrop.height += imageDeltaY;
-        break;
-      case 'w':
-        newCrop.x += imageDeltaX;
-        newCrop.width -= imageDeltaX;
-        break;
-      case 'e':
-        newCrop.width += imageDeltaX;
-        break;
-      case 'move':
-        newCrop.x += imageDeltaX;
-        newCrop.y += imageDeltaY;
-        break;
+ const handleDragStart = (e: React.MouseEvent | React.TouchEvent, dragType: DragState['dragType']) => {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+  
+  setDragState({
+    isDragging: true,
+    dragType,
+    start: { x: clientX, y: clientY },
+    initialCrop: { ...cropArea },
+    initialMouse: { x: clientX, y: clientY },
+    initialCropStart: { x: cropArea.x, y: cropArea.y }
+  });
+};
+const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
+  if (!dragState.isDragging || !containerRef.current) return;
+  
+  // Prevent default to avoid scrolling on touch devices
+  e.preventDefault();
+  
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+  
+  const deltaX = clientX - dragState.start.x;
+  const deltaY = clientY - dragState.start.y;
+  
+  // Convert delta to image coordinates
+  const containerRect = containerRef.current.getBoundingClientRect();
+  const containerWidth = containerRect.width;
+  const containerHeight = containerRect.height;
+  const scaleX = containerWidth / imageDimensions.width;
+  const scaleY = containerHeight / imageDimensions.height;
+  const scale = Math.min(scaleX, scaleY) * zoom;
+  
+  const imageDeltaX = deltaX / scale;
+  const imageDeltaY = deltaY / scale;
+  
+  let newCrop = { ...dragState.initialCrop };
+  
+  switch (dragState.dragType) {
+    case 'nw':
+      // Top-left corner
+      newCrop.x = dragState.initialCropStart.x + imageDeltaX;
+      newCrop.y = dragState.initialCropStart.y + imageDeltaY;
+      newCrop.width = dragState.initialCrop.width - imageDeltaX;
+      newCrop.height = dragState.initialCrop.height - imageDeltaY;
+      break;
+    case 'ne':
+      // Top-right corner
+      newCrop.y = dragState.initialCropStart.y + imageDeltaY;
+      newCrop.width = dragState.initialCrop.width + imageDeltaX;
+      newCrop.height = dragState.initialCrop.height - imageDeltaY;
+      break;
+    case 'sw':
+      // Bottom-left corner
+      newCrop.x = dragState.initialCropStart.x + imageDeltaX;
+      newCrop.width = dragState.initialCrop.width - imageDeltaX;
+      newCrop.height = dragState.initialCrop.height + imageDeltaY;
+      break;
+    case 'se':
+      // Bottom-right corner
+      newCrop.width = dragState.initialCrop.width + imageDeltaX;
+      newCrop.height = dragState.initialCrop.height + imageDeltaY;
+      break;
+    case 'n':
+      // Top edge
+      newCrop.y = dragState.initialCropStart.y + imageDeltaY;
+      newCrop.height = dragState.initialCrop.height - imageDeltaY;
+      break;
+    case 's':
+      // Bottom edge
+      newCrop.height = dragState.initialCrop.height + imageDeltaY;
+      break;
+    case 'w':
+      // Left edge
+      newCrop.x = dragState.initialCropStart.x + imageDeltaX;
+      newCrop.width = dragState.initialCrop.width - imageDeltaX;
+      break;
+    case 'e':
+      // Right edge
+      newCrop.width = dragState.initialCrop.width + imageDeltaX;
+      break;
+    case 'move':
+      // Moving the entire crop area
+      newCrop.x = dragState.initialCropStart.x + imageDeltaX;
+      newCrop.y = dragState.initialCropStart.y + imageDeltaY;
+      break;
+  }
+  
+  // Apply aspect ratio if set
+  if (aspect && dragState.dragType !== 'move') {
+    const aspectRatio = aspect;
+    if (['n', 's'].includes(dragState.dragType)) {
+      newCrop.width = newCrop.height * aspectRatio;
+    } else if (['w', 'e'].includes(dragState.dragType)) {
+      newCrop.height = newCrop.width / aspectRatio;
+    } else {
+      // For corner handles, maintain aspect ratio based on width change
+      newCrop.height = newCrop.width / aspectRatio;
     }
-    
-    // Apply aspect ratio if set
-    if (aspect && dragState.dragType !== 'move') {
-      const aspectRatio = aspect;
-      if (['n', 's'].includes(dragState.dragType)) {
-        newCrop.width = newCrop.height * aspectRatio;
-      } else if (['w', 'e'].includes(dragState.dragType)) {
-        newCrop.height = newCrop.width / aspectRatio;
-      } else {
-        // For corner handles, maintain aspect ratio based on width change
-        newCrop.height = newCrop.width / aspectRatio;
-      }
-    }
-    
-    // Boundary checks with minimum size
-    const minSize = 50;
-    newCrop.width = Math.max(minSize, newCrop.width);
-    newCrop.height = Math.max(minSize, newCrop.height);
-    
-    // Keep within image bounds
-    newCrop.x = Math.max(0, Math.min(imageDimensions.width - newCrop.width, newCrop.x));
-    newCrop.y = Math.max(0, Math.min(imageDimensions.height - newCrop.height, newCrop.y));
-    
-    // Adjust size if it goes beyond bounds
-    newCrop.width = Math.min(imageDimensions.width - newCrop.x, newCrop.width);
-    newCrop.height = Math.min(imageDimensions.height - newCrop.y, newCrop.height);
-    
-    setCropArea(newCrop);
-  }, [dragState, aspect, imageDimensions, zoom]);
+  }
+  
+  // Boundary checks with minimum size
+  const minSize = 50;
+  newCrop.width = Math.max(minSize, newCrop.width);
+  newCrop.height = Math.max(minSize, newCrop.height);
+  
+  // Keep within image bounds
+  newCrop.x = Math.max(0, Math.min(imageDimensions.width - newCrop.width, newCrop.x));
+  newCrop.y = Math.max(0, Math.min(imageDimensions.height - newCrop.height, newCrop.y));
+  
+  // Adjust size if it goes beyond bounds
+  newCrop.width = Math.min(imageDimensions.width - newCrop.x, newCrop.width);
+  newCrop.height = Math.min(imageDimensions.height - newCrop.y, newCrop.height);
+  
+  setCropArea(newCrop);
+}, [dragState, aspect, imageDimensions, zoom]);
 
   // Handle drag end
   const handleDragEnd = useCallback(() => {
