@@ -38,12 +38,18 @@ interface DragState {
   initialCrop: CropArea;
 }
 
-const aspectRatios = [
-  { label: 'Free', value: null },
-  { label: '1', value: 1 },
-  { label: '4/3', value: 4/3 },
-  { label: '3/2', value: 3/2 },
-  { label: '16/9', value: 16/9 },
+// Standard photo print sizes with their ratios
+const printSizes = [
+  { label: 'Free', value: null, dimensions: null },
+  { label: '3:2', value: 3/2, dimensions: null },
+  { label: '5:4', value: 5/4, dimensions: null },
+  { label: '7:5', value: 7/5, dimensions: null },
+  { label: '1:1', value: 1, dimensions: null },
+  // Common print sizes with actual dimensions (in pixels at 300 DPI)
+  { label: '4x6"', value: 3/2, dimensions: { width: 1800, height: 1200 } },
+  { label: '5x7"', value: 7/5, dimensions: { width: 2100, height: 1500 } },
+  { label: '8x10"', value: 5/4, dimensions: { width: 2400, height: 3000 } },
+  { label: 'Square', value: 1, dimensions: { width: 1800, height: 1800 } },
 ];
 
 const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
@@ -52,6 +58,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const [rotation, setRotation] = useState(0);
   const [zoom, setZoom] = useState(0.5);
   const [aspect, setAspect] = useState<number | null>(null);
+  const [selectedPrintSize, setSelectedPrintSize] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState>({ 
     isDragging: false, 
     dragType: 'none', 
@@ -59,6 +66,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     initialCrop: { x: 0, y: 0, width: 0, height: 0 } 
   });
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [resizedImage, setResizedImage] = useState<string | null>(null);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -77,9 +85,67 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     img.src = image.src;
   }, [image.src]);
 
+  // Resize the original image to match the selected print size
+  const resizeOriginalImage = useCallback(async (printSize: typeof printSizes[0]) => {
+    if (!imageRef.current || !printSize.dimensions) return;
+    
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Set canvas to the print size dimensions
+    canvas.width = printSize.dimensions.width;
+    canvas.height = printSize.dimensions.height;
+    
+    // Draw the original image scaled to fit the print size
+    ctx.drawImage(
+      imageRef.current,
+      0, 0, 
+      printSize.dimensions.width, 
+      printSize.dimensions.height
+    );
+    
+    // Convert to blob and create object URL
+    const blob = await new Promise<Blob | null>((resolve) => {
+      canvas.toBlob(resolve, 'image/jpeg', 0.95);
+    });
+    
+    if (blob) {
+      const url = URL.createObjectURL(blob);
+      setResizedImage(url);
+      
+      // Update image dimensions to the print size
+      setImageDimensions({
+        width: printSize.dimensions.width,
+        height: printSize.dimensions.height
+      });
+      
+      // Reset crop area to full image
+      setCropArea({
+        x: 0,
+        y: 0,
+        width: printSize.dimensions.width,
+        height: printSize.dimensions.height
+      });
+    }
+  }, []);
+
+  // Handle print size selection
+  const handlePrintSizeSelect = (printSize: typeof printSizes[0]) => {
+    setSelectedPrintSize(printSize.label);
+    setAspect(printSize.value);
+    
+    // If dimensions are provided, resize the original image
+    if (printSize.dimensions) {
+      resizeOriginalImage(printSize);
+    } else {
+      // For ratio-only selections, just update the aspect ratio
+      centerImage(imageDimensions.width, imageDimensions.height);
+    }
+  };
+
   // Center the image in the crop area
   const centerImage = (imgWidth: number, imgHeight: number) => {
-    // Calculate the crop area to center the image
     const containerRect = containerRef.current?.getBoundingClientRect();
     if (!containerRect) return;
     
@@ -301,63 +367,79 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
   // Handle image save
   const handleSave = async () => {
-    if (!imageRef.current) return;
+    const imgSrc = resizedImage || image.src;
     
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    // Create a temporary image to get dimensions
+    const tempImg = new Image();
+    tempImg.src = imgSrc;
     
-    if (!ctx) return;
-    
-    // Set canvas size to the crop area dimensions
-    canvas.width = cropArea.width;
-    canvas.height = cropArea.height;
-    
-    if (rotation !== 0) {
-      // Handle rotation case
-      ctx.save();
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      ctx.rotate((rotation * Math.PI) / 180);
+    tempImg.onload = () => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
       
-      // Draw the rotated image, cropping to the selected area
-      ctx.drawImage(
-        imageRef.current,
-        cropArea.x - imageDimensions.width / 2,
-        cropArea.y - imageDimensions.height / 2,
-        imageDimensions.width,
-        imageDimensions.height
-      );
+      if (!ctx) return;
       
-      ctx.restore();
-    } else {
-      // Simple crop without rotation
-      ctx.drawImage(
-        imageRef.current,
-        cropArea.x,           // Source X
-        cropArea.y,           // Source Y
-        cropArea.width,       // Source Width
-        cropArea.height,      // Source Height
-        0,                    // Destination X
-        0,                    // Destination Y
-        cropArea.width,       // Destination Width
-        cropArea.height       // Destination Height
-      );
-    }
-    
-    canvas.toBlob((blob) => {
-      if (blob) {
-        const url = URL.createObjectURL(blob);
-        onCropComplete({
-          croppedImage: url,
-          croppedBlob: blob,
-          rotation: 0 // Reset rotation since it's been applied
-        });
+      // Set canvas size to the crop area dimensions
+      canvas.width = cropArea.width;
+      canvas.height = cropArea.height;
+      
+      if (rotation !== 0) {
+        // Handle rotation case
+        ctx.save();
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate((rotation * Math.PI) / 180);
+        
+        // Draw the rotated image, cropping to the selected area
+        ctx.drawImage(
+          tempImg,
+          cropArea.x - tempImg.width / 2,
+          cropArea.y - tempImg.height / 2,
+          tempImg.width,
+          tempImg.height
+        );
+        
+        ctx.restore();
+      } else {
+        // Simple crop without rotation
+        ctx.drawImage(
+          tempImg,
+          cropArea.x,           // Source X
+          cropArea.y,           // Source Y
+          cropArea.width,       // Source Width
+          cropArea.height,      // Source Height
+          0,                    // Destination X
+          0,                    // Destination Y
+          cropArea.width,       // Destination Width
+          cropArea.height       // Destination Height
+        );
       }
-    }, 'image/jpeg', 0.95);
+      
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          onCropComplete({
+            croppedImage: url,
+            croppedBlob: blob,
+            rotation: 0 // Reset rotation since it's been applied
+          });
+        }
+      }, 'image/jpeg', 0.95);
+    };
   };
 
   // Reset crop to full image
   const resetCrop = () => {
-    centerImage(imageDimensions.width, imageDimensions.height);
+    // If we have a resized image, reset to that
+    if (resizedImage) {
+      setCropArea({
+        x: 0,
+        y: 0,
+        width: imageDimensions.width,
+        height: imageDimensions.height
+      });
+    } else {
+      centerImage(imageDimensions.width, imageDimensions.height);
+    }
   };
 
   // Apply auto-straighten (simplified version)
@@ -441,7 +523,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     {/* Background image */}
     <img
       ref={imageRef}
-      src={image.src}
+      src={resizedImage || image.src}
       alt="Crop source"
       className="absolute pointer-events-none select-none"
       style={{
@@ -630,17 +712,17 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
     {/* Aspect Ratios */}
     <div className="flex justify-center gap-2 flex-wrap">
-      {aspectRatios.map((ratio) => (
+      {printSizes.map((size) => (
         <button
-          key={ratio.label}
-          onClick={() => setAspect(ratio.value)}
+          key={size.label}
+          onClick={() => handlePrintSizeSelect(size)}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all touch-manipulation ${
-            aspect === ratio.value 
+            selectedPrintSize === size.label 
               ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm' 
               : 'bg-white/60 hover:bg-white/80 border border-gray-200 text-gray-700'
           }`}
         >
-          {ratio.label}
+          {size.label}
         </button>
       ))}
     </div>
