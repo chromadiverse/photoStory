@@ -52,8 +52,8 @@ const tips:TipItem[] = [
   },
   {
     icon: Upload,
-    title: "Upload to Chroma Diverse",
-    description: "Seamlessly upload your enhanced captures to Chroma Diverse platform. Share your polished documents with confidence and professional quality."
+    title: "Upload to CurtainConnect",
+    description: "Seamlessly upload your enhanced captures to your CC profile gallery. Share your polished documents with confidence and professional quality."
   }
 ]
 
