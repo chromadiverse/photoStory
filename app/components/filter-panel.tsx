@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { ArrowLeft, Check, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Check, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface CroppedImageData {
   croppedImage: string
@@ -13,7 +13,7 @@ interface FilterSettings {
   brightness: number
   contrast: number
   saturation: number
-  temperature: number
+  hue: number
 }
 
 interface FilterPanelProps {
@@ -33,26 +33,11 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [isFiltersExpanded, setIsFiltersExpanded] = useState(true)
 
   const applyFilters = () => {
-    const { brightness, contrast, saturation, temperature } = filterSettings
-    
-    // Convert temperature (-100 to +100) to sepia and hue-rotate
-    // Negative = cooler (blue), Positive = warmer (orange/yellow)
-    let filterString = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
-    
-    if (temperature > 0) {
-      // Warm: use sepia for warmth
-      const sepiaAmount = temperature / 2 // 0-50%
-      const hueShift = -temperature * 0.3 // slight orange shift
-      filterString += ` sepia(${sepiaAmount}%) hue-rotate(${hueShift}deg)`
-    } else if (temperature < 0) {
-      // Cool: shift toward blue
-      const hueShift = Math.abs(temperature) * 1.8 // shift toward blue (180-240deg range)
-      filterString += ` hue-rotate(${hueShift}deg)`
-    }
-    
-    return filterString
+    const { brightness, contrast, saturation, hue } = filterSettings
+    return `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%) hue-rotate(${hue}deg)`
   }
 
   const resetFilters = () => {
@@ -60,7 +45,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       brightness: 100,
       contrast: 100,
       saturation: 100,
-      temperature: 0
+      hue: 0
     })
   }
 
@@ -123,7 +108,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       filterSettings.brightness !== 100 ||
       filterSettings.contrast !== 100 ||
       filterSettings.saturation !== 100 ||
-      filterSettings.temperature !== 0
+      filterSettings.hue !== 0
 
     if (!hasFilters) {
       // No filters applied, return original data
@@ -142,12 +127,6 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
     } finally {
       setIsProcessing(false)
     }
-  }
-
-  const getTemperatureLabel = () => {
-    if (filterSettings.temperature === 0) return '0'
-    const absTemp = Math.abs(filterSettings.temperature)
-    return filterSettings.temperature > 0 ? `+${absTemp}` : `-${absTemp}`
   }
 
   return (
@@ -176,12 +155,17 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       </div>
 
       {/* Image Preview */}
-      <div className="flex-1 flex items-center justify-center p-4 bg-white/60">
+      <div 
+        className="flex items-center justify-center p-4 bg-white/60 transition-all duration-300 ease-in-out"
+        style={{ 
+          flex: isFiltersExpanded ? '0 0 40%' : '1 1 auto'
+        }}
+      >
         <div className="relative max-w-full max-h-full">
           <img
             src={imageData.croppedImage}
             alt="Preview"
-            className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+            className="max-w-full max-h-full object-contain rounded-lg shadow-lg transition-all duration-300"
             style={{ filter: applyFilters() }}
           />
           {isProcessing && (
@@ -192,106 +176,147 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         </div>
       </div>
 
+      {/* Filter Controls Toggle Button */}
+      <div className="bg-white/90 backdrop-blur-sm shadow-sm">
+        <button
+          onClick={() => setIsFiltersExpanded(!isFiltersExpanded)}
+          className="w-full py-3 flex items-center justify-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium border-t border-gray-200"
+          disabled={isProcessing}
+        >
+          {isFiltersExpanded ? (
+            <>
+              <span>Hide Filters</span>
+              <ChevronDown className="w-5 h-5" />
+            </>
+          ) : (
+            <>
+              <span>Show Filters</span>
+              <ChevronUp className="w-5 h-5" />
+            </>
+          )}
+        </button>
+      </div>
+
       {/* Filter Controls */}
-      <div className="bg-white/90 backdrop-blur-sm shadow-sm p-4 space-y-4 max-h-80 overflow-y-auto">
-        {/* Brightness */}
-        <div className="space-y-2">
-          <div className="flex justify-between items-center min-h-[24px]">
-            <label className="text-sm font-medium text-gray-700">
-              Brightness
-            </label>
-            <span className="text-sm text-gray-600 font-mono w-12 text-right">
-              {filterSettings.brightness}%
-            </span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="200"
-            value={filterSettings.brightness}
-            onChange={(e) => handleSliderChange('brightness', Number(e.target.value))}
-            disabled={isProcessing}
-            className="w-full h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
-          />
-        </div>
-
-        {/* Contrast */}
-        <div className="space-y-2">
-          <div className="flex justify-between items-center min-h-[24px]">
-            <label className="text-sm font-medium text-gray-700">
-              Contrast
-            </label>
-            <span className="text-sm text-gray-600 font-mono w-12 text-right">
-              {filterSettings.contrast}%
-            </span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="200"
-            value={filterSettings.contrast}
-            onChange={(e) => handleSliderChange('contrast', Number(e.target.value))}
-            disabled={isProcessing}
-            className="w-full h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
-          />
-        </div>
-
-        {/* Saturation */}
-        <div className="space-y-2">
-          <div className="flex justify-between items-center min-h-[24px]">
-            <label className="text-sm font-medium text-gray-700">
-              Saturation
-            </label>
-            <span className="text-sm text-gray-600 font-mono w-12 text-right">
-              {filterSettings.saturation}%
-            </span>
-          </div>
-          <input
-            type="range"
-            min="0"
-            max="200"
-            value={filterSettings.saturation}
-            onChange={(e) => handleSliderChange('saturation', Number(e.target.value))}
-            disabled={isProcessing}
-            className="w-full h-3 bg-gray-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
-          />
-        </div>
-
-        {/* Temperature (Warm/Cool) */}
-        <div className="space-y-2">
-          <div className="flex justify-between items-center min-h-[24px]">
-            <label className="text-sm font-medium text-gray-700">
-              Temperature
-            </label>
-            <span className="text-sm text-gray-600 font-mono w-12 text-right">
-              {getTemperatureLabel()}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-blue-500 font-medium w-10">Cool</span>
+      <div 
+        className="bg-white/90 backdrop-blur-sm shadow-sm overflow-hidden transition-all duration-300 ease-in-out"
+        style={{
+          maxHeight: isFiltersExpanded ? '60vh' : '0',
+          opacity: isFiltersExpanded ? 1 : 0
+        }}
+      >
+        <div className="p-6 space-y-6 overflow-y-auto" style={{ maxHeight: '60vh' }}>
+          {/* Brightness */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center min-h-[28px]">
+              <label className="text-base font-semibold text-gray-700">
+                Brightness
+              </label>
+              <span className="text-base text-gray-600 font-mono w-16 text-right">
+                {filterSettings.brightness}%
+              </span>
+            </div>
             <input
               type="range"
-              min="-100"
-              max="100"
-              value={filterSettings.temperature}
-              onChange={(e) => handleSliderChange('temperature', Number(e.target.value))}
+              min="0"
+              max="200"
+              value={filterSettings.brightness}
+              onChange={(e) => handleSliderChange('brightness', Number(e.target.value))}
               disabled={isProcessing}
-              className="flex-1 h-3 bg-gradient-to-r from-blue-200 via-gray-200 to-orange-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
+              className="w-full h-4 bg-gray-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
+              style={{
+                WebkitAppearance: 'none',
+                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(filterSettings.brightness / 200) * 100}%, #e5e7eb ${(filterSettings.brightness / 200) * 100}%, #e5e7eb 100%)`
+              }}
             />
-            <span className="text-xs text-orange-500 font-medium w-10 text-right">Warm</span>
           </div>
-        </div>
 
-        {/* Reset Button */}
-        <div className="pt-4 border-t border-gray-200">
-          <button
-            onClick={resetFilters}
-            disabled={isProcessing}
-            className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-white/60 hover:bg-white/80 disabled:bg-gray-100 text-gray-700 disabled:text-gray-400 border border-gray-200 rounded-lg transition-colors touch-manipulation font-medium"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Reset All Filters</span>
-          </button>
+          {/* Contrast */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center min-h-[28px]">
+              <label className="text-base font-semibold text-gray-700">
+                Contrast
+              </label>
+              <span className="text-base text-gray-600 font-mono w-16 text-right">
+                {filterSettings.contrast}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="200"
+              value={filterSettings.contrast}
+              onChange={(e) => handleSliderChange('contrast', Number(e.target.value))}
+              disabled={isProcessing}
+              className="w-full h-4 bg-gray-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
+              style={{
+                WebkitAppearance: 'none',
+                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(filterSettings.contrast / 200) * 100}%, #e5e7eb ${(filterSettings.contrast / 200) * 100}%, #e5e7eb 100%)`
+              }}
+            />
+          </div>
+
+          {/* Saturation */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center min-h-[28px]">
+              <label className="text-base font-semibold text-gray-700">
+                Saturation
+              </label>
+              <span className="text-base text-gray-600 font-mono w-16 text-right">
+                {filterSettings.saturation}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="200"
+              value={filterSettings.saturation}
+              onChange={(e) => handleSliderChange('saturation', Number(e.target.value))}
+              disabled={isProcessing}
+              className="w-full h-4 bg-gray-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
+              style={{
+                WebkitAppearance: 'none',
+                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(filterSettings.saturation / 200) * 100}%, #e5e7eb ${(filterSettings.saturation / 200) * 100}%, #e5e7eb 100%)`
+              }}
+            />
+          </div>
+
+          {/* Hue */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center min-h-[28px]">
+              <label className="text-base font-semibold text-gray-700">
+                Hue
+              </label>
+              <span className="text-base text-gray-600 font-mono w-16 text-right">
+                {filterSettings.hue > 0 ? '+' : ''}{filterSettings.hue}°
+              </span>
+            </div>
+            <input
+              type="range"
+              min="-180"
+              max="180"
+              value={filterSettings.hue}
+              onChange={(e) => handleSliderChange('hue', Number(e.target.value))}
+              disabled={isProcessing}
+              className="w-full h-4 bg-gray-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
+              style={{
+                WebkitAppearance: 'none',
+                background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((filterSettings.hue + 180) / 360) * 100}%, #e5e7eb ${((filterSettings.hue + 180) / 360) * 100}%, #e5e7eb 100%)`
+              }}
+            />
+          </div>
+
+          {/* Reset Button */}
+          <div className="pt-4 border-t border-gray-200">
+            <button
+              onClick={resetFilters}
+              disabled={isProcessing}
+              className="w-full flex items-center justify-center gap-2 py-4 px-4 bg-white hover:bg-gray-50 disabled:bg-gray-100 text-gray-700 disabled:text-gray-400 border-2 border-gray-300 rounded-lg transition-colors touch-manipulation font-semibold text-base"
+            >
+              <RotateCcw className="w-5 h-5" />
+              <span>Reset All Filters</span>
+            </button>
+          </div>
         </div>
       </div>
 

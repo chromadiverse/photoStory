@@ -53,7 +53,7 @@ const tips:TipItem[] = [
   {
     icon: Upload,
     title: "Upload to CurtainConnect",
-    description: "Seamlessly upload your enhanced captures to your CC profile gallery. Share your polished documents with confidence and professional quality."
+    description: "Seamlessly upload your enhanced captures to your CC profile gallery.Share your polished documents with confidence and professional quality."
   }
 ]
 
