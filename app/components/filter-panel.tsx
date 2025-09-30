@@ -325,8 +325,8 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         ref={canvasRef} 
         className="hidden" 
       />
-    </div>  {/* This closes the Filter Controls Container */}
-  </div>    {/* ← Add this to close the main container */}
+    </div> 
+  </div>  
 )
 }
 
