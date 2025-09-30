@@ -135,8 +135,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     
     return true
   }
-
-  const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
+const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
     if (!window.cv || !canvas) return []
 
     try {
@@ -146,98 +145,97 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       const edges = new window.cv.Mat()
       
       window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY)
-      window.cv.GaussianBlur(gray, blurred, new window.cv.Size(5, 5), 0)
       
-      // Multiple edge detection approaches
-      const edges1 = new window.cv.Mat()
-      const edges2 = new window.cv.Mat()
-      const edges3 = new window.cv.Mat()
+      // Use bilateral filter for better edge preservation while reducing noise
+      window.cv.bilateralFilter(gray, blurred, 9, 75, 75)
       
-      window.cv.Canny(blurred, edges1, 30, 100, 3, true)
-      window.cv.Canny(blurred, edges2, 50, 150, 3, true) 
-      window.cv.Canny(blurred, edges3, 80, 200, 3, true)
+      // Single, stable edge detection with moderate thresholds
+      window.cv.Canny(blurred, edges, 50, 150, 3, true)
       
-      window.cv.bitwise_or(edges1, edges2, edges)
-      window.cv.bitwise_or(edges, edges3, edges)
+      // Minimal morphology - just close small gaps
+      const kernel = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(3, 3))
+      window.cv.morphologyEx(edges, edges, window.cv.MORPH_CLOSE, kernel)
       
-      const kernel1 = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(3, 3))
-      const kernel2 = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(5, 5))
-      
-      window.cv.morphologyEx(edges, edges, window.cv.MORPH_CLOSE, kernel1)
-      window.cv.dilate(edges, edges, kernel2)
-      
-      // Use RETR_EXTERNAL to only get outer contours
       const contours = new window.cv.MatVector()
       const hierarchy = new window.cv.Mat()
-      window.cv.findContours(edges, contours, hierarchy, window.cv.RETR_EXTERNAL, window.cv.CHAIN_APPROX_SIMPLE)
+      window.cv.findContours(edges, contours, hierarchy, window.cv.RETR_LIST, window.cv.CHAIN_APPROX_SIMPLE)
       
       const imgArea = canvas.width * canvas.height
-      const minArea = imgArea * 0.03
-      const maxArea = imgArea * 0.95
+      const minArea = imgArea * 0.05  // Increased minimum to focus on main objects
+      const maxArea = imgArea * 0.92
       
       const detectedShapes: DetectedShape[] = []
+      const candidatesByArea: { contour: any, area: number, index: number }[] = []
       
+      // First pass: collect all valid-sized contours
       for (let i = 0; i < contours.size(); i++) {
         const contour = contours.get(i)
         const area = window.cv.contourArea(contour)
         
-        if (area < minArea || area > maxArea) {
+        if (area >= minArea && area <= maxArea) {
+          candidatesByArea.push({ contour, area, index: i })
+        } else {
           contour.delete()
-          continue
         }
-        
+      }
+      
+      // Sort by area descending - larger shapes are more likely to be the target
+      candidatesByArea.sort((a, b) => b.area - a.area)
+      
+      // Process only the top candidates
+      const maxCandidates = Math.min(5, candidatesByArea.length)
+      
+      for (let i = 0; i < maxCandidates; i++) {
+        const { contour, area } = candidatesByArea[i]
         const perimeter = window.cv.arcLength(contour, true)
-        if (perimeter < 80) {
+        
+        if (perimeter < 100) {
           contour.delete()
           continue
         }
         
-        // Try multiple epsilon values for better approximation
-        const epsilonLevels = [0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05]
+        // Use a single, consistent epsilon value
+        const approx = new window.cv.Mat()
+        const epsilon = 0.02 * perimeter  // Standard approximation
+        window.cv.approxPolyDP(contour, approx, epsilon, true)
         
-        for (const epsilonFactor of epsilonLevels) {
-          const approx = new window.cv.Mat()
-          const epsilon = epsilonFactor * perimeter
-          window.cv.approxPolyDP(contour, approx, epsilon, true)
+        if (approx.rows >= 4 && approx.rows <= 6) {
+          const corners: Point[] = []
+          for (let j = 0; j < approx.rows; j++) {
+            corners.push({
+              x: approx.data32S[j * 2],
+              y: approx.data32S[j * 2 + 1]
+            })
+          }
           
-          if (approx.rows >= 4 && approx.rows <= 8) {
-            const corners: Point[] = []
-            for (let j = 0; j < approx.rows; j++) {
-              corners.push({
-                x: approx.data32S[j * 2],
-                y: approx.data32S[j * 2 + 1]
+          let finalCorners = corners
+          if (corners.length > 4) {
+            finalCorners = findBestQuadrilateral(corners)
+          }
+          
+          if (finalCorners.length === 4 && 
+              isValidQuadrilateral(finalCorners) && 
+              isRectangularContour(finalCorners)) {
+              
+            const sortedCorners = sortCorners(finalCorners)
+            const aspectRatio = calculateAspectRatio(sortedCorners)
+            const confidence = calculateImprovedConfidence(
+              sortedCorners, area, canvas.width, canvas.height, perimeter
+            )
+            
+            if (confidence >= CONFIDENCE_THRESHOLD) {
+              detectedShapes.push({
+                corners: sortedCorners,
+                area: area,
+                aspectRatio: aspectRatio,
+                confidence: confidence,
+                type: classifyShape(sortedCorners, aspectRatio)
               })
             }
-            
-            let finalCorners = corners
-            if (corners.length > 4) {
-              finalCorners = findBestQuadrilateral(corners)
-            }
-            
-            if (finalCorners.length === 4 && 
-                isValidQuadrilateral(finalCorners) && 
-                isRectangularContour(finalCorners)) {
-                
-              const sortedCorners = sortCorners(finalCorners)
-              const aspectRatio = calculateAspectRatio(sortedCorners)
-              const confidence = calculateImprovedConfidence(
-                sortedCorners, area, canvas.width, canvas.height, perimeter
-              )
-              
-              if (confidence >= CONFIDENCE_THRESHOLD) {
-                detectedShapes.push({
-                  corners: sortedCorners,
-                  area: area,
-                  aspectRatio: aspectRatio,
-                  confidence: confidence,
-                  type: classifyShape(sortedCorners, aspectRatio)
-                })
-                break
-              }
-            }
           }
-          approx.delete()
         }
+        
+        approx.delete()
         contour.delete()
       }
       
@@ -245,15 +243,12 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       gray.delete()
       blurred.delete()
       edges.delete()
-      edges1.delete()
-      edges2.delete()
-      edges3.delete()
+      kernel.delete()
       contours.delete()
       hierarchy.delete()
-      kernel1.delete()
-      kernel2.delete()
       
-      return detectedShapes.sort((a, b) => b.confidence - a.confidence).slice(0, 3)
+      // Return only the best match to avoid jumping between detections
+      return detectedShapes.sort((a, b) => b.confidence - a.confidence).slice(0, 1)
       
     } catch (error) {
       console.error('Error in shape detection:', error)
