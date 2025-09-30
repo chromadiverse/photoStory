@@ -204,7 +204,9 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           <img
             src={imageData.croppedImage}
             alt="Preview"
-            className="max-w-full max-h-full object-contain rounded-lg shadow-lg transition-all duration-300"
+            className={`max-w-full max-h-full object-contain rounded-lg shadow-lg transition-all duration-300 ${
+              isFiltersExpanded ? 'scale-90' : 'scale-100'
+            }`}
             style={{ filter: applyFilters() }}
           />
           {isProcessing && (
@@ -356,16 +358,11 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           className="py-3 flex items-center justify-center gap-2 text-gray-700 hover:text-blue-600 transition-colors font-medium border-t border-gray-200 flex-shrink-0"
           disabled={isProcessing}
         >
+          <span>Filters</span>
           {isFiltersExpanded ? (
-            <>
-              <span>Hide Filters</span>
-              <ChevronDown className="w-5 h-5" />
-            </>
+            <ChevronDown className="w-5 h-5" />
           ) : (
-            <>
-              <span>Show Filters</span>
-              <ChevronUp className="w-5 h-5" />
-            </>
+            <ChevronUp className="w-5 h-5" />
           )}
         </button>
       </div>
