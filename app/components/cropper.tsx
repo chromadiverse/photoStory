@@ -38,18 +38,13 @@ interface DragState {
   initialCrop: CropArea;
 }
 
-// Standard photo print sizes with their ratios
-const printSizes = [
-  { label: 'Free', value: null, dimensions: null },
-  { label: '3:2', value: 3/2, dimensions: null },
-  { label: '5:4', value: 5/4, dimensions: null },
-  { label: '7:5', value: 7/5, dimensions: null },
-  { label: '1:1', value: 1, dimensions: null },
-  // Common print sizes with actual dimensions (in pixels at 300 DPI)
-  { label: '4x6"', value: 3/2, dimensions: { width: 1800, height: 1200 } },
-  { label: '5x7"', value: 7/5, dimensions: { width: 2100, height: 1500 } },
-  { label: '8x10"', value: 5/4, dimensions: { width: 2400, height: 3000 } },
-  { label: 'Square', value: 1, dimensions: { width: 1800, height: 1800 } },
+// Only the priority ratios as requested
+const printRatios = [
+  { label: 'Free', value: null },
+  { label: '3:2', value: 3/2 },
+  { label: '5:4', value: 5/4 },
+  { label: '7:5', value: 7/5 },
+  { label: '1:1', value: 1 },
 ];
 
 const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
@@ -58,7 +53,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const [rotation, setRotation] = useState(0);
   const [zoom, setZoom] = useState(0.5);
   const [aspect, setAspect] = useState<number | null>(null);
-  const [selectedPrintSize, setSelectedPrintSize] = useState<string | null>(null);
+  const [selectedRatio, setSelectedRatio] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState>({ 
     isDragging: false, 
     dragType: 'none', 
@@ -66,7 +61,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     initialCrop: { x: 0, y: 0, width: 0, height: 0 } 
   });
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [resizedImage, setResizedImage] = useState<string | null>(null);
+  const [processedImage, setProcessedImage] = useState<string | null>(null); // This will hold the ratio-adjusted image
   
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -85,24 +80,53 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     img.src = image.src;
   }, [image.src]);
 
-  // Resize the original image to match the selected print size
-  const resizeOriginalImage = useCallback(async (printSize: typeof printSizes[0]) => {
-    if (!imageRef.current || !printSize.dimensions) return;
+  // Resize the original image to match the selected aspect ratio
+  const resizeImageToRatio = useCallback(async (targetRatio: number | null) => {
+    if (!imageRef.current || targetRatio === null) {
+      // For 'Free' ratio, just use original image
+      setProcessedImage(null);
+      setImageDimensions({ width: imageRef.current?.naturalWidth || 0, height: imageRef.current?.naturalHeight || 0 });
+      return;
+    }
     
+    const originalWidth = imageRef.current.naturalWidth;
+    const originalHeight = imageRef.current.naturalHeight;
+    const originalRatio = originalWidth / originalHeight;
+    
+    let newWidth: number, newHeight: number;
+    
+    // Calculate new dimensions that fit the target ratio
+    if (originalRatio > targetRatio) {
+      // Original is wider than target - crop width
+      newHeight = originalHeight;
+      newWidth = originalHeight * targetRatio;
+    } else {
+      // Original is taller than target - crop height  
+      newWidth = originalWidth;
+      newHeight = originalWidth / targetRatio;
+    }
+    
+    // Ensure we don't exceed original dimensions
+    newWidth = Math.min(newWidth, originalWidth);
+    newHeight = Math.min(newHeight, originalHeight);
+    
+    // Calculate crop area for the original image
+    const cropX = (originalWidth - newWidth) / 2;
+    const cropY = (originalHeight - newHeight) / 2;
+    
+    // Create canvas to crop and resize
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     
-    // Set canvas to the print size dimensions
-    canvas.width = printSize.dimensions.width;
-    canvas.height = printSize.dimensions.height;
+    canvas.width = newWidth;
+    canvas.height = newHeight;
     
-    // Draw the original image scaled to fit the print size
+    // Draw the cropped portion of the original image
     ctx.drawImage(
       imageRef.current,
-      0, 0, 
-      printSize.dimensions.width, 
-      printSize.dimensions.height
+      cropX, cropY, newWidth, newHeight,
+      0, 0, newWidth, newHeight
     );
     
     // Convert to blob and create object URL
@@ -112,36 +136,31 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     
     if (blob) {
       const url = URL.createObjectURL(blob);
-      setResizedImage(url);
+      setProcessedImage(url);
       
-      // Update image dimensions to the print size
+      // Update image dimensions to the new ratio
       setImageDimensions({
-        width: printSize.dimensions.width,
-        height: printSize.dimensions.height
+        width: newWidth,
+        height: newHeight
       });
       
-      // Reset crop area to full image
+      // Reset crop area to full new image
       setCropArea({
         x: 0,
         y: 0,
-        width: printSize.dimensions.width,
-        height: printSize.dimensions.height
+        width: newWidth,
+        height: newHeight
       });
     }
   }, []);
 
-  // Handle print size selection
-  const handlePrintSizeSelect = (printSize: typeof printSizes[0]) => {
-    setSelectedPrintSize(printSize.label);
-    setAspect(printSize.value);
+  // Handle ratio selection
+  const handleRatioSelect = (ratioOption: typeof printRatios[0]) => {
+    setSelectedRatio(ratioOption.label);
+    setAspect(ratioOption.value);
     
-    // If dimensions are provided, resize the original image
-    if (printSize.dimensions) {
-      resizeOriginalImage(printSize);
-    } else {
-      // For ratio-only selections, just update the aspect ratio
-      centerImage(imageDimensions.width, imageDimensions.height);
-    }
+    // Resize the original image to match this ratio
+    resizeImageToRatio(ratioOption.value);
   };
 
   // Center the image in the crop area
@@ -367,7 +386,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
   // Handle image save
   const handleSave = async () => {
-    const imgSrc = resizedImage || image.src;
+    const imgSrc = processedImage || image.src;
     
     // Create a temporary image to get dimensions
     const tempImg = new Image();
@@ -429,8 +448,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
   // Reset crop to full image
   const resetCrop = () => {
-    // If we have a resized image, reset to that
-    if (resizedImage) {
+    // If we have a processed image, reset to that
+    if (processedImage) {
       setCropArea({
         x: 0,
         y: 0,
@@ -444,8 +463,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
   // Apply auto-straighten (simplified version)
   const autoStraighten = () => {
-    // In a real implementation, this would use image analysis
-    // For now, we'll just reset rotation
     setRotation(0);
   };
 
@@ -523,7 +540,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     {/* Background image */}
     <img
       ref={imageRef}
-      src={resizedImage || image.src}
+      src={processedImage || image.src}
       alt="Crop source"
       className="absolute pointer-events-none select-none"
       style={{
@@ -710,19 +727,19 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       </button>
     </div>
 
-    {/* Aspect Ratios */}
+    {/* Aspect Ratios - ONLY the priority ratios */}
     <div className="flex justify-center gap-2 flex-wrap">
-      {printSizes.map((size) => (
+      {printRatios.map((ratio) => (
         <button
-          key={size.label}
-          onClick={() => handlePrintSizeSelect(size)}
+          key={ratio.label}
+          onClick={() => handleRatioSelect(ratio)}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-all touch-manipulation ${
-            selectedPrintSize === size.label 
+            selectedRatio === ratio.label 
               ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm' 
               : 'bg-white/60 hover:bg-white/80 border border-gray-200 text-gray-700'
           }`}
         >
-          {size.label}
+          {ratio.label}
         </button>
       ))}
     </div>
