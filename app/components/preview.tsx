@@ -21,8 +21,8 @@ const Preview: React.FC<PreviewProps> = ({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
   const applyFilters = () => {
-    const { brightness, contrast, saturation, hue, grayscale } = filterSettings
-    return `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%) hue-rotate(${hue}deg) grayscale(${grayscale}%)`
+    const { brightness, contrast, saturation, hue } = filterSettings
+    return `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%) hue-rotate(${hue}deg) `
   }
 
   // Create canvas with filters applied and return as blob
@@ -41,8 +41,8 @@ const Preview: React.FC<PreviewProps> = ({
         canvas.height = img.height
 
         // Apply filters via canvas
-        const { brightness, contrast, saturation, hue, grayscale } = filterSettings
-        ctx.filter = `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100}) hue-rotate(${hue}deg) grayscale(${grayscale / 100})`
+        const { brightness, contrast, saturation, hue } = filterSettings
+        ctx.filter = `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100}) hue-rotate(${hue}deg) `
         ctx.drawImage(img, 0, 0)
 
         canvas.toBlob((blob) => {
