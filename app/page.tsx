@@ -140,12 +140,7 @@ export default function Home() {
 
   const renderNavigation = () => (
     <div className="flex justify-between items-center p-4 bg-white/90 backdrop-blur-sm shadow-sm">
-      <div className="flex items-center space-x-3">
-        <div className="flex items-center space-x-2 text-gray-700">
-          <User className="w-5 h-5" />
-          <span className="text-sm font-medium">{user?.email}</span>
-        </div>
-      </div>
+    
 
       <div className="flex justify-center space-x-2 flex-1">
         <button
