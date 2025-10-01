@@ -170,7 +170,7 @@ export default function Home() {
         className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
       >
         <LogOut className="w-5 h-5" />
-        <span>Logout</span>
+        <span>Logout.</span>
       </button>
     </div>
   )
