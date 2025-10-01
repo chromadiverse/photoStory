@@ -4,7 +4,7 @@ import { useRef, useEffect } from "react"
 import Uppy from "@uppy/core"
 import type { UppyFile } from "@uppy/core"
 import AwsS3 from "@uppy/aws-s3"
-import "@uppy/core/dist/style.css"
+
 
 interface ImageUploaderProps {
   imageBlob: Blob
