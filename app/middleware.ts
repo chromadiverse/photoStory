@@ -27,13 +27,13 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // IMPORTANT: Refresh session if expired
+
   const { data: { user }, error } = await supabase.auth.getUser()
 
   console.log('Middleware - Path:', request.nextUrl.pathname)
   console.log('Middleware - User:', user?.email || 'NOT LOGGED IN')
 
-  // If no user and NOT on login page -> redirect to login
+
   if (!user && request.nextUrl.pathname !== '/login') {
     console.log('Redirecting to login...')
     const url = request.nextUrl.clone()
@@ -41,7 +41,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // If user exists and on login page -> redirect to home
+
   if (user && request.nextUrl.pathname === '/login') {
     console.log('User logged in, redirecting to home...')
     const url = request.nextUrl.clone()
