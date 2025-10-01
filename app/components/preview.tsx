@@ -6,7 +6,7 @@ import { CroppedImageData, FilterSettings } from '../page'
 import MetadataModal from './metadata-modal'
 import ImageUploader from './image-uploader'
 import { GalleryMetadata } from '../lib/gallery-schema'
-import { saveGalleryMetadata, getImageUrl } from '../lib/upload-service'
+import { saveGalleryMetadata,getImageUrl } from '../lib/upload-service'
 import { toast } from 'sonner'
 import { createClient } from '../lib/supabase/client'
 
