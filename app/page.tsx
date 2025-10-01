@@ -51,20 +51,45 @@ export default function Home() {
   })
 
   useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
-      setLoading(false)
+    const checkUser = async () => {
+      try {
+        const { data: { user }, error } = await supabase.auth.getUser()
+        
+        console.log('Client - User check:', user?.email || 'NOT LOGGED IN')
+        
+        if (error) {
+          console.error('Auth error:', error)
+          router.push('/login')
+          return
+        }
+        
+        if (!user) {
+          console.log('No user found, redirecting...')
+          router.push('/login')
+          return
+        }
+        
+        setUser(user)
+        setLoading(false)
+      } catch (err) {
+        console.error('Error checking user:', err)
+        router.push('/login')
+      }
     }
 
-    getUser()
+    checkUser()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
+      console.log('Auth state changed:', session?.user?.email || 'NO SESSION')
+      if (!session) {
+        router.push('/login')
+      } else {
+        setUser(session.user)
+      }
     })
 
     return () => subscription.unsubscribe()
-  }, [])
+  }, [router, supabase])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
