@@ -1,4 +1,3 @@
-
 'use client'
 
 import { useRef, useState, useCallback, useEffect } from 'react'
@@ -35,11 +34,6 @@ interface DetectedShape {
   type: 'rectangle' | 'square' | 'document';
 }
 
-const DETECTION_WIDTH = 800; 
-const STABILITY_THRESHOLD = 150; 
-const MIN_STABLE_FRAMES = 4; 
-const CONFIDENCE_THRESHOLD = 12; 
-const DETECTION_HISTORY_SIZE = 10; 
 const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const webcamRef = useRef<Webcam>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -57,12 +51,85 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   
   const stableFrameCount = useRef(0)
   const detectionHistory = useRef<DetectedShape[]>([])
+  
+  // Device performance detection
+  const [devicePerformance, setDevicePerformance] = useState<'high' | 'medium' | 'low'>('medium');
+  
+  // Performance-based parameters
+  const getDetectionParams = () => {
+    switch(devicePerformance) {
+      case 'high':
+        return {
+          DETECTION_WIDTH: 800,
+          STABILITY_THRESHOLD: 150,
+          MIN_STABLE_FRAMES: 4,
+          CONFIDENCE_THRESHOLD: 12,
+          DETECTION_HISTORY_SIZE: 10,
+          MAX_CANDIDATES: 10,
+          MIN_PERIMETER: 60,
+          EPSILON_FACTOR: 0.04,
+          ANGLE_TOLERANCE: 50
+        };
+      case 'medium':
+        return {
+          DETECTION_WIDTH: 640,
+          STABILITY_THRESHOLD: 120,
+          MIN_STABLE_FRAMES: 3,
+          CONFIDENCE_THRESHOLD: 15,
+          DETECTION_HISTORY_SIZE: 8,
+          MAX_CANDIDATES: 8,
+          MIN_PERIMETER: 80,
+          EPSILON_FACTOR: 0.03,
+          ANGLE_TOLERANCE: 45
+        };
+      case 'low':
+        return {
+          DETECTION_WIDTH: 480,
+          STABILITY_THRESHOLD: 100,
+          MIN_STABLE_FRAMES: 2,
+          CONFIDENCE_THRESHOLD: 20,
+          DETECTION_HISTORY_SIZE: 6,
+          MAX_CANDIDATES: 6,
+          MIN_PERIMETER: 100,
+          EPSILON_FACTOR: 0.04,
+          ANGLE_TOLERANCE: 40
+        };
+    }
+  };
+
+  // Detect device performance
+  useEffect(() => {
+    const detectPerformance = () => {
+      // Check hardware capabilities
+      const isHighEnd = 
+        navigator.hardwareConcurrency && 
+        navigator.hardwareConcurrency >= 6;
+      
+      const isLowEnd = 
+        navigator.hardwareConcurrency && 
+        navigator.hardwareConcurrency <= 2;
+      
+      // Check screen resolution as proxy for device class
+      const pixelRatio = window.devicePixelRatio || 1;
+      const screenArea = screen.width * screen.height * pixelRatio * pixelRatio;
+      
+      if (isHighEnd || screenArea > 2000000) {
+        setDevicePerformance('high');
+      } else if (isLowEnd || screenArea < 1000000) {
+        setDevicePerformance('low');
+      } else {
+        setDevicePerformance('medium');
+      }
+    };
+
+    detectPerformance();
+  }, []);
 
   const videoConstraints = {
-    width: { ideal: 3840, min: 1280 },
-    height: { ideal: 2160, min: 720 },
+    width: { ideal: devicePerformance === 'high' ? 3840 : devicePerformance === 'medium' ? 1920 : 1280 },
+    height: { ideal: devicePerformance === 'high' ? 2160 : devicePerformance === 'medium' ? 1080 : 720 },
     facingMode: facingMode,
-    frameRate: { ideal: 30, max: 30 },
+    frameRate: { ideal: devicePerformance === 'high' ? 30 : 24, max: 30 },
     aspectRatio: 16/9
   }
 
@@ -111,156 +178,159 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const distance = (a: Point, b: Point): number => {
     return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2)
   }
-const isRectangularContour = (corners: Point[], angleTolerance: number = 45): boolean => {
-  if (corners.length !== 4) return false
-  
-  for (let i = 0; i < 4; i++) {
-    const p1 = corners[(i - 1 + 4) % 4]
-    const p2 = corners[i]
-    const p3 = corners[(i + 1) % 4]
-    
-    const v1x = p1.x - p2.x
-    const v1y = p1.y - p2.y
-    const v2x = p3.x - p2.x
-    const v2y = p3.y - p2.y
-    
-    const dot = v1x * v2x + v1y * v2y
-    const cross = v1x * v2y - v1y * v2x
-    const angle = Math.abs(Math.atan2(cross, dot) * 180 / Math.PI)
-    
-    if (Math.abs(angle - 90) > angleTolerance) return false
-  }
-  
-  return true
-}
-const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
-  if (!window.cv || !canvas) return []
 
-  try {
-    const src = window.cv.imread(canvas)
-    const gray = new window.cv.Mat()
-    const blurred = new window.cv.Mat()
-    const edges = new window.cv.Mat()
-    const edgesInverted = new window.cv.Mat()
+  const isRectangularContour = (corners: Point[], angleTolerance: number = 45): boolean => {
+    if (corners.length !== 4) return false
     
-    window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY)
-    
-    // Apply bilateral filter for noise reduction while preserving edges
-    window.cv.bilateralFilter(gray, blurred, 9, 75, 75)
-    
-    // Detect edges with both normal and inverted thresholds for better contrast detection
-    window.cv.Canny(blurred, edges, 30, 100, 3, true) // Lower thresholds
-    window.cv.Canny(blurred, edgesInverted, 100, 200, 3, true) // Higher thresholds for inverted detection
-    
-    // Combine both edge results
-    const combinedEdges = new window.cv.Mat()
-    window.cv.add(edges, edgesInverted, combinedEdges)
-    
-    // Morphological operations to connect edge segments
-    const kernel = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(3, 3))
-    window.cv.morphologyEx(combinedEdges, combinedEdges, window.cv.MORPH_CLOSE, kernel)
-    
-    const contours = new window.cv.MatVector()
-    const hierarchy = new window.cv.Mat()
-    window.cv.findContours(combinedEdges, contours, hierarchy, window.cv.RETR_LIST, window.cv.CHAIN_APPROX_SIMPLE)
-    
-    const imgArea = canvas.width * canvas.height
-    const minArea = imgArea * 0.01  // Reduced from 0.02
-    const maxArea = imgArea * 0.99  // Increased from 0.98
-    
-    const detectedShapes: DetectedShape[] = []
-    const candidatesByArea: { contour: any, area: number, index: number }[] = []
-    
-    // First pass: collect all valid-sized contours
-    for (let i = 0; i < contours.size(); i++) {
-      const contour = contours.get(i)
-      const area = window.cv.contourArea(contour)
+    for (let i = 0; i < 4; i++) {
+      const p1 = corners[(i - 1 + 4) % 4]
+      const p2 = corners[i]
+      const p3 = corners[(i + 1) % 4]
       
-      if (area >= minArea && area <= maxArea) {
-        candidatesByArea.push({ contour, area, index: i })
-      } else {
-        contour.delete()
-      }
+      const v1x = p1.x - p2.x
+      const v1y = p1.y - p2.y
+      const v2x = p3.x - p2.x
+      const v2y = p3.y - p2.y
+      
+      const dot = v1x * v2x + v1y * v2y
+      const cross = v1x * v2y - v1y * v2x
+      const angle = Math.abs(Math.atan2(cross, dot) * 180 / Math.PI)
+      
+      if (Math.abs(angle - 90) > angleTolerance) return false
     }
     
-    // Sort by area descending - larger shapes are more likely to be the target
-    candidatesByArea.sort((a, b) => b.area - a.area)
-    
-    // Process only the top candidates
-    const maxCandidates = Math.min(10, candidatesByArea.length) // Increased from 8
-    
-    for (let i = 0; i < maxCandidates; i++) {
-      const { contour, area } = candidatesByArea[i]
-      const perimeter = window.cv.arcLength(contour, true)
+    return true
+  }
+
+  const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
+    const { 
+      DETECTION_WIDTH, 
+      CONFIDENCE_THRESHOLD, 
+      MAX_CANDIDATES,
+      MIN_PERIMETER,
+      EPSILON_FACTOR,
+      ANGLE_TOLERANCE
+    } = getDetectionParams();
+
+    if (!window.cv || !canvas) return []
+
+    try {
+      const src = window.cv.imread(canvas)
+      const gray = new window.cv.Mat()
+      const blurred = new window.cv.Mat()
+      const edges = new window.cv.Mat()
       
-      if (perimeter < 60) { // Reduced from 80
-        contour.delete()
-        continue
+      window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY)
+      
+      // Apply bilateral filter for noise reduction while preserving edges
+      window.cv.bilateralFilter(gray, blurred, 9, 75, 75)
+      
+      // Detect edges with performance-appropriate thresholds
+      window.cv.Canny(blurred, edges, 40, 120, 3, true)
+      
+      // Morphological operations to connect edge segments
+      const kernel = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(3, 3))
+      window.cv.morphologyEx(edges, edges, window.cv.MORPH_CLOSE, kernel)
+      
+      const contours = new window.cv.MatVector()
+      const hierarchy = new window.cv.Mat()
+      window.cv.findContours(edges, contours, hierarchy, window.cv.RETR_LIST, window.cv.CHAIN_APPROX_SIMPLE)
+      
+      const imgArea = canvas.width * canvas.height
+      const minArea = imgArea * 0.02
+      const maxArea = imgArea * 0.98
+      
+      const detectedShapes: DetectedShape[] = []
+      const candidatesByArea: { contour: any, area: number, index: number }[] = []
+      
+      // First pass: collect all valid-sized contours
+      for (let i = 0; i < contours.size(); i++) {
+        const contour = contours.get(i)
+        const area = window.cv.contourArea(contour)
+        
+        if (area >= minArea && area <= maxArea) {
+          candidatesByArea.push({ contour, area, index: i })
+        } else {
+          contour.delete()
+        }
       }
       
-      // Use a single, consistent epsilon value
-      const approx = new window.cv.Mat()
-      const epsilon = 0.04 * perimeter  // Increased from 0.03 for more tolerance
-      window.cv.approxPolyDP(contour, approx, epsilon, true)
+      // Sort by area descending
+      candidatesByArea.sort((a, b) => b.area - a.area)
       
-      if (approx.rows >= 4 && approx.rows <= 10) { // Increased max from 8 to 10
-        const corners: Point[] = []
-        for (let j = 0; j < approx.rows; j++) {
-          corners.push({
-            x: approx.data32S[j * 2],
-            y: approx.data32S[j * 2 + 1]
-          })
+      // Process only the top candidates based on performance
+      const maxCandidates = Math.min(MAX_CANDIDATES, candidatesByArea.length)
+      
+      for (let i = 0; i < maxCandidates; i++) {
+        const { contour, area } = candidatesByArea[i]
+        const perimeter = window.cv.arcLength(contour, true)
+        
+        if (perimeter < MIN_PERIMETER) {
+          contour.delete()
+          continue
         }
         
-        let finalCorners = corners
-        if (corners.length > 4) {
-          finalCorners = findBestQuadrilateral(corners)
-        }
+        // Use performance-appropriate epsilon
+        const approx = new window.cv.Mat()
+        const epsilon = EPSILON_FACTOR * perimeter
+        window.cv.approxPolyDP(contour, approx, epsilon, true)
         
-        if (finalCorners.length === 4 && 
-            isValidQuadrilateral(finalCorners) && 
-            isRectangularContour(finalCorners, 50)) { // Increased angle tolerance from 45 to 50
-              
-          const sortedCorners = sortCorners(finalCorners)
-          const aspectRatio = calculateAspectRatio(sortedCorners)
-          const confidence = calculateImprovedConfidence(
-            sortedCorners, area, canvas.width, canvas.height, perimeter
-          )
-          
-          if (confidence >= CONFIDENCE_THRESHOLD) {
-            detectedShapes.push({
-              corners: sortedCorners,
-              area: area,
-              aspectRatio: aspectRatio,
-              confidence: confidence,
-              type: classifyShape(sortedCorners, aspectRatio)
+        if (approx.rows >= 4 && approx.rows <= 8) {
+          const corners: Point[] = []
+          for (let j = 0; j < approx.rows; j++) {
+            corners.push({
+              x: approx.data32S[j * 2],
+              y: approx.data32S[j * 2 + 1]
             })
           }
+          
+          let finalCorners = corners
+          if (corners.length > 4) {
+            finalCorners = findBestQuadrilateral(corners)
+          }
+          
+          if (finalCorners.length === 4 && 
+              isValidQuadrilateral(finalCorners) && 
+              isRectangularContour(finalCorners, ANGLE_TOLERANCE)) {
+                
+            const sortedCorners = sortCorners(finalCorners)
+            const aspectRatio = calculateAspectRatio(sortedCorners)
+            const confidence = calculateImprovedConfidence(
+              sortedCorners, area, canvas.width, canvas.height, perimeter
+            )
+            
+            if (confidence >= CONFIDENCE_THRESHOLD) {
+              detectedShapes.push({
+                corners: sortedCorners,
+                area: area,
+                aspectRatio: aspectRatio,
+                confidence: confidence,
+                type: classifyShape(sortedCorners, aspectRatio)
+              })
+            }
+          }
         }
+        
+        approx.delete()
+        contour.delete()
       }
       
-      approx.delete()
-      contour.delete()
+      src.delete()
+      gray.delete()
+      blurred.delete()
+      edges.delete()
+      kernel.delete()
+      contours.delete()
+      hierarchy.delete()
+      
+      return detectedShapes.sort((a, b) => b.confidence - a.confidence)
+      
+    } catch (error) {
+      console.error('Error in shape detection:', error)
+      return []
     }
-    
-    src.delete()
-    gray.delete()
-    blurred.delete()
-    edges.delete()
-    edgesInverted.delete()
-    combinedEdges.delete()
-    kernel.delete()
-    contours.delete()
-    hierarchy.delete()
-    
-    // Return all valid detections instead of just the best one
-    return detectedShapes.sort((a, b) => b.confidence - a.confidence)
-    
-  } catch (error) {
-    console.error('Error in shape detection:', error)
-    return []
   }
-}
+
   const findBestQuadrilateral = (points: Point[]): Point[] => {
     if (points.length <= 4) return points
     
@@ -463,6 +533,8 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
   }
 
   const smoothShapeWithHistory = (currentCorners: Point[]): Point[] => {
+    const { DETECTION_HISTORY_SIZE } = getDetectionParams();
+    
     const currentShape: DetectedShape = {
       corners: currentCorners,
       area: 0,
@@ -504,6 +576,8 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
   }
 
   const areShapesSimilar = (shape1: DetectedShape | null, shape2: DetectedShape | null): boolean => {
+    const { STABILITY_THRESHOLD } = getDetectionParams();
+    
     if (!shape1 || !shape2 || shape1.corners.length !== shape2.corners.length) return false
     
     const totalDistance = shape1.corners.reduce((sum, corner, i) => {
@@ -539,6 +613,7 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
         const ctx = canvas.getContext('2d')
         if (!ctx) return
 
+        const { DETECTION_WIDTH } = getDetectionParams();
         const videoAspect = video.videoWidth / video.videoHeight
         const canvasWidth = DETECTION_WIDTH
         const canvasHeight = Math.round(canvasWidth / videoAspect)
@@ -559,11 +634,13 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
         
         const previousBest = bestShape
         if (currentBest && previousBest && areShapesSimilar(currentBest, previousBest)) {
+          const { MIN_STABLE_FRAMES } = getDetectionParams();
           stableFrameCount.current = Math.min(stableFrameCount.current + 1, MIN_STABLE_FRAMES * 3)
         } else {
           stableFrameCount.current = Math.max(stableFrameCount.current - 1, 0)
         }
         
+        const { MIN_STABLE_FRAMES } = getDetectionParams();
         const newStability = stableFrameCount.current >= MIN_STABLE_FRAMES
         if (newStability !== isShapeStable) {
           setIsShapeStable(newStability)
@@ -586,135 +663,136 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
         cancelAnimationFrame(animationFrameRef.current)
       }
     }
-  }, [isDetectionReady, hasCamera, bestShape])
+  }, [isDetectionReady, hasCamera, bestShape, devicePerformance])
 
-  //drawoverlay
   const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], bestShape: DetectedShape | null) => {
-  const overlayCtx = overlayCanvas.getContext('2d')
-  if (!overlayCtx) return
+    const { DETECTION_WIDTH } = getDetectionParams();
+    const overlayCtx = overlayCanvas.getContext('2d')
+    if (!overlayCtx) return
 
-  overlayCanvas.width = canvasRef.current?.width || 0
-  overlayCanvas.height = canvasRef.current?.height || 0
-  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
+    overlayCanvas.width = canvasRef.current?.width || 0
+    overlayCanvas.height = canvasRef.current?.height || 0
+    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
 
-  if (!bestShape) {
-    const centerX = overlayCanvas.width / 2
-    const centerY = overlayCanvas.height / 2
+    if (!bestShape) {
+      const centerX = overlayCanvas.width / 2
+      const centerY = overlayCanvas.height / 2
+      
+      overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.6)'
+      overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height)
+      
+      // Performance-appropriate guide area
+      const guideWidth = Math.min(overlayCanvas.width * 0.9, 600)
+      const guideHeight = Math.min(overlayCanvas.height * 0.7, 400)
+      const guideX = (overlayCanvas.width - guideWidth) / 2
+      const guideY = (overlayCanvas.height - guideHeight) / 2
+      
+      overlayCtx.strokeStyle = '#FFFFFF'
+      overlayCtx.lineWidth = 3
+      overlayCtx.setLineDash([10, 10])
+      overlayCtx.strokeRect(guideX, guideY, guideWidth, guideHeight)
+      overlayCtx.setLineDash([])
+      
+      overlayCtx.fillStyle = '#FFFFFF'
+      overlayCtx.font = 'bold 24px Arial'
+      overlayCtx.textAlign = 'center'
+      overlayCtx.textBaseline = 'middle'
+      overlayCtx.fillText(
+        'Position document in frame',
+        centerX,
+        guideY - 40
+      )
+      overlayCtx.font = '18px Arial'
+      overlayCtx.fillText(
+        'Works with monitors, papers, books, photos',
+        centerX,
+        guideY + guideHeight + 40
+      )
+      return
+    }
+
+    // Draw all detected shapes as potential candidates
+    shapes.forEach(shape => {
+      if (shape.confidence < 30) return;
+      
+      const corners = shape.corners;
+      overlayCtx.strokeStyle = 'rgba(100, 200, 255, 0.4)';
+      overlayCtx.lineWidth = 1;
+      overlayCtx.setLineDash([5, 5]);
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(corners[0].x, corners[0].y);
+      corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y));
+      overlayCtx.closePath();
+      overlayCtx.stroke();
+    });
+
+    const corners = bestShape.corners
+    const isStable = isShapeStable
     
-    overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.6)'
+    overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.5)'
     overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height)
     
-    // Even larger guide area
-    const guideWidth = Math.min(overlayCanvas.width * 0.95, 700) // Increased from 0.9 to 0.95 and 600 to 700
-    const guideHeight = Math.min(overlayCanvas.height * 0.8, 500) // Increased from 0.7 to 0.8 and 400 to 500
-    const guideX = (overlayCanvas.width - guideWidth) / 2
-    const guideY = (overlayCanvas.height - guideHeight) / 2
+    overlayCtx.globalCompositeOperation = 'destination-out'
+    overlayCtx.beginPath()
+    overlayCtx.moveTo(corners[0].x, corners[0].y)
+    corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y))
+    overlayCtx.closePath()
+    overlayCtx.fill()
     
-    overlayCtx.strokeStyle = '#FFFFFF'
-    overlayCtx.lineWidth = 3
-    overlayCtx.setLineDash([10, 10])
-    overlayCtx.strokeRect(guideX, guideY, guideWidth, guideHeight)
+    overlayCtx.globalCompositeOperation = 'source-over'
+    overlayCtx.strokeStyle = isStable ? '#00FF00' : '#00AAFF'
+    overlayCtx.lineWidth = isStable ? 3 : 2
+    overlayCtx.setLineDash(isStable ? [] : [20, 15])
+    overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.5)'
+    overlayCtx.shadowBlur = 4
+    overlayCtx.beginPath()
+    overlayCtx.moveTo(corners[0].x, corners[0].y)
+    corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y))
+    overlayCtx.closePath()
+    overlayCtx.stroke()
     overlayCtx.setLineDash([])
+    overlayCtx.shadowBlur = 0
+
+    corners.forEach((corner) => {
+      overlayCtx.fillStyle = isStable ? '#00FF00' : '#00AAFF'
+      overlayCtx.beginPath()
+      overlayCtx.arc(corner.x, corner.y, 8, 0, 2 * Math.PI)
+      overlayCtx.fill()
+      
+      overlayCtx.fillStyle = '#FFFFFF'
+      overlayCtx.beginPath()
+      overlayCtx.arc(corner.x, corner.y, 4, 0, 2 * Math.PI)
+      overlayCtx.fill()
+    })
+    
+    const centerX = corners.reduce((sum, c) => sum + c.x, 0) / corners.length
+    const centerY = corners.reduce((sum, c) => sum + c.y, 0) / corners.length
+    
+    overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.8)'
+    overlayCtx.fillRect(centerX - 150, centerY - 60, 300, 120)
     
     overlayCtx.fillStyle = '#FFFFFF'
-    overlayCtx.font = 'bold 28px Arial' // Increased font size
+    overlayCtx.font = 'bold 22px Arial'
     overlayCtx.textAlign = 'center'
-    overlayCtx.textBaseline = 'middle'
     overlayCtx.fillText(
-      'Position document in frame',
+      `${bestShape.type.charAt(0).toUpperCase() + bestShape.type.slice(1)} Found`,
       centerX,
-      guideY - 50 // Moved up from 40
+      centerY - 25
     )
-    overlayCtx.font = '20px Arial' // Increased font size
+    overlayCtx.font = '18px Arial'
     overlayCtx.fillText(
-      'Works with monitors, papers, books, photos',
+      isStable ? '✓ Ready to capture!' : 'Hold steady...',
       centerX,
-      guideY + guideHeight + 50 // Moved down from 40
+      centerY + 5
     )
-    return
+    overlayCtx.font = '16px Arial'
+    overlayCtx.fillText(
+      `Confidence: ${Math.round(bestShape.confidence)}%`,
+      centerX,
+      centerY + 35
+    )
   }
 
-  // Draw all detected shapes as potential candidates
-  shapes.forEach(shape => {
-    if (shape.confidence < 25) return; // Only draw confident candidates
-    
-    const corners = shape.corners;
-    overlayCtx.strokeStyle = 'rgba(100, 200, 255, 0.3)'; // Light blue for candidates
-    overlayCtx.lineWidth = 1;
-    overlayCtx.setLineDash([5, 5]);
-    overlayCtx.beginPath();
-    overlayCtx.moveTo(corners[0].x, corners[0].y);
-    corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y));
-    overlayCtx.closePath();
-    overlayCtx.stroke();
-  });
-
-  const corners = bestShape.corners
-  const isStable = isShapeStable
-  
-  overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.5)'
-  overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height)
-  
-  overlayCtx.globalCompositeOperation = 'destination-out'
-  overlayCtx.beginPath()
-  overlayCtx.moveTo(corners[0].x, corners[0].y)
-  corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y))
-  overlayCtx.closePath()
-  overlayCtx.fill()
-  
-  overlayCtx.globalCompositeOperation = 'source-over'
-  overlayCtx.strokeStyle = isStable ? '#00FF00' : '#00AAFF'
-  overlayCtx.lineWidth = isStable ? 4 : 3 // Increased line width
-  overlayCtx.setLineDash(isStable ? [] : [25, 15]) // Increased dash size
-  overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.5)'
-  overlayCtx.shadowBlur = 6 // Increased shadow
-  overlayCtx.beginPath()
-  overlayCtx.moveTo(corners[0].x, corners[0].y)
-  corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y))
-  overlayCtx.closePath()
-  overlayCtx.stroke()
-  overlayCtx.setLineDash([])
-  overlayCtx.shadowBlur = 0
-
-  corners.forEach((corner) => {
-    overlayCtx.fillStyle = isStable ? '#00FF00' : '#00AAFF'
-    overlayCtx.beginPath()
-    overlayCtx.arc(corner.x, corner.y, 10, 0, 2 * Math.PI) // Increased corner size
-    overlayCtx.fill()
-    
-    overlayCtx.fillStyle = '#FFFFFF'
-    overlayCtx.beginPath()
-    overlayCtx.arc(corner.x, corner.y, 5, 0, 2 * Math.PI) // Increased inner dot
-    overlayCtx.fill()
-  })
-  
-  const centerX = corners.reduce((sum, c) => sum + c.x, 0) / corners.length
-  const centerY = corners.reduce((sum, c) => sum + c.y, 0) / corners.length
-  
-  overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.8)'
-  overlayCtx.fillRect(centerX - 180, centerY - 70, 360, 140) // Increased info box size
-  
-  overlayCtx.fillStyle = '#FFFFFF'
-  overlayCtx.font = 'bold 26px Arial' // Increased font size
-  overlayCtx.textAlign = 'center'
-  overlayCtx.fillText(
-    `${bestShape.type.charAt(0).toUpperCase() + bestShape.type.slice(1)} Found`,
-    centerX,
-    centerY - 30
-  )
-  overlayCtx.font = '20px Arial' // Increased font size
-  overlayCtx.fillText(
-    isStable ? '✓ Ready to capture!' : 'Hold steady...',
-    centerX,
-    centerY + 10
-  )
-  overlayCtx.font = '18px Arial' // Increased font size
-  overlayCtx.fillText(
-    `Confidence: ${Math.round(bestShape.confidence)}%`,
-    centerX,
-    centerY + 50
-  )
-}
   const orderCornersForDocument = (corners: Point[]): Point[] => {
     const centerX = corners.reduce((sum, p) => sum + p.x, 0) / corners.length
     const centerY = corners.reduce((sum, p) => sum + p.y, 0) / corners.length
@@ -939,6 +1017,7 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
   const onUserMediaError = () => {
     setHasCamera(false)
   }
+
   return (
     <div className="relative h-full flex flex-col">
       <div className="relative flex-1 bg-black overflow-hidden">
@@ -982,7 +1061,7 @@ const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
                   <div className="text-white text-sm">
                     <div>Type: <span className="font-bold">{bestShape.type}</span></div>
                     <div>Confidence: <span className="font-bold">{Math.round(bestShape.confidence)}%</span></div>
-                    <div>Stable: <span className="font-bold">{stableFrameCount.current}/{MIN_STABLE_FRAMES}</span></div>
+                    <div>Stable: <span className="font-bold">{stableFrameCount.current}/{getDetectionParams().MIN_STABLE_FRAMES}</span></div>
                   </div>
                 </div>
               </div>
