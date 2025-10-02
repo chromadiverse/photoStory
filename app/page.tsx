@@ -207,9 +207,11 @@ export default function Home() {
       
       {renderNavigation()}
       
-      <div className="pt-24 h-[calc(100vh-96px)]">
+      <div className="pt-24 h-[calc(100vh-96px)] overflow-hidden">
         {currentView === 'camera' && (
-          <CameraView onImageCapture={handleImageCapture} />
+          <div className="w-full h-full">
+            <CameraView onImageCapture={handleImageCapture} />
+          </div>
         )}
         
         {currentView === 'crop' && capturedImage && (
