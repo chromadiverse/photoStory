@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
-  ArrowLeft, 
-  RotateCw as RotateIcon
+  ArrowLeft,
+  RotateCw as RotateIcon,
+  RotateCcw as AutoStraightenIcon
 } from 'lucide-react';
 import { CapturedImage, CroppedImageData } from '../page';
 
@@ -34,7 +35,6 @@ interface DragState {
   initialCropStart: Point;
 }
 
-// Only the priority ratios as requested
 const printRatios = [
   { label: 'Free', value: null },
   { label: '3:2', value: 3/2 },
@@ -47,8 +47,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [originalDimensions, setOriginalDimensions] = useState({ width: 0, height: 0 });
   const [cropArea, setCropArea] = useState<CropArea>({ x: 0, y: 0, width: 0, height: 0 });
-  const [rotation, setRotation] = useState(0);
-  const [zoom, setZoom] = useState(0.5);
+  const [rotation, setRotation] = useState(0); // Continuous rotation in degrees
+  const [zoom, setZoom] = useState(0.8);
   const [aspect, setAspect] = useState<number | null>(null);
   const [selectedRatio, setSelectedRatio] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState>({ 
@@ -65,11 +65,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // =============== PINCH-TO-ZOOM STATE ===============
-  const [touchDistance, setTouchDistance] = useState(0);
-  const [initialZoom, setInitialZoom] = useState(0.5);
-
-  // Initialize image dimensions and crop area
+  // Initialize image
   useEffect(() => {
     const img = new Image();
     img.onload = () => {
@@ -89,7 +85,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     img.src = image.src;
   }, [image.src]);
 
-  // Resize the original image to match the selected aspect ratio (with padding)
   const resizeImageToRatio = useCallback(async (targetRatio: number | null) => {
     if (!originalImageSrc || targetRatio === null) {
       setProcessedImage(null);
@@ -123,26 +118,18 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
     canvas.width = newWidth;
     canvas.height = newHeight;
-
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, newWidth, newHeight);
 
     const tempImg = new Image();
     tempImg.src = originalImageSrc;
-    
-    await new Promise<void>((resolve) => {
-      tempImg.onload = () => resolve();
-    });
+    await new Promise<void>((resolve) => tempImg.onload = () => resolve());
 
     const offsetX = (newWidth - originalWidth) / 2;
     const offsetY = (newHeight - originalHeight) / 2;
-
     ctx.drawImage(tempImg, offsetX, offsetY, originalWidth, originalHeight);
 
-    const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob(resolve, 'image/jpeg', 0.95);
-    });
-
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95));
     if (blob) {
       const url = URL.createObjectURL(blob);
       setProcessedImage(url);
@@ -151,39 +138,11 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     }
   }, [originalImageSrc, originalDimensions]);
 
-  // Handle ratio selection
   const handleRatioSelect = (ratioOption: typeof printRatios[0]) => {
     setSelectedRatio(ratioOption.label);
     setAspect(ratioOption.value);
     resizeImageToRatio(ratioOption.value);
   };
-
-  // Convert screen coordinates to image coordinates
-  const screenToImageCoords = useCallback((screenX: number, screenY: number) => {
-    if (!containerRef.current) return { x: 0, y: 0 };
-    
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const containerWidth = containerRect.width;
-    const containerHeight = containerRect.height;
-    
-    const scaleX = containerWidth / imageDimensions.width;
-    const scaleY = containerHeight / imageDimensions.height;
-    const scale = Math.min(scaleX, scaleY) * zoom;
-    
-    const displayWidth = imageDimensions.width * scale;
-    const displayHeight = imageDimensions.height * scale;
-    
-    const offsetX = (containerWidth - displayWidth) / 2;
-    const offsetY = (containerHeight - displayHeight) / 2;
-    
-    const relativeX = screenX - containerRect.left - offsetX;
-    const relativeY = screenY - containerRect.top - offsetY;
-    
-    const imageX = relativeX / scale;
-    const imageY = relativeY / scale;
-    
-    return { x: imageX, y: imageY };
-  }, [imageDimensions, zoom]);
 
   // Handle drag start
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent, dragType: DragState['dragType']) => {
@@ -261,10 +220,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     const minSize = 50;
     newCrop.width = Math.max(minSize, newCrop.width);
     newCrop.height = Math.max(minSize, newCrop.height);
-    
     newCrop.x = Math.max(0, Math.min(imageDimensions.width - newCrop.width, newCrop.x));
     newCrop.y = Math.max(0, Math.min(imageDimensions.height - newCrop.height, newCrop.y));
-    
     newCrop.width = Math.min(imageDimensions.width - newCrop.x, newCrop.width);
     newCrop.height = Math.min(imageDimensions.height - newCrop.y, newCrop.height);
     
@@ -297,40 +254,12 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     }
   }, [dragState.isDragging, handleDragMove, handleDragEnd]);
 
-  // =============== PINCH-TO-ZOOM ===============
-const getDistance = (touches: React.TouchList) => {
-  if (touches.length < 2) return 0;
-  const dx = touches[0].clientX - touches[1].clientX;
-  const dy = touches[0].clientY - touches[1].clientY;
-  return Math.sqrt(dx * dx + dy * dy);
-};
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      setTouchDistance(getDistance(e.touches));
-      setInitialZoom(zoom);
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    e.preventDefault();
-    if (e.touches.length === 2 && touchDistance > 0) {
-      const newDistance = getDistance(e.touches);
-      const zoomChange = newDistance / touchDistance;
-      const newZoom = Math.max(0.3, Math.min(initialZoom * zoomChange, 3));
-      setZoom(newZoom);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setTouchDistance(0);
-  };
-
-  // =============== ROTATION ===============
+  // =============== ROTATION: 90° BUTTON ===============
   const rotateImage = () => {
     const newRotation = (rotation + 90) % 360;
     setRotation(newRotation);
     
+    // Swap dimensions only on 90/270
     if (newRotation % 180 !== 0) {
       setImageDimensions(prev => ({
         width: prev.height,
@@ -344,6 +273,11 @@ const getDistance = (touches: React.TouchList) => {
         height: Math.min(prev.height, imageDimensions.width)
       }));
     }
+  };
+
+  // =============== AUTO-STRAIGHTEN ===============
+  const autoStraighten = () => {
+    setRotation(0);
   };
 
   // =============== SAVE ===============
@@ -360,29 +294,17 @@ const getDistance = (touches: React.TouchList) => {
       const outputWidth = cropArea.width;
       const outputHeight = cropArea.height;
 
-      if (rotation % 360 === 0) {
+      if (Math.abs(rotation) < 0.1) {
         canvas.width = outputWidth;
         canvas.height = outputHeight;
-        ctx.drawImage(
-          tempImg,
-          cropArea.x, cropArea.y,
-          outputWidth, outputHeight,
-          0, 0,
-          outputWidth, outputHeight
-        );
+        ctx.drawImage(tempImg, cropArea.x, cropArea.y, outputWidth, outputHeight, 0, 0, outputWidth, outputHeight);
       } else {
         canvas.width = outputWidth;
         canvas.height = outputHeight;
         ctx.save();
         ctx.translate(outputWidth / 2, outputHeight / 2);
         ctx.rotate((rotation * Math.PI) / 180);
-        ctx.drawImage(
-          tempImg,
-          cropArea.x, cropArea.y,
-          outputWidth, outputHeight,
-          -outputWidth / 2, -outputHeight / 2,
-          outputWidth, outputHeight
-        );
+        ctx.drawImage(tempImg, cropArea.x, cropArea.y, outputWidth, outputHeight, -outputWidth / 2, -outputHeight / 2, outputWidth, outputHeight);
         ctx.restore();
       }
 
@@ -399,17 +321,7 @@ const getDistance = (touches: React.TouchList) => {
     };
   };
 
-  // Reset crop to full image
-  const resetCrop = () => {
-    setCropArea({
-      x: 0,
-      y: 0,
-      width: imageDimensions.width,
-      height: imageDimensions.height
-    });
-  };
-
-  // Calculate display metrics
+  // Calculate display
   const containerRect = containerRef.current?.getBoundingClientRect();
   const containerWidth = containerRect?.width || 400;
   const containerHeight = containerRect?.height || 400;
@@ -457,10 +369,6 @@ const getDistance = (touches: React.TouchList) => {
         ref={containerRef}
         className="relative flex-1 min-h-0 bg-black overflow-hidden"
         style={{ touchAction: 'none' }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
       >
         <img
           src={processedImage || image.src}
@@ -477,7 +385,6 @@ const getDistance = (touches: React.TouchList) => {
           draggable={false}
         />
         
-        {/* Crop overlay */}
         <div 
           className="absolute border-2 border-white border-opacity-80"
           style={{
@@ -487,54 +394,49 @@ const getDistance = (touches: React.TouchList) => {
             height: cropArea.height * scale,
           }}
         >
-          {/* Grid lines */}
           <div className="absolute inset-0 pointer-events-none">
             {[...Array(2)].map((_, i) => (
-              <div 
-                key={`v-${i}`} 
-                className="absolute top-0 bottom-0 border-l border-white border-opacity-30"
-                style={{ left: `${(i + 1) * 33.33}%` }}
-              />
+              <div key={`v-${i}`} className="absolute top-0 bottom-0 border-l border-white border-opacity-30" style={{ left: `${(i + 1) * 33.33}%` }} />
             ))}
             {[...Array(2)].map((_, i) => (
-              <div 
-                key={`h-${i}`} 
-                className="absolute left-0 right-0 border-t border-white border-opacity-30"
-                style={{ top: `${(i + 1) * 33.33}%` }}
-              />
+              <div key={`h-${i}`} className="absolute left-0 right-0 border-t border-white border-opacity-30" style={{ top: `${(i + 1) * 33.33}%` }} />
             ))}
           </div>
           
-          {/* Corner handles - LARGER FOR TOUCH */}
-          <div 
-            className="absolute w-8 h-8 bg-white rounded-full border-2 border-white shadow-lg"
-            style={{ top: '-16px', left: '-16px', touchAction: 'none' }}
-            onMouseDown={(e) => handleDragStart(e, 'nw')}
-            onTouchStart={(e) => handleDragStart(e, 'nw')}
-          />
-          <div 
-            className="absolute w-8 h-8 bg-white rounded-full border-2 border-white shadow-lg"
-            style={{ top: '-16px', right: '-16px', touchAction: 'none' }}
-            onMouseDown={(e) => handleDragStart(e, 'ne')}
-            onTouchStart={(e) => handleDragStart(e, 'ne')}
-          />
-          <div 
-            className="absolute w-8 h-8 bg-white rounded-full border-2 border-white shadow-lg"
-            style={{ bottom: '-16px', left: '-16px', touchAction: 'none' }}
-            onMouseDown={(e) => handleDragStart(e, 'sw')}
-            onTouchStart={(e) => handleDragStart(e, 'sw')}
-          />
-          <div 
-            className="absolute w-8 h-8 bg-white rounded-full border-2 border-white shadow-lg"
-            style={{ bottom: '-16px', right: '-16px', touchAction: 'none' }}
-            onMouseDown={(e) => handleDragStart(e, 'se')}
-            onTouchStart={(e) => handleDragStart(e, 'se')}
-          />
+          {(['nw', 'ne', 'sw', 'se'] as const).map(pos => (
+            <div
+              key={pos}
+              className="absolute w-8 h-8 bg-white rounded-full border-2 border-white shadow-lg"
+              style={{
+                top: pos.includes('n') ? '-16px' : 'auto',
+                bottom: pos.includes('s') ? '-16px' : 'auto',
+                left: pos.includes('w') ? '-16px' : 'auto',
+                right: pos.includes('e') ? '-16px' : 'auto',
+                touchAction: 'none',
+              }}
+              onMouseDown={(e) => handleDragStart(e, pos)}
+              onTouchStart={(e) => handleDragStart(e, pos)}
+            />
+          ))}
         </div>
       </div>
 
       {/* Controls */}
-      <div className="bg-black/80 p-4 space-y-4">
+      <div className="bg-black/80 p-4 space-y-5">
+        {/* ROTATE BUTTON - ABOVE RATIOS */}
+        <div className="flex justify-center">
+          <button
+            onClick={rotateImage}
+            className="flex flex-col items-center gap-1.5 text-white hover:text-blue-300 active:scale-95 transition-transform"
+            aria-label="Rotate image 90 degrees"
+          >
+            <div className="w-12 h-12 flex items-center justify-center bg-gray-800 rounded-full">
+              <RotateIcon className="w-6 h-6" />
+            </div>
+            <span className="text-xs font-medium">Rotate</span>
+          </button>
+        </div>
+
         {/* Aspect Ratios */}
         <div className="flex justify-center gap-2 flex-wrap">
           {printRatios.map((ratio) => (
@@ -552,18 +454,52 @@ const getDistance = (touches: React.TouchList) => {
           ))}
         </div>
 
-        {/* Rotation Button - BELOW RATIOS */}
-        <div className="flex justify-center pt-1">
-          <button
-            onClick={rotateImage}
-            className="flex flex-col items-center gap-1.5 text-white hover:text-blue-300 active:scale-95 transition-transform"
-            aria-label="Rotate image 90 degrees"
-          >
-            <div className="w-12 h-12 flex items-center justify-center bg-gray-800 rounded-full">
-              <RotateIcon className="w-6 h-6" />
+        {/* SLIDERS - BELOW RATIOS */}
+        <div className="space-y-4">
+          {/* Zoom Slider */}
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-sm font-medium">Zoom</span>
+              <span className="text-xs text-gray-400">{zoom.toFixed(1)}x</span>
             </div>
-            <span className="text-xs font-medium">Rotate</span>
-          </button>
+            <input
+              type="range"
+              min="0.3"
+              max="2"
+              step="0.05"
+              value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))}
+              className="w-full h-2.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500 touch-manipulation"
+            />
+          </div>
+
+          {/* Rotation Slider */}
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-sm font-medium">Rotation</span>
+              <span className="text-xs text-gray-400">{rotation.toFixed(1)}°</span>
+            </div>
+            <input
+              type="range"
+              min="-45"
+              max="45"
+              step="0.5"
+              value={rotation}
+              onChange={(e) => setRotation(Number(e.target.value))}
+              className="w-full h-2.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500 touch-manipulation"
+            />
+          </div>
+
+          {/* Auto-Straighten (optional but helpful) */}
+          <div className="flex justify-center">
+            <button
+              onClick={autoStraighten}
+              className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300"
+            >
+              <AutoStraightenIcon className="w-4 h-4" />
+              Reset Rotation
+            </button>
+          </div>
         </div>
       </div>
     </div>
