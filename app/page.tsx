@@ -8,7 +8,7 @@ import Cropper from './components/cropper'
 import FilterPanel from './components/filter-panel' 
 import Preview from './components/preview' 
 import WelcomeModal from './components/welcome-modal'
-import { Camera, Edit3, Sliders, Eye, LogOut, User } from 'lucide-react'
+import { Camera, Edit3, Sliders, Eye, LogOut, User, ArrowLeft } from 'lucide-react'
 
 type ViewType = 'camera' | 'crop' | 'filter' | 'preview'
 
@@ -139,58 +139,67 @@ export default function Home() {
   }
 
   const renderNavigation = () => (
-    <div className="flex justify-between items-center p-4 bg-white/90 backdrop-blur-sm shadow-sm">
-    
-
-      <div className="flex justify-center space-x-2 flex-1">
+    <div className="fixed top-0 left-0 right-0 z-50 flex flex-col items-center p-3 bg-white/90 backdrop-blur-sm shadow-sm">
+      {/* View indicator */}
+      <div className="relative w-48 h-1 bg-gray-200 rounded-full mb-3">
+        <div 
+          className={`absolute top-0 h-full bg-blue-600 rounded-full transition-all duration-300 ease-in-out ${
+            currentView === 'camera' ? 'left-0 w-1/4' : 
+            currentView === 'crop' ? 'left-1/4 w-1/4' : 
+            currentView === 'filter' ? 'left-1/2 w-1/4' : 
+            'left-3/4 w-1/4'
+          }`}
+        ></div>
+      </div>
+      
+      {/* Navigation buttons */}
+      <div className="flex justify-center space-x-1 w-full max-w-md">
         <button
           onClick={() => setCurrentView('camera')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
+          className={`flex items-center justify-center p-2 rounded-lg ${
             currentView === 'camera' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-700'
           } text-white transition-colors`}
           disabled={!capturedImage && currentView !== 'camera'}
+          aria-label="Camera"
         >
           <Camera className="w-5 h-5" />
-          <span>Camera</span>
         </button>
         <button
           onClick={() => setCurrentView('crop')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
+          className={`flex items-center justify-center p-2 rounded-lg ${
             currentView === 'crop' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-700'
           } text-white transition-colors`}
           disabled={!capturedImage}
+          aria-label="Crop"
         >
           <Edit3 className="w-5 h-5" />
-          <span>Crop</span>
         </button>
         <button
           onClick={() => setCurrentView('filter')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
+          className={`flex items-center justify-center p-2 rounded-lg ${
             currentView === 'filter' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-700'
           } text-white transition-colors`}
           disabled={!croppedImageData}
+          aria-label="Filters"
         >
           <Sliders className="w-5 h-5" />
-          <span>Filters</span>
         </button>
         <button
           onClick={() => setCurrentView('preview')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
+          className={`flex items-center justify-center p-2 rounded-lg ${
             currentView === 'preview' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-700'
           } text-white transition-colors`}
           disabled={!croppedImageData}
+          aria-label="Preview"
         >
           <Eye className="w-5 h-5" />
-          <span>Preview</span>
         </button>
       </div>
-
-    
     </div>
   )
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 pb-20">
       <WelcomeModal 
         isVisible={showWelcomeModal} 
         onClose={handleCloseModal}
@@ -198,7 +207,7 @@ export default function Home() {
       
       {renderNavigation()}
       
-      <div className="h-[calc(100vh-80px)]">
+      <div className="pt-24 h-[calc(100vh-96px)]">
         {currentView === 'camera' && (
           <CameraView onImageCapture={handleImageCapture} />
         )}

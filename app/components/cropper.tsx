@@ -2,15 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { 
-  RotateCcw, 
-  Square, 
-  Maximize2, 
   ArrowLeft, 
-  Check, 
-  ZoomIn, 
-  ZoomOut, 
-  MonitorCog as FitScreen,
-  RotateCcw as RotateIcon
+  RotateCw as RotateIcon
 } from 'lucide-react';
 import { CapturedImage, CroppedImageData } from '../page';
 
@@ -37,7 +30,6 @@ interface DragState {
   dragType: 'none' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e' | 'move';
   start: Point;
   initialCrop: CropArea;
- 
   initialMouse: Point;
   initialCropStart: Point;
 }
@@ -72,7 +64,10 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null);
   
   const containerRef = useRef<HTMLDivElement>(null);
-  const imageRef = useRef<HTMLImageElement>(null);
+
+  // =============== PINCH-TO-ZOOM STATE ===============
+  const [touchDistance, setTouchDistance] = useState(0);
+  const [initialZoom, setInitialZoom] = useState(0.5);
 
   // Initialize image dimensions and crop area
   useEffect(() => {
@@ -81,10 +76,9 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       const { width, height } = img;
       setOriginalDimensions({ width, height });
       setImageDimensions({ width, height });
-      setOriginalImageSrc(image.src); // Store original source
+      setOriginalImageSrc(image.src);
       setImageLoaded(true);
       
-      // Set initial crop area to full image
       setCropArea({
         x: 0,
         y: 0,
@@ -98,7 +92,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   // Resize the original image to match the selected aspect ratio (with padding)
   const resizeImageToRatio = useCallback(async (targetRatio: number | null) => {
     if (!originalImageSrc || targetRatio === null) {
-      // For 'Free' ratio, reset to original
       setProcessedImage(null);
       setImageDimensions({ width: originalDimensions.width, height: originalDimensions.height });
       setCropArea({
@@ -116,18 +109,14 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
     let newWidth: number, newHeight: number;
 
-    // Calculate new dimensions that match the target ratio (with padding)
     if (originalRatio > targetRatio) {
-      // Original is wider than target - add vertical padding
       newWidth = originalWidth;
       newHeight = originalWidth / targetRatio;
     } else {
-      // Original is taller than target - add horizontal padding
       newHeight = originalHeight;
       newWidth = originalHeight * targetRatio;
     }
 
-    // Create canvas to resize with padding
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -135,33 +124,21 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     canvas.width = newWidth;
     canvas.height = newHeight;
 
-    // Fill with white background
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, newWidth, newHeight);
 
-    // Create temporary image from original source
     const tempImg = new Image();
     tempImg.src = originalImageSrc;
     
-    // Wait for image to load
     await new Promise<void>((resolve) => {
       tempImg.onload = () => resolve();
     });
 
-    // Calculate position to center the original image
     const offsetX = (newWidth - originalWidth) / 2;
     const offsetY = (newHeight - originalHeight) / 2;
 
-    // Draw the original image centered
-    ctx.drawImage(
-      tempImg,
-      offsetX, // Destination X
-      offsetY, // Destination Y
-      originalWidth, // Destination Width
-      originalHeight  // Destination Height
-    );
+    ctx.drawImage(tempImg, offsetX, offsetY, originalWidth, originalHeight);
 
-    // Convert to blob and create object URL
     const blob = await new Promise<Blob | null>((resolve) => {
       canvas.toBlob(resolve, 'image/jpeg', 0.95);
     });
@@ -169,20 +146,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     if (blob) {
       const url = URL.createObjectURL(blob);
       setProcessedImage(url);
-      
-      // Update image dimensions to the new ratio
-      setImageDimensions({
-        width: newWidth,
-        height: newHeight
-      });
-      
-      // Reset crop area to full new image
-      setCropArea({
-        x: 0,
-        y: 0,
-        width: newWidth,
-        height: newHeight
-      });
+      setImageDimensions({ width: newWidth, height: newHeight });
+      setCropArea({ x: 0, y: 0, width: newWidth, height: newHeight });
     }
   }, [originalImageSrc, originalDimensions]);
 
@@ -190,8 +155,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const handleRatioSelect = (ratioOption: typeof printRatios[0]) => {
     setSelectedRatio(ratioOption.label);
     setAspect(ratioOption.value);
-    
-    // Resize the original image to match this ratio
     resizeImageToRatio(ratioOption.value);
   };
 
@@ -213,7 +176,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     const offsetX = (containerWidth - displayWidth) / 2;
     const offsetY = (containerHeight - displayHeight) / 2;
     
-    // Convert screen coordinates to image coordinates
     const relativeX = screenX - containerRect.left - offsetX;
     const relativeY = screenY - containerRect.top - offsetY;
     
@@ -224,148 +186,100 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   }, [imageDimensions, zoom]);
 
   // Handle drag start
- const handleDragStart = (e: React.MouseEvent | React.TouchEvent, dragType: DragState['dragType']) => {
-  e.preventDefault();
-  e.stopPropagation();
-  
-  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-  
-  setDragState({
-    isDragging: true,
-    dragType,
-    start: { x: clientX, y: clientY },
-    initialCrop: { ...cropArea },
-    initialMouse: { x: clientX, y: clientY },
-    initialCropStart: { x: cropArea.x, y: cropArea.y }
-  });
-};
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent, dragType: DragState['dragType']) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    setDragState({
+      isDragging: true,
+      dragType,
+      start: { x: clientX, y: clientY },
+      initialCrop: { ...cropArea },
+      initialMouse: { x: clientX, y: clientY },
+      initialCropStart: { x: cropArea.x, y: cropArea.y }
+    });
+  };
 
-// Handle drag move with rotation compensation
-const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
-  if (!dragState.isDragging || !containerRef.current) return;
-  
-  // Prevent default to avoid scrolling on touch devices
-  e.preventDefault();
-  
-  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-  
-  const deltaX = clientX - dragState.start.x;
-  const deltaY = clientY - dragState.start.y;
-  
-  // Convert delta to image coordinates
-  const containerRect = containerRef.current.getBoundingClientRect();
-  const containerWidth = containerRect.width;
-  const containerHeight = containerRect.height;
-  const scaleX = containerWidth / imageDimensions.width;
-  const scaleY = containerHeight / imageDimensions.height;
-  const scale = Math.min(scaleX, scaleY) * zoom;
-  
-  // Adjust for rotation
-  const rad = rotation * Math.PI / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  
-  // Calculate rotated delta
-  const rotDeltaX = deltaX * cos + deltaY * sin;
-  const rotDeltaY = -deltaX * sin + deltaY * cos;
-  
-  const imageDeltaX = rotDeltaX / scale;
-  const imageDeltaY = rotDeltaY / scale;
-  
-  let newCrop = { ...dragState.initialCrop };
-  
-  switch (dragState.dragType) {
-    case 'nw':
-      // Top-left corner
-      newCrop.x = dragState.initialCropStart.x + imageDeltaX;
-      newCrop.y = dragState.initialCropStart.y + imageDeltaY;
-      newCrop.width = dragState.initialCrop.width - imageDeltaX;
-      newCrop.height = dragState.initialCrop.height - imageDeltaY;
-      break;
-    case 'ne':
-      // Top-right corner
-      newCrop.y = dragState.initialCropStart.y + imageDeltaY;
-      newCrop.width = dragState.initialCrop.width + imageDeltaX;
-      newCrop.height = dragState.initialCrop.height - imageDeltaY;
-      break;
-    case 'sw':
-      // Bottom-left corner
-      newCrop.x = dragState.initialCropStart.x + imageDeltaX;
-      newCrop.width = dragState.initialCrop.width - imageDeltaX;
-      newCrop.height = dragState.initialCrop.height + imageDeltaY;
-      break;
-    case 'se':
-      // Bottom-right corner
-      newCrop.width = dragState.initialCrop.width + imageDeltaX;
-      newCrop.height = dragState.initialCrop.height + imageDeltaY;
-      break;
-    case 'n':
-      // Top edge
-      newCrop.y = dragState.initialCropStart.y + imageDeltaY;
-      newCrop.height = dragState.initialCrop.height - imageDeltaY;
-      break;
-    case 's':
-      // Bottom edge
-      newCrop.height = dragState.initialCrop.height + imageDeltaY;
-      break;
-    case 'w':
-      // Left edge
-      newCrop.x = dragState.initialCropStart.x + imageDeltaX;
-      newCrop.width = dragState.initialCrop.width - imageDeltaX;
-      break;
-    case 'e':
-      // Right edge
-      newCrop.width = dragState.initialCrop.width + imageDeltaX;
-      break;
-    case 'move':
-      // Moving the entire crop area
-      newCrop.x = dragState.initialCropStart.x + imageDeltaX;
-      newCrop.y = dragState.initialCropStart.y + imageDeltaY;
-      break;
-  }
-  
-  // Apply aspect ratio if set
-  if (aspect && dragState.dragType !== 'move') {
-    const aspectRatio = aspect;
-    if (['n', 's'].includes(dragState.dragType)) {
-      newCrop.width = newCrop.height * aspectRatio;
-    } else if (['w', 'e'].includes(dragState.dragType)) {
-      newCrop.height = newCrop.width / aspectRatio;
-    } else {
-      // For corner handles, maintain aspect ratio based on width change
-      newCrop.height = newCrop.width / aspectRatio;
+  const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
+    if (!dragState.isDragging || !containerRef.current) return;
+    e.preventDefault();
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    const deltaX = clientX - dragState.start.x;
+    const deltaY = clientY - dragState.start.y;
+    
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const containerWidth = containerRect.width;
+    const containerHeight = containerRect.height;
+    const scaleX = containerWidth / imageDimensions.width;
+    const scaleY = containerHeight / imageDimensions.height;
+    const scale = Math.min(scaleX, scaleY) * zoom;
+    
+    const imageDeltaX = deltaX / scale;
+    const imageDeltaY = deltaY / scale;
+    
+    let newCrop = { ...dragState.initialCrop };
+    
+    switch (dragState.dragType) {
+      case 'nw':
+        newCrop.x = dragState.initialCropStart.x + imageDeltaX;
+        newCrop.y = dragState.initialCropStart.y + imageDeltaY;
+        newCrop.width = dragState.initialCrop.width - imageDeltaX;
+        newCrop.height = dragState.initialCrop.height - imageDeltaY;
+        break;
+      case 'ne':
+        newCrop.y = dragState.initialCropStart.y + imageDeltaY;
+        newCrop.width = dragState.initialCrop.width + imageDeltaX;
+        newCrop.height = dragState.initialCrop.height - imageDeltaY;
+        break;
+      case 'sw':
+        newCrop.x = dragState.initialCropStart.x + imageDeltaX;
+        newCrop.width = dragState.initialCrop.width - imageDeltaX;
+        newCrop.height = dragState.initialCrop.height + imageDeltaY;
+        break;
+      case 'se':
+        newCrop.width = dragState.initialCrop.width + imageDeltaX;
+        newCrop.height = dragState.initialCrop.height + imageDeltaY;
+        break;
+      case 'move':
+        newCrop.x = dragState.initialCropStart.x + imageDeltaX;
+        newCrop.y = dragState.initialCropStart.y + imageDeltaY;
+        break;
+      default:
+        return;
     }
-  }
-  
-  // Boundary checks with minimum size
-  const minSize = 50;
-  newCrop.width = Math.max(minSize, newCrop.width);
-  newCrop.height = Math.max(minSize, newCrop.height);
-  
-  // Keep within image bounds
-  newCrop.x = Math.max(0, Math.min(imageDimensions.width - newCrop.width, newCrop.x));
-  newCrop.y = Math.max(0, Math.min(imageDimensions.height - newCrop.height, newCrop.y));
-  
-  // Adjust size if it goes beyond bounds
-  newCrop.width = Math.min(imageDimensions.width - newCrop.x, newCrop.width);
-  newCrop.height = Math.min(imageDimensions.height - newCrop.y, newCrop.height);
-  
-  setCropArea(newCrop);
-}, [dragState, aspect, imageDimensions, zoom, rotation]);
+    
+    if (aspect && dragState.dragType !== 'move') {
+      newCrop.height = newCrop.width / aspect;
+    }
+    
+    const minSize = 50;
+    newCrop.width = Math.max(minSize, newCrop.width);
+    newCrop.height = Math.max(minSize, newCrop.height);
+    
+    newCrop.x = Math.max(0, Math.min(imageDimensions.width - newCrop.width, newCrop.x));
+    newCrop.y = Math.max(0, Math.min(imageDimensions.height - newCrop.height, newCrop.y));
+    
+    newCrop.width = Math.min(imageDimensions.width - newCrop.x, newCrop.width);
+    newCrop.height = Math.min(imageDimensions.height - newCrop.y, newCrop.height);
+    
+    setCropArea(newCrop);
+  }, [dragState, aspect, imageDimensions, zoom]);
 
-  // Handle drag end
   const handleDragEnd = useCallback(() => {
     setDragState(prev => ({ ...prev, isDragging: false }));
   }, []);
 
-  // Add event listeners for drag operations
   useEffect(() => {
     if (dragState.isDragging) {
       const handleMouseMove = (e: MouseEvent) => handleDragMove(e);
       const handleTouchMove = (e: TouchEvent) => {
-        e.preventDefault(); // Prevent scrolling
+        e.preventDefault();
         handleDragMove(e);
       };
       
@@ -383,74 +297,105 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
     }
   }, [dragState.isDragging, handleDragMove, handleDragEnd]);
 
-  // Handle image save with proper rotation handling
+  // =============== PINCH-TO-ZOOM ===============
+const getDistance = (touches: React.TouchList) => {
+  if (touches.length < 2) return 0;
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+};
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      setTouchDistance(getDistance(e.touches));
+      setInitialZoom(zoom);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault();
+    if (e.touches.length === 2 && touchDistance > 0) {
+      const newDistance = getDistance(e.touches);
+      const zoomChange = newDistance / touchDistance;
+      const newZoom = Math.max(0.3, Math.min(initialZoom * zoomChange, 3));
+      setZoom(newZoom);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setTouchDistance(0);
+  };
+
+  // =============== ROTATION ===============
+  const rotateImage = () => {
+    const newRotation = (rotation + 90) % 360;
+    setRotation(newRotation);
+    
+    if (newRotation % 180 !== 0) {
+      setImageDimensions(prev => ({
+        width: prev.height,
+        height: prev.width
+      }));
+      
+      setCropArea(prev => ({
+        x: Math.min(prev.x, imageDimensions.height - 50),
+        y: Math.min(prev.y, imageDimensions.width - 50),
+        width: Math.min(prev.width, imageDimensions.height),
+        height: Math.min(prev.height, imageDimensions.width)
+      }));
+    }
+  };
+
+  // =============== SAVE ===============
   const handleSave = async () => {
     const imgSrc = processedImage || image.src;
-    
-    // Create a temporary image to get dimensions
     const tempImg = new Image();
     tempImg.src = imgSrc;
     
     tempImg.onload = () => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      
       if (!ctx) return;
-      
-      // Calculate the actual crop dimensions after rotation
-      const rad = rotation * Math.PI / 180;
-      const cos = Math.abs(Math.cos(rad));
-      const sin = Math.abs(Math.sin(rad));
-      
-      // Calculate new dimensions after rotation
-      const newWidth = cropArea.width * cos + cropArea.height * sin;
-      const newHeight = cropArea.width * sin + cropArea.height * cos;
-      
-      // Set canvas size to the calculated dimensions
-      canvas.width = newWidth;
-      canvas.height = newHeight;
-      
-      if (rotation !== 0) {
-        // Handle rotation case
-        ctx.save();
-        ctx.translate(newWidth / 2, newHeight / 2);
-        ctx.rotate((rotation * Math.PI) / 180);
-        
-        // Draw the original image cropped to the selected area
+
+      const outputWidth = cropArea.width;
+      const outputHeight = cropArea.height;
+
+      if (rotation % 360 === 0) {
+        canvas.width = outputWidth;
+        canvas.height = outputHeight;
         ctx.drawImage(
           tempImg,
-          cropArea.x - tempImg.width / 2,
-          cropArea.y - tempImg.height / 2,
-          tempImg.width,
-          tempImg.height
+          cropArea.x, cropArea.y,
+          outputWidth, outputHeight,
+          0, 0,
+          outputWidth, outputHeight
         );
-        
-        ctx.restore();
       } else {
-        // Simple crop without rotation
+        canvas.width = outputWidth;
+        canvas.height = outputHeight;
+        ctx.save();
+        ctx.translate(outputWidth / 2, outputHeight / 2);
+        ctx.rotate((rotation * Math.PI) / 180);
         ctx.drawImage(
           tempImg,
-          cropArea.x,           // Source X
-          cropArea.y,           // Source Y
-          cropArea.width,       // Source Width
-          cropArea.height,      // Source Height
-          0,                    // Destination X
-          0,                    // Destination Y
-          cropArea.width,       // Destination Width
-          cropArea.height       // Destination Height
+          cropArea.x, cropArea.y,
+          outputWidth, outputHeight,
+          -outputWidth / 2, -outputHeight / 2,
+          outputWidth, outputHeight
         );
+        ctx.restore();
       }
-      
+
       canvas.toBlob((blob) => {
         if (blob) {
           const url = URL.createObjectURL(blob);
           onCropComplete({
             croppedImage: url,
             croppedBlob: blob,
-            rotation: 0 // Reset rotation since it's been applied
+            rotation: 0
           });
         }
-      }, 'image/jpeg', 0.95);
+      }, 'image/jpeg', 0.92);
     };
   };
 
@@ -464,58 +409,7 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
     });
   };
 
-  // Apply auto-straighten (simplified version)
-  const autoStraighten = () => {
-    setRotation(0);
-  };
-
-  // Zoom controls
-  const zoomIn = () => setZoom(prev => Math.min(prev + 0.1, 3));
-  const zoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.1));
-  const fitToScreen = () => {
-    setZoom(1);
-    // Reset crop area to full image after zooming
-    setCropArea({
-      x: 0,
-      y: 0,
-      width: imageDimensions.width,
-      height: imageDimensions.height
-    });
-  };
-
-  // Rotate image (vertical/horizontal switch)
-  const rotateImage = () => {
-    const newRotation = (rotation + 90) % 360;
-    setRotation(newRotation);
-    
-    // Swap dimensions when rotating
-    setImageDimensions(prev => ({
-      width: prev.height,
-      height: prev.width
-    }));
-    
-    // Adjust crop area to stay within bounds
-    setCropArea(prev => ({
-      x: Math.min(prev.x, imageDimensions.height - prev.width),
-      y: Math.min(prev.y, imageDimensions.width - prev.height),
-      width: Math.min(prev.width, imageDimensions.height),
-      height: Math.min(prev.height, imageDimensions.width)
-    }));
-  };
-
-  // Center image when zoom changes
-  useEffect(() => {
-    if (imageLoaded) {
-      setCropArea({
-        x: 0,
-        y: 0,
-        width: imageDimensions.width,
-        height: imageDimensions.height
-      });
-    }
-  }, [imageDimensions]);
-
-  // Calculate crop area position and size for the UI
+  // Calculate display metrics
   const containerRect = containerRef.current?.getBoundingClientRect();
   const containerWidth = containerRect?.width || 400;
   const containerHeight = containerRect?.height || 400;
@@ -529,211 +423,150 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
   
   const offsetX = (containerWidth - displayWidth) / 2;
   const offsetY = (containerHeight - displayHeight) / 2;
-  
-  // Adjust crop position for rotation
-  const rad = rotation * Math.PI / 180;
-  const cos = Math.cos(rad);
-  const sin = Math.sin(rad);
-  
-  // Calculate rotated crop position
-  const rotCropX = cropArea.x * cos - cropArea.y * sin;
-  const rotCropY = cropArea.x * sin + cropArea.y * cos;
-  
-  const cropLeft = offsetX + rotCropX * scale;
-  const cropTop = offsetY + rotCropY * scale;
-  const cropWidth = cropArea.width * scale;
-  const cropHeight = cropArea.height * scale;
 
   if (!imageLoaded) {
     return (
       <div className="h-full flex items-center justify-center bg-black">
-        <div className="text-white text-lg">Loading image...</div>
+        <div className="text-white text-lg">Loading...</div>
       </div>
     );
   }
 
   return (
-   <div className="h-full flex flex-col bg-black">
-  {/* Header */}
-  <div className="bg-black px-4 py-3 flex items-center justify-between">
-    <button 
-      onClick={onBack} 
-      className="flex items-center gap-2 text-white hover:text-blue-400 transition-colors"
-    >
-      <ArrowLeft className="w-5 h-5" />
-      <span className="text-lg font-medium">Cancel</span>
-    </button>
-    <h2 className="text-white text-lg font-bold">Edit</h2>
-    <button 
-      onClick={handleSave} 
-      className="flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors font-medium"
-    >
-      <span className="text-lg">Done</span>
-    </button>
-  </div>
-
-  {/* Crop Area */}
-  <div 
-    ref={containerRef}
-    className="relative flex-1 min-h-0 bg-black overflow-hidden touch-none"
-    style={{ touchAction: 'none' }}
-  >
-    {/* Background image */}
-    <img
-      ref={imageRef}
-      src={processedImage || image.src}
-      alt="Crop source"
-      className="absolute pointer-events-none select-none"
-      style={{
-        width: displayWidth,
-        height: displayHeight,
-        left: offsetX,
-        top: offsetY,
-        transform: `rotate(${rotation}deg)`,
-        transformOrigin: 'center center',
-      }}
-      draggable={false}
-    />
-    
-    {/* Crop overlay */}
-    <div 
-      className="absolute border-2 border-white border-opacity-80"
-      style={{
-        left: cropLeft,
-        top: cropTop,
-        width: cropWidth,
-        height: cropHeight,
-        background: 'transparent',
-      }}
-    >
-      {/* Grid lines */}
-      <div className="absolute inset-0 pointer-events-none">
-        {/* Vertical lines */}
-        {[...Array(2)].map((_, i) => (
-          <div 
-            key={`v-${i}`} 
-            className="absolute top-0 bottom-0 border-l border-white border-opacity-40"
-            style={{ left: `${(i + 1) * 33.33}%` }}
-          />
-        ))}
-        
-        {/* Horizontal lines */}
-        {[...Array(2)].map((_, i) => (
-          <div 
-            key={`h-${i}`} 
-            className="absolute left-0 right-0 border-t border-white border-opacity-40"
-            style={{ top: `${(i + 1) * 33.33}%` }}
-          />
-        ))}
-      </div>
-      
-      {/* Corner handles */}
-      <div 
-        className="absolute w-6 h-6 bg-white border-2 border-white cursor-nw-resize touch-manipulation"
-        style={{ 
-          top: '-12px', 
-          left: '-12px',
-          borderRadius: '50%',
-          touchAction: 'none'
-        }}
-        onMouseDown={(e) => handleDragStart(e, 'nw')}
-        onTouchStart={(e) => handleDragStart(e, 'nw')}
-      />
-      <div 
-        className="absolute w-6 h-6 bg-white border-2 border-white cursor-ne-resize touch-manipulation"
-        style={{ 
-          top: '-12px', 
-          right: '-12px',
-          borderRadius: '50%',
-          touchAction: 'none'
-        }}
-        onMouseDown={(e) => handleDragStart(e, 'ne')}
-        onTouchStart={(e) => handleDragStart(e, 'ne')}
-      />
-      <div 
-        className="absolute w-6 h-6 bg-white border-2 border-white cursor-sw-resize touch-manipulation"
-        style={{ 
-          bottom: '-12px', 
-          left: '-12px',
-          borderRadius: '50%',
-          touchAction: 'none'
-        }}
-        onMouseDown={(e) => handleDragStart(e, 'sw')}
-        onTouchStart={(e) => handleDragStart(e, 'sw')}
-      />
-      <div 
-        className="absolute w-6 h-6 bg-white border-2 border-white cursor-se-resize touch-manipulation"
-        style={{ 
-          bottom: '-12px', 
-          right: '-12px',
-          borderRadius: '50%',
-          touchAction: 'none'
-        }}
-        onMouseDown={(e) => handleDragStart(e, 'se')}
-        onTouchStart={(e) => handleDragStart(e, 'se')}
-      />
-    </div>
-  </div>
-
-  {/* Controls */}
-  <div className="bg-black p-4 space-y-4">
-    {/* Rotate and Aspect Controls */}
-    <div className="flex justify-center gap-6">
-      <button
-        onClick={rotateImage}
-        className="flex flex-col items-center gap-1 text-white hover:text-blue-400 transition-colors"
-        title="Rotate Image"
-      >
-        <div className="w-10 h-10 flex items-center justify-center">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M2 12a10 10 0 1 0 10-10 10 10 0 0 0-10 10Z" />
-            <path d="M2 12h5l-5 5V2" />
-          </svg>
-        </div>
-        <span className="text-xs">Rotate</span>
-      </button>
-      
-      <button
-        onClick={zoomOut}
-        className="flex flex-col items-center gap-1 text-white hover:text-blue-400 transition-colors"
-        title="Zoom Out"
-      >
-        <div className="w-10 h-10 flex items-center justify-center">
-          <ZoomOut className="w-6 h-6" />
-        </div>
-        <span className="text-xs">Zoom Out</span>
-      </button>
-      
-      <button
-        onClick={zoomIn}
-        className="flex flex-col items-center gap-1 text-white hover:text-blue-400 transition-colors"
-        title="Zoom In"
-      >
-        <div className="w-10 h-10 flex items-center justify-center">
-          <ZoomIn className="w-6 h-6" />
-        </div>
-        <span className="text-xs">Zoom In</span>
-      </button>
-    </div>
-
-    {/* Aspect Ratios */}
-    <div className="flex justify-center gap-2 flex-wrap">
-      {printRatios.map((ratio) => (
-        <button
-          key={ratio.label}
-          onClick={() => handleRatioSelect(ratio)}
-          className={`px-3 py-2 rounded-lg text-sm font-medium transition-all touch-manipulation ${
-            selectedRatio === ratio.label 
-              ? 'bg-white text-black' 
-              : 'bg-gray-800 text-white hover:bg-gray-700'
-          }`}
+    <div className="h-full flex flex-col bg-black text-white">
+      {/* Header */}
+      <div className="px-4 py-3 flex items-center justify-between bg-black/80">
+        <button 
+          onClick={onBack} 
+          className="flex items-center gap-2 text-white hover:text-blue-300"
         >
-          {ratio.label}
+          <ArrowLeft className="w-5 h-5" />
+          <span>Cancel</span>
         </button>
-      ))}
+        <h2 className="font-bold text-lg">Edit</h2>
+        <button 
+          onClick={handleSave} 
+          className="text-blue-400 font-medium hover:text-blue-300"
+        >
+          Done
+        </button>
+      </div>
+
+      {/* Crop Area */}
+      <div 
+        ref={containerRef}
+        className="relative flex-1 min-h-0 bg-black overflow-hidden"
+        style={{ touchAction: 'none' }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+      >
+        <img
+          src={processedImage || image.src}
+          alt="Crop source"
+          className="absolute select-none"
+          style={{
+            width: displayWidth,
+            height: displayHeight,
+            left: offsetX,
+            top: offsetY,
+            transform: `rotate(${rotation}deg)`,
+            transformOrigin: 'center center',
+          }}
+          draggable={false}
+        />
+        
+        {/* Crop overlay */}
+        <div 
+          className="absolute border-2 border-white border-opacity-80"
+          style={{
+            left: offsetX + cropArea.x * scale,
+            top: offsetY + cropArea.y * scale,
+            width: cropArea.width * scale,
+            height: cropArea.height * scale,
+          }}
+        >
+          {/* Grid lines */}
+          <div className="absolute inset-0 pointer-events-none">
+            {[...Array(2)].map((_, i) => (
+              <div 
+                key={`v-${i}`} 
+                className="absolute top-0 bottom-0 border-l border-white border-opacity-30"
+                style={{ left: `${(i + 1) * 33.33}%` }}
+              />
+            ))}
+            {[...Array(2)].map((_, i) => (
+              <div 
+                key={`h-${i}`} 
+                className="absolute left-0 right-0 border-t border-white border-opacity-30"
+                style={{ top: `${(i + 1) * 33.33}%` }}
+              />
+            ))}
+          </div>
+          
+          {/* Corner handles - LARGER FOR TOUCH */}
+          <div 
+            className="absolute w-8 h-8 bg-white rounded-full border-2 border-white shadow-lg"
+            style={{ top: '-16px', left: '-16px', touchAction: 'none' }}
+            onMouseDown={(e) => handleDragStart(e, 'nw')}
+            onTouchStart={(e) => handleDragStart(e, 'nw')}
+          />
+          <div 
+            className="absolute w-8 h-8 bg-white rounded-full border-2 border-white shadow-lg"
+            style={{ top: '-16px', right: '-16px', touchAction: 'none' }}
+            onMouseDown={(e) => handleDragStart(e, 'ne')}
+            onTouchStart={(e) => handleDragStart(e, 'ne')}
+          />
+          <div 
+            className="absolute w-8 h-8 bg-white rounded-full border-2 border-white shadow-lg"
+            style={{ bottom: '-16px', left: '-16px', touchAction: 'none' }}
+            onMouseDown={(e) => handleDragStart(e, 'sw')}
+            onTouchStart={(e) => handleDragStart(e, 'sw')}
+          />
+          <div 
+            className="absolute w-8 h-8 bg-white rounded-full border-2 border-white shadow-lg"
+            style={{ bottom: '-16px', right: '-16px', touchAction: 'none' }}
+            onMouseDown={(e) => handleDragStart(e, 'se')}
+            onTouchStart={(e) => handleDragStart(e, 'se')}
+          />
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="bg-black/80 p-4 space-y-4">
+        {/* Aspect Ratios */}
+        <div className="flex justify-center gap-2 flex-wrap">
+          {printRatios.map((ratio) => (
+            <button
+              key={ratio.label}
+              onClick={() => handleRatioSelect(ratio)}
+              className={`px-4 py-2.5 rounded-xl text-sm font-medium min-w-[60px] transition-colors ${
+                selectedRatio === ratio.label 
+                  ? 'bg-white text-black' 
+                  : 'bg-gray-700 text-white active:bg-gray-600 hover:bg-gray-600'
+              }`}
+            >
+              {ratio.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Rotation Button - BELOW RATIOS */}
+        <div className="flex justify-center pt-1">
+          <button
+            onClick={rotateImage}
+            className="flex flex-col items-center gap-1.5 text-white hover:text-blue-300 active:scale-95 transition-transform"
+            aria-label="Rotate image 90 degrees"
+          >
+            <div className="w-12 h-12 flex items-center justify-center bg-gray-800 rounded-full">
+              <RotateIcon className="w-6 h-6" />
+            </div>
+            <span className="text-xs font-medium">Rotate</span>
+          </button>
+        </div>
+      </div>
     </div>
-  </div>
-</div>
   );
 };
 
