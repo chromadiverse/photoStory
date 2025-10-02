@@ -9,7 +9,8 @@ import {
   Check, 
   ZoomIn, 
   ZoomOut, 
-  MonitorCog as FitScreen 
+  MonitorCog as FitScreen,
+  RotateCcw as RotateIcon
 } from 'lucide-react';
 import { CapturedImage, CroppedImageData } from '../page';
 
@@ -41,7 +42,6 @@ interface DragState {
   initialCropStart: Point;
 }
 
-
 // Only the priority ratios as requested
 const printRatios = [
   { label: 'Free', value: null },
@@ -59,14 +59,14 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const [zoom, setZoom] = useState(0.5);
   const [aspect, setAspect] = useState<number | null>(null);
   const [selectedRatio, setSelectedRatio] = useState<string | null>(null);
-const [dragState, setDragState] = useState<DragState>({ 
-  isDragging: false, 
-  dragType: 'none', 
-  start: { x: 0, y: 0 }, 
-  initialCrop: { x: 0, y: 0, width: 0, height: 0 },
-  initialMouse: { x: 0, y: 0 },
-  initialCropStart: { x: 0, y: 0 }
-});
+  const [dragState, setDragState] = useState<DragState>({ 
+    isDragging: false, 
+    dragType: 'none', 
+    start: { x: 0, y: 0 }, 
+    initialCrop: { x: 0, y: 0, width: 0, height: 0 },
+    initialMouse: { x: 0, y: 0 },
+    initialCropStart: { x: 0, y: 0 }
+  });
   const [imageLoaded, setImageLoaded] = useState(false);
   const [processedImage, setProcessedImage] = useState<string | null>(null);
   const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null);
@@ -463,6 +463,12 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
     });
   };
 
+  // Rotate image (vertical/horizontal switch)
+  const rotateImage = () => {
+    const newRotation = (rotation + 90) % 360;
+    setRotation(newRotation);
+  };
+
   // Center image when zoom changes
   useEffect(() => {
     if (imageLoaded) {
@@ -504,22 +510,21 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
   }
 
   return (
-   <div className="h-full flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
+   <div className="h-full flex flex-col bg-black">
   {/* Header */}
-  <div className="bg-white/90 backdrop-blur-sm shadow-sm px-4 py-3 flex items-center justify-between">
+  <div className="bg-black px-4 py-3 flex items-center justify-between">
     <button 
       onClick={onBack} 
-      className="flex items-center gap-2 text-gray-700 hover:text-blue-600 transition-colors"
+      className="flex items-center gap-2 text-white hover:text-blue-400 transition-colors"
     >
       <ArrowLeft className="w-5 h-5" />
-      <span className="text-lg font-medium">Back</span>
+      <span className="text-lg font-medium">Cancel</span>
     </button>
-    <h2 className="text-gray-800 text-lg font-bold">Adjust Crop</h2>
+    <h2 className="text-white text-lg font-bold">Edit</h2>
     <button 
       onClick={handleSave} 
-      className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium"
+      className="flex items-center gap-2 text-blue-400 hover:text-blue-300 transition-colors font-medium"
     >
-      <Check className="w-5 h-5" />
       <span className="text-lg">Done</span>
     </button>
   </div>
@@ -527,7 +532,7 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
   {/* Crop Area */}
   <div 
     ref={containerRef}
-    className="relative flex-1 min-h-0 bg-white/60 overflow-hidden touch-none shadow-inner"
+    className="relative flex-1 min-h-0 bg-black overflow-hidden touch-none"
     style={{ touchAction: 'none' }}
   >
     {/* Background image */}
@@ -549,7 +554,7 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
     
     {/* Crop overlay */}
     <div 
-      className="absolute border-2 border-blue-600 border-opacity-80"
+      className="absolute border-2 border-white border-opacity-80"
       style={{
         left: cropLeft,
         top: cropTop,
@@ -564,7 +569,7 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
         {[...Array(2)].map((_, i) => (
           <div 
             key={`v-${i}`} 
-            className="absolute top-0 bottom-0 border-l border-blue-500 border-opacity-40"
+            className="absolute top-0 bottom-0 border-l border-white border-opacity-40"
             style={{ left: `${(i + 1) * 33.33}%` }}
           />
         ))}
@@ -573,7 +578,7 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
         {[...Array(2)].map((_, i) => (
           <div 
             key={`h-${i}`} 
-            className="absolute left-0 right-0 border-t border-blue-500 border-opacity-40"
+            className="absolute left-0 right-0 border-t border-white border-opacity-40"
             style={{ top: `${(i + 1) * 33.33}%` }}
           />
         ))}
@@ -581,10 +586,10 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
       
       {/* Corner handles */}
       <div 
-        className="absolute w-8 h-8 bg-white border-2 border-blue-600 cursor-nw-resize touch-manipulation shadow-sm"
+        className="absolute w-6 h-6 bg-white border-2 border-white cursor-nw-resize touch-manipulation"
         style={{ 
-          top: '-16px', 
-          left: '-16px',
+          top: '-12px', 
+          left: '-12px',
           borderRadius: '50%',
           touchAction: 'none'
         }}
@@ -592,10 +597,10 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
         onTouchStart={(e) => handleDragStart(e, 'nw')}
       />
       <div 
-        className="absolute w-8 h-8 bg-white border-2 border-blue-600 cursor-ne-resize touch-manipulation shadow-sm"
+        className="absolute w-6 h-6 bg-white border-2 border-white cursor-ne-resize touch-manipulation"
         style={{ 
-          top: '-16px', 
-          right: '-16px',
+          top: '-12px', 
+          right: '-12px',
           borderRadius: '50%',
           touchAction: 'none'
         }}
@@ -603,10 +608,10 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
         onTouchStart={(e) => handleDragStart(e, 'ne')}
       />
       <div 
-        className="absolute w-8 h-8 bg-white border-2 border-blue-600 cursor-sw-resize touch-manipulation shadow-sm"
+        className="absolute w-6 h-6 bg-white border-2 border-white cursor-sw-resize touch-manipulation"
         style={{ 
-          bottom: '-16px', 
-          left: '-16px',
+          bottom: '-12px', 
+          left: '-12px',
           borderRadius: '50%',
           touchAction: 'none'
         }}
@@ -614,185 +619,75 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
         onTouchStart={(e) => handleDragStart(e, 'sw')}
       />
       <div 
-        className="absolute w-8 h-8 bg-white border-2 border-blue-600 cursor-se-resize touch-manipulation shadow-sm"
+        className="absolute w-6 h-6 bg-white border-2 border-white cursor-se-resize touch-manipulation"
         style={{ 
-          bottom: '-16px', 
-          right: '-16px',
+          bottom: '-12px', 
+          right: '-12px',
           borderRadius: '50%',
           touchAction: 'none'
         }}
         onMouseDown={(e) => handleDragStart(e, 'se')}
         onTouchStart={(e) => handleDragStart(e, 'se')}
       />
-      
-      {/* Edge handles */}
-      <div 
-        className="absolute w-8 h-6 bg-white border-2 border-blue-600 cursor-n-resize touch-manipulation shadow-sm"
-        style={{ 
-          top: '-12px', 
-          left: '50%', 
-          transform: 'translateX(-50%)',
-          borderRadius: '4px',
-          touchAction: 'none'
-        }}
-        onMouseDown={(e) => handleDragStart(e, 'n')}
-        onTouchStart={(e) => handleDragStart(e, 'n')}
-      />
-      <div 
-        className="absolute w-8 h-6 bg-white border-2 border-blue-600 cursor-s-resize touch-manipulation shadow-sm"
-        style={{ 
-          bottom: '-12px', 
-          left: '50%', 
-          transform: 'translateX(-50%)',
-          borderRadius: '4px',
-          touchAction: 'none'
-        }}
-        onMouseDown={(e) => handleDragStart(e, 's')}
-        onTouchStart={(e) => handleDragStart(e, 's')}
-      />
-      <div 
-        className="absolute w-6 h-8 bg-white border-2 border-blue-600 cursor-w-resize touch-manipulation shadow-sm"
-        style={{ 
-          top: '50%', 
-          left: '-12px', 
-          transform: 'translateY(-50%)',
-          borderRadius: '4px',
-          touchAction: 'none'
-        }}
-        onMouseDown={(e) => handleDragStart(e, 'w')}
-        onTouchStart={(e) => handleDragStart(e, 'w')}
-      />
-      <div 
-        className="absolute w-6 h-8 bg-white border-2 border-blue-600 cursor-e-resize touch-manipulation shadow-sm"
-        style={{ 
-          top: '50%', 
-          right: '-12px', 
-          transform: 'translateY(-50%)',
-          borderRadius: '4px',
-          touchAction: 'none'
-        }}
-        onMouseDown={(e) => handleDragStart(e, 'e')}
-        onTouchStart={(e) => handleDragStart(e, 'e')}
-      />
-    </div>
-    
-    {/* Center move handle */}
-    <div 
-      className="absolute w-10 h-10 bg-white bg-opacity-90 border-2 border-blue-600 cursor-move touch-manipulation shadow-sm"
-      style={{
-        left: cropLeft + cropWidth / 2 - 20,
-        top: cropTop + cropHeight / 2 - 20,
-        borderRadius: '50%',
-        touchAction: 'none',
-        backdropFilter: 'blur(2px)'
-      }}
-      onMouseDown={(e) => handleDragStart(e, 'move')}
-      onTouchStart={(e) => handleDragStart(e, 'move')}
-    >
-      <div className="absolute inset-2 bg-blue-600 rounded-full opacity-60"></div>
     </div>
   </div>
 
   {/* Controls */}
-  <div className="bg-white/90 backdrop-blur-sm shadow-sm p-4 space-y-4 max-h-64 overflow-y-auto">
-    {/* Zoom Controls */}
-    <div className="flex justify-center gap-3">
+  <div className="bg-black p-4 space-y-4">
+    {/* Rotate and Aspect Controls */}
+    <div className="flex justify-center gap-6">
+      <button
+        onClick={rotateImage}
+        className="flex flex-col items-center gap-1 text-white hover:text-blue-400 transition-colors"
+        title="Rotate Image"
+      >
+        <div className="w-10 h-10 flex items-center justify-center">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M2 12a10 10 0 1 0 10-10 10 10 0 0 0-10 10Z" />
+            <path d="M2 12h5l-5 5V2" />
+          </svg>
+        </div>
+        <span className="text-xs">Rotate</span>
+      </button>
+      
       <button
         onClick={zoomOut}
-        className="w-12 h-12 bg-white/60 hover:bg-white/80 border border-gray-200 text-gray-700 rounded-full flex items-center justify-center transition-all touch-manipulation shadow-sm"
+        className="flex flex-col items-center gap-1 text-white hover:text-blue-400 transition-colors"
         title="Zoom Out"
       >
-        <ZoomOut className="w-5 h-5" />
+        <div className="w-10 h-10 flex items-center justify-center">
+          <ZoomOut className="w-6 h-6" />
+        </div>
+        <span className="text-xs">Zoom Out</span>
       </button>
+      
       <button
         onClick={zoomIn}
-        className="w-12 h-12 bg-white/60 hover:bg-white/80 border border-gray-200 text-gray-700 rounded-full flex items-center justify-center transition-all touch-manipulation shadow-sm"
+        className="flex flex-col items-center gap-1 text-white hover:text-blue-400 transition-colors"
         title="Zoom In"
       >
-        <ZoomIn className="w-5 h-5" />
-      </button>
-      <button
-        onClick={fitToScreen}
-        className="w-12 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-full flex items-center justify-center transition-all touch-manipulation shadow-sm"
-        title="Fit to Screen"
-      >
-        <FitScreen className="w-5 h-5" />
+        <div className="w-10 h-10 flex items-center justify-center">
+          <ZoomIn className="w-6 h-6" />
+        </div>
+        <span className="text-xs">Zoom In</span>
       </button>
     </div>
 
-    {/* Aspect Ratios - ONLY the priority ratios */}
+    {/* Aspect Ratios */}
     <div className="flex justify-center gap-2 flex-wrap">
       {printRatios.map((ratio) => (
         <button
           key={ratio.label}
           onClick={() => handleRatioSelect(ratio)}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all touch-manipulation ${
+          className={`px-3 py-2 rounded-lg text-sm font-medium transition-all touch-manipulation ${
             selectedRatio === ratio.label 
-              ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm' 
-              : 'bg-white/60 hover:bg-white/80 border border-gray-200 text-gray-700'
+              ? 'bg-white text-black' 
+              : 'bg-gray-800 text-white hover:bg-gray-700'
           }`}
         >
           {ratio.label}
         </button>
       ))}
-    </div>
-
-    {/* Zoom Control */}
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-medium text-gray-700">
-          Zoom: {zoom.toFixed(1)}x
-        </label>
-      </div>
-      <div className="relative">
-        <input
-          type="range"
-          min="0.1"
-          max="3"
-          step="0.1"
-          value={zoom}
-          onChange={(e) => setZoom(Number(e.target.value))}
-          className="w-full h-6 bg-gray-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
-        />
-      </div>
-    </div>
-
-    {/* Rotation Control */}
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <label className="text-sm font-medium text-gray-700">
-          Rotation: {rotation.toFixed(0)}°
-        </label>
-        <button
-          onClick={autoStraighten}
-          className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 transition-colors touch-manipulation font-medium"
-        >
-          <RotateCcw className="w-4 h-4" />
-          <span>Auto-Straighten</span>
-        </button>
-      </div>
-      <div className="relative">
-        <input
-          type="range"
-          min="-45"
-          max="45"
-          step="0.5"
-          value={rotation}
-          onChange={(e) => setRotation(Number(e.target.value))}
-          className="w-full h-6 bg-gray-200 rounded-lg appearance-none cursor-pointer touch-manipulation"
-        />
-      </div>
-    </div>
-
-    {/* Actions */}
-    <div className="flex justify-center">
-      <button
-        onClick={resetCrop}
-        className="flex items-center gap-1 text-blue-600 hover:text-blue-700 transition-colors touch-manipulation font-medium"
-      >
-        <Maximize2 className="w-4 h-4" />
-        <span>Reset Crop</span>
-      </button>
     </div>
   </div>
 </div>
