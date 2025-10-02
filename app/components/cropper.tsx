@@ -240,6 +240,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     initialCropStart: { x: cropArea.x, y: cropArea.y }
   });
 };
+
+// Handle drag move with rotation compensation
 const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
   if (!dragState.isDragging || !containerRef.current) return;
   
@@ -260,8 +262,17 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
   const scaleY = containerHeight / imageDimensions.height;
   const scale = Math.min(scaleX, scaleY) * zoom;
   
-  const imageDeltaX = deltaX / scale;
-  const imageDeltaY = deltaY / scale;
+  // Adjust for rotation
+  const rad = rotation * Math.PI / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  
+  // Calculate rotated delta
+  const rotDeltaX = deltaX * cos + deltaY * sin;
+  const rotDeltaY = -deltaX * sin + deltaY * cos;
+  
+  const imageDeltaX = rotDeltaX / scale;
+  const imageDeltaY = rotDeltaY / scale;
   
   let newCrop = { ...dragState.initialCrop };
   
@@ -342,7 +353,7 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
   newCrop.height = Math.min(imageDimensions.height - newCrop.y, newCrop.height);
   
   setCropArea(newCrop);
-}, [dragState, aspect, imageDimensions, zoom]);
+}, [dragState, aspect, imageDimensions, zoom, rotation]);
 
   // Handle drag end
   const handleDragEnd = useCallback(() => {
@@ -372,7 +383,7 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
     }
   }, [dragState.isDragging, handleDragMove, handleDragEnd]);
 
-  // Handle image save
+  // Handle image save with proper rotation handling
   const handleSave = async () => {
     const imgSrc = processedImage || image.src;
     
@@ -386,17 +397,26 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
       
       if (!ctx) return;
       
-      // Set canvas size to the crop area dimensions
-      canvas.width = cropArea.width;
-      canvas.height = cropArea.height;
+      // Calculate the actual crop dimensions after rotation
+      const rad = rotation * Math.PI / 180;
+      const cos = Math.abs(Math.cos(rad));
+      const sin = Math.abs(Math.sin(rad));
+      
+      // Calculate new dimensions after rotation
+      const newWidth = cropArea.width * cos + cropArea.height * sin;
+      const newHeight = cropArea.width * sin + cropArea.height * cos;
+      
+      // Set canvas size to the calculated dimensions
+      canvas.width = newWidth;
+      canvas.height = newHeight;
       
       if (rotation !== 0) {
         // Handle rotation case
         ctx.save();
-        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.translate(newWidth / 2, newHeight / 2);
         ctx.rotate((rotation * Math.PI) / 180);
         
-        // Draw the rotated image, cropping to the selected area
+        // Draw the original image cropped to the selected area
         ctx.drawImage(
           tempImg,
           cropArea.x - tempImg.width / 2,
@@ -467,6 +487,20 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
   const rotateImage = () => {
     const newRotation = (rotation + 90) % 360;
     setRotation(newRotation);
+    
+    // Swap dimensions when rotating
+    setImageDimensions(prev => ({
+      width: prev.height,
+      height: prev.width
+    }));
+    
+    // Adjust crop area to stay within bounds
+    setCropArea(prev => ({
+      x: Math.min(prev.x, imageDimensions.height - prev.width),
+      y: Math.min(prev.y, imageDimensions.width - prev.height),
+      width: Math.min(prev.width, imageDimensions.height),
+      height: Math.min(prev.height, imageDimensions.width)
+    }));
   };
 
   // Center image when zoom changes
@@ -496,8 +530,17 @@ const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
   const offsetX = (containerWidth - displayWidth) / 2;
   const offsetY = (containerHeight - displayHeight) / 2;
   
-  const cropLeft = offsetX + cropArea.x * scale;
-  const cropTop = offsetY + cropArea.y * scale;
+  // Adjust crop position for rotation
+  const rad = rotation * Math.PI / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  
+  // Calculate rotated crop position
+  const rotCropX = cropArea.x * cos - cropArea.y * sin;
+  const rotCropY = cropArea.x * sin + cropArea.y * cos;
+  
+  const cropLeft = offsetX + rotCropX * scale;
+  const cropTop = offsetY + rotCropY * scale;
   const cropWidth = cropArea.width * scale;
   const cropHeight = cropArea.height * scale;
 
