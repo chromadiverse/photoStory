@@ -35,12 +35,11 @@ interface DetectedShape {
   type: 'rectangle' | 'square' | 'document';
 }
 
-const DETECTION_WIDTH = 640;
-const STABILITY_THRESHOLD = 120; 
-const MIN_STABLE_FRAMES = 3;
-const CONFIDENCE_THRESHOLD = 15; 
-const DETECTION_HISTORY_SIZE = 8; 
-
+const DETECTION_WIDTH = 800; 
+const STABILITY_THRESHOLD = 150; 
+const MIN_STABLE_FRAMES = 4; 
+const CONFIDENCE_THRESHOLD = 12; 
+const DETECTION_HISTORY_SIZE = 10; 
 const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const webcamRef = useRef<Webcam>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -134,7 +133,7 @@ const isRectangularContour = (corners: Point[], angleTolerance: number = 45): bo
   
   return true
 }
- const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
+const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
   if (!window.cv || !canvas) return []
 
   try {
@@ -142,26 +141,32 @@ const isRectangularContour = (corners: Point[], angleTolerance: number = 45): bo
     const gray = new window.cv.Mat()
     const blurred = new window.cv.Mat()
     const edges = new window.cv.Mat()
+    const edgesInverted = new window.cv.Mat()
     
     window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY)
     
-    // Use bilateral filter for better edge preservation while reducing noise
+    // Apply bilateral filter for noise reduction while preserving edges
     window.cv.bilateralFilter(gray, blurred, 9, 75, 75)
     
-    // Single, stable edge detection with moderate thresholds
-    window.cv.Canny(blurred, edges, 40, 120, 3, true) // Reduced thresholds
+    // Detect edges with both normal and inverted thresholds for better contrast detection
+    window.cv.Canny(blurred, edges, 30, 100, 3, true) // Lower thresholds
+    window.cv.Canny(blurred, edgesInverted, 100, 200, 3, true) // Higher thresholds for inverted detection
     
-    // Minimal morphology - just close small gaps
+    // Combine both edge results
+    const combinedEdges = new window.cv.Mat()
+    window.cv.add(edges, edgesInverted, combinedEdges)
+    
+    // Morphological operations to connect edge segments
     const kernel = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(3, 3))
-    window.cv.morphologyEx(edges, edges, window.cv.MORPH_CLOSE, kernel)
+    window.cv.morphologyEx(combinedEdges, combinedEdges, window.cv.MORPH_CLOSE, kernel)
     
     const contours = new window.cv.MatVector()
     const hierarchy = new window.cv.Mat()
-    window.cv.findContours(edges, contours, hierarchy, window.cv.RETR_LIST, window.cv.CHAIN_APPROX_SIMPLE)
+    window.cv.findContours(combinedEdges, contours, hierarchy, window.cv.RETR_LIST, window.cv.CHAIN_APPROX_SIMPLE)
     
     const imgArea = canvas.width * canvas.height
-    const minArea = imgArea * 0.02  // Reduced from 0.05
-    const maxArea = imgArea * 0.98  // Increased from 0.92
+    const minArea = imgArea * 0.01  // Reduced from 0.02
+    const maxArea = imgArea * 0.99  // Increased from 0.98
     
     const detectedShapes: DetectedShape[] = []
     const candidatesByArea: { contour: any, area: number, index: number }[] = []
@@ -182,23 +187,23 @@ const isRectangularContour = (corners: Point[], angleTolerance: number = 45): bo
     candidatesByArea.sort((a, b) => b.area - a.area)
     
     // Process only the top candidates
-    const maxCandidates = Math.min(8, candidatesByArea.length) // Increased from 5
+    const maxCandidates = Math.min(10, candidatesByArea.length) // Increased from 8
     
     for (let i = 0; i < maxCandidates; i++) {
       const { contour, area } = candidatesByArea[i]
       const perimeter = window.cv.arcLength(contour, true)
       
-      if (perimeter < 80) { // Reduced from 100
+      if (perimeter < 60) { // Reduced from 80
         contour.delete()
         continue
       }
       
       // Use a single, consistent epsilon value
       const approx = new window.cv.Mat()
-      const epsilon = 0.03 * perimeter  // Increased from 0.02 for more tolerance
+      const epsilon = 0.04 * perimeter  // Increased from 0.03 for more tolerance
       window.cv.approxPolyDP(contour, approx, epsilon, true)
       
-      if (approx.rows >= 4 && approx.rows <= 8) { // Increased max from 6 to 8
+      if (approx.rows >= 4 && approx.rows <= 10) { // Increased max from 8 to 10
         const corners: Point[] = []
         for (let j = 0; j < approx.rows; j++) {
           corners.push({
@@ -214,7 +219,7 @@ const isRectangularContour = (corners: Point[], angleTolerance: number = 45): bo
         
         if (finalCorners.length === 4 && 
             isValidQuadrilateral(finalCorners) && 
-            isRectangularContour(finalCorners, 45)) { // Increased angle tolerance from 35 to 45
+            isRectangularContour(finalCorners, 50)) { // Increased angle tolerance from 45 to 50
               
           const sortedCorners = sortCorners(finalCorners)
           const aspectRatio = calculateAspectRatio(sortedCorners)
@@ -242,6 +247,8 @@ const isRectangularContour = (corners: Point[], angleTolerance: number = 45): bo
     gray.delete()
     blurred.delete()
     edges.delete()
+    edgesInverted.delete()
+    combinedEdges.delete()
     kernel.delete()
     contours.delete()
     hierarchy.delete()
@@ -580,7 +587,9 @@ const isRectangularContour = (corners: Point[], angleTolerance: number = 45): bo
       }
     }
   }, [isDetectionReady, hasCamera, bestShape])
-const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], bestShape: DetectedShape | null) => {
+
+  //drawoverlay
+  const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], bestShape: DetectedShape | null) => {
   const overlayCtx = overlayCanvas.getContext('2d')
   if (!overlayCtx) return
 
@@ -595,9 +604,9 @@ const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], 
     overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.6)'
     overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height)
     
-    // Larger guide area
-    const guideWidth = Math.min(overlayCanvas.width * 0.9, 600) // Increased from 0.8 to 0.9 and 500 to 600
-    const guideHeight = Math.min(overlayCanvas.height * 0.7, 400) // Increased from 0.6 to 0.7 and 350 to 400
+    // Even larger guide area
+    const guideWidth = Math.min(overlayCanvas.width * 0.95, 700) // Increased from 0.9 to 0.95 and 600 to 700
+    const guideHeight = Math.min(overlayCanvas.height * 0.8, 500) // Increased from 0.7 to 0.8 and 400 to 500
     const guideX = (overlayCanvas.width - guideWidth) / 2
     const guideY = (overlayCanvas.height - guideHeight) / 2
     
@@ -608,29 +617,29 @@ const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], 
     overlayCtx.setLineDash([])
     
     overlayCtx.fillStyle = '#FFFFFF'
-    overlayCtx.font = 'bold 24px Arial'
+    overlayCtx.font = 'bold 28px Arial' // Increased font size
     overlayCtx.textAlign = 'center'
     overlayCtx.textBaseline = 'middle'
     overlayCtx.fillText(
       'Position document in frame',
       centerX,
-      guideY - 40 // Moved up from 30
+      guideY - 50 // Moved up from 40
     )
-    overlayCtx.font = '18px Arial'
+    overlayCtx.font = '20px Arial' // Increased font size
     overlayCtx.fillText(
       'Works with monitors, papers, books, photos',
       centerX,
-      guideY + guideHeight + 40 // Moved down from 30
+      guideY + guideHeight + 50 // Moved down from 40
     )
     return
   }
 
   // Draw all detected shapes as potential candidates
   shapes.forEach(shape => {
-    if (shape.confidence < 30) return; // Only draw confident candidates
+    if (shape.confidence < 25) return; // Only draw confident candidates
     
     const corners = shape.corners;
-    overlayCtx.strokeStyle = 'rgba(100, 200, 255, 0.4)'; // Light blue for candidates
+    overlayCtx.strokeStyle = 'rgba(100, 200, 255, 0.3)'; // Light blue for candidates
     overlayCtx.lineWidth = 1;
     overlayCtx.setLineDash([5, 5]);
     overlayCtx.beginPath();
@@ -655,10 +664,10 @@ const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], 
   
   overlayCtx.globalCompositeOperation = 'source-over'
   overlayCtx.strokeStyle = isStable ? '#00FF00' : '#00AAFF'
-  overlayCtx.lineWidth = isStable ? 3 : 2
-  overlayCtx.setLineDash(isStable ? [] : [20, 15])
+  overlayCtx.lineWidth = isStable ? 4 : 3 // Increased line width
+  overlayCtx.setLineDash(isStable ? [] : [25, 15]) // Increased dash size
   overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.5)'
-  overlayCtx.shadowBlur = 4
+  overlayCtx.shadowBlur = 6 // Increased shadow
   overlayCtx.beginPath()
   overlayCtx.moveTo(corners[0].x, corners[0].y)
   corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y))
@@ -670,12 +679,12 @@ const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], 
   corners.forEach((corner) => {
     overlayCtx.fillStyle = isStable ? '#00FF00' : '#00AAFF'
     overlayCtx.beginPath()
-    overlayCtx.arc(corner.x, corner.y, 8, 0, 2 * Math.PI)
+    overlayCtx.arc(corner.x, corner.y, 10, 0, 2 * Math.PI) // Increased corner size
     overlayCtx.fill()
     
     overlayCtx.fillStyle = '#FFFFFF'
     overlayCtx.beginPath()
-    overlayCtx.arc(corner.x, corner.y, 4, 0, 2 * Math.PI)
+    overlayCtx.arc(corner.x, corner.y, 5, 0, 2 * Math.PI) // Increased inner dot
     overlayCtx.fill()
   })
   
@@ -683,27 +692,27 @@ const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], 
   const centerY = corners.reduce((sum, c) => sum + c.y, 0) / corners.length
   
   overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.8)'
-  overlayCtx.fillRect(centerX - 150, centerY - 60, 300, 120)
+  overlayCtx.fillRect(centerX - 180, centerY - 70, 360, 140) // Increased info box size
   
   overlayCtx.fillStyle = '#FFFFFF'
-  overlayCtx.font = 'bold 22px Arial'
+  overlayCtx.font = 'bold 26px Arial' // Increased font size
   overlayCtx.textAlign = 'center'
   overlayCtx.fillText(
     `${bestShape.type.charAt(0).toUpperCase() + bestShape.type.slice(1)} Found`,
     centerX,
-    centerY - 25
+    centerY - 30
   )
-  overlayCtx.font = '18px Arial'
+  overlayCtx.font = '20px Arial' // Increased font size
   overlayCtx.fillText(
     isStable ? '✓ Ready to capture!' : 'Hold steady...',
     centerX,
-    centerY + 5
+    centerY + 10
   )
-  overlayCtx.font = '16px Arial'
+  overlayCtx.font = '18px Arial' // Increased font size
   overlayCtx.fillText(
     `Confidence: ${Math.round(bestShape.confidence)}%`,
     centerX,
-    centerY + 35
+    centerY + 50
   )
 }
   const orderCornersForDocument = (corners: Point[]): Point[] => {
