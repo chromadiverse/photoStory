@@ -103,7 +103,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       
       img.onload = () => {
         const canvas = document.createElement('canvas')
-        const ctx = canvas.getContext('2d')
+        const ctx = canvas.getContext('2d', { willReadFrequently: true })
         
         if (!ctx) {
           reject(new Error('Could not get canvas context'))
@@ -113,11 +113,51 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         canvas.width = img.width
         canvas.height = img.height
 
-        // Apply CANVAS filters (correct syntax for canvas)
-        ctx.filter = getCanvasFilterString(filterSettings)
-        
-        // Draw the image with filters applied
+        // Draw original image first
         ctx.drawImage(img, 0, 0, img.width, img.height)
+        
+        // Get image data to apply filters manually
+        const canvasImageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const data = canvasImageData.data
+        
+        // Apply filters manually
+        const { brightness, contrast, saturation, hue } = filterSettings
+        
+        // Convert percentages to multipliers
+        const brightnessFactor = brightness / 100
+        const contrastFactor = (contrast / 100) * 2 - 1 // -1 to 1 range
+        const saturationFactor = saturation / 100
+        
+        for (let i = 0; i < data.length; i += 4) {
+          let r = data[i]
+          let g = data[i + 1]
+          let b = data[i + 2]
+          
+          // Apply brightness
+          r = r * brightnessFactor
+          g = g * brightnessFactor  
+          b = b * brightnessFactor
+          
+          // Apply contrast
+          r = ((r - 128) * (contrastFactor + 1)) + 128
+          g = ((g - 128) * (contrastFactor + 1)) + 128
+          b = ((b - 128) * (contrastFactor + 1)) + 128
+          
+          // Apply saturation (simplified)
+          if (saturationFactor !== 1) {
+            const gray = r * 0.3 + g * 0.59 + b * 0.11
+            r = gray + saturationFactor * (r - gray)
+            g = gray + saturationFactor * (g - gray)
+            b = gray + saturationFactor * (b - gray)
+          }
+          
+          // Clamp values
+          data[i] = Math.max(0, Math.min(255, r))
+          data[i + 1] = Math.max(0, Math.min(255, g))
+          data[i + 2] = Math.max(0, Math.min(255, b))
+        }
+        
+        ctx.putImageData(canvasImageData, 0, 0)
         
         // Convert back to blob
         canvas.toBlob((blob) => {
@@ -126,7 +166,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             resolve({
               croppedImage: url,
               croppedBlob: blob,
-              rotation: imageData.rotation
+              rotation: imageData.rotation // ← Now correctly using the original imageData prop
             })
           } else {
             reject(new Error('Failed to create blob'))
@@ -160,7 +200,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       onComplete(processedImageData)
     } catch (error) {
       console.error('Error processing image with filters:', error)
-      // Fallback to original image data
+      // Even on error, try to use the original image but log the issue
       onComplete(imageData)
     } finally {
       setIsProcessing(false)

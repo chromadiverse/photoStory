@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { ArrowLeft, Download, Share2, RotateCcw, Copy, Save } from 'lucide-react'
-import { getCssFilterString,  } from '../utils/filters'
 import MetadataModal from './metadata-modal'
 import ImageUploader from './image-uploader'
 import { GalleryMetadata } from '../lib/gallery-schema'
@@ -18,14 +17,12 @@ interface CroppedImageData {
 
 interface PreviewProps {
   imageData: CroppedImageData
-
   onStartOver: () => void
   onBack: () => void
 }
 
 const Preview: React.FC<PreviewProps> = ({
   imageData,
-
   onStartOver,
   onBack
 }) => {
@@ -38,7 +35,6 @@ const Preview: React.FC<PreviewProps> = ({
 
   // Get bucket name from env
   const BUCKET_NAME = process.env.NEXT_PUBLIC_IMAGE_GALLERY_BUCKET || 'gallery'
-
 
   const handleMetadataSubmit = async (metadata: GalleryMetadata) => {
     setIsUploading(true)
@@ -224,7 +220,6 @@ const Preview: React.FC<PreviewProps> = ({
               src={imageData.croppedImage}
               alt="Final Preview"
               className="max-w-full max-h-full object-contain shadow-lg rounded-lg"
-            
             />
             {(isProcessing || isUploading) && (
               <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-lg">
