@@ -287,26 +287,52 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     tempImg.src = imgSrc;
     
     tempImg.onload = () => {
+      // First, create a canvas to rotate the entire image
+      const rotatedCanvas = document.createElement('canvas');
+      const rotatedCtx = rotatedCanvas.getContext('2d');
+      if (!rotatedCtx) return;
+
+      const rad = (rotation * Math.PI) / 180;
+      
+      // Calculate rotated dimensions
+      if (rotation % 90 === 0) {
+        // For 90° increments, use simple dimension swap
+        const times = Math.round(rotation / 90);
+        if (times % 2 !== 0) {
+          rotatedCanvas.width = tempImg.height;
+          rotatedCanvas.height = tempImg.width;
+        } else {
+          rotatedCanvas.width = tempImg.width;
+          rotatedCanvas.height = tempImg.height;
+        }
+      } else {
+        // For other angles, calculate bounding box
+        const sin = Math.abs(Math.sin(rad));
+        const cos = Math.abs(Math.cos(rad));
+        rotatedCanvas.width = tempImg.width * cos + tempImg.height * sin;
+        rotatedCanvas.height = tempImg.width * sin + tempImg.height * cos;
+      }
+
+      // Rotate the entire image
+      rotatedCtx.save();
+      rotatedCtx.translate(rotatedCanvas.width / 2, rotatedCanvas.height / 2);
+      rotatedCtx.rotate(rad);
+      rotatedCtx.drawImage(tempImg, -tempImg.width / 2, -tempImg.height / 2);
+      rotatedCtx.restore();
+
+      // Now crop from the rotated image
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      const outputWidth = cropArea.width;
-      const outputHeight = cropArea.height;
-
-      if (Math.abs(rotation) < 0.1) {
-        canvas.width = outputWidth;
-        canvas.height = outputHeight;
-        ctx.drawImage(tempImg, cropArea.x, cropArea.y, outputWidth, outputHeight, 0, 0, outputWidth, outputHeight);
-      } else {
-        canvas.width = outputWidth;
-        canvas.height = outputHeight;
-        ctx.save();
-        ctx.translate(outputWidth / 2, outputHeight / 2);
-        ctx.rotate((rotation * Math.PI) / 180);
-        ctx.drawImage(tempImg, cropArea.x, cropArea.y, outputWidth, outputHeight, -outputWidth / 2, -outputHeight / 2, outputWidth, outputHeight);
-        ctx.restore();
-      }
+      canvas.width = cropArea.width;
+      canvas.height = cropArea.height;
+      
+      ctx.drawImage(
+        rotatedCanvas,
+        cropArea.x, cropArea.y, cropArea.width, cropArea.height,
+        0, 0, cropArea.width, cropArea.height
+      );
 
       canvas.toBlob((blob) => {
         if (blob) {
@@ -401,6 +427,16 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
             {[...Array(2)].map((_, i) => (
               <div key={`h-${i}`} className="absolute left-0 right-0 border-t border-white border-opacity-30" style={{ top: `${(i + 1) * 33.33}%` }} />
             ))}
+          </div>
+          
+          {/* Center Move Button */}
+          <div
+            className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center z-10"
+            style={{ touchAction: 'none' }}
+            onMouseDown={(e) => handleDragStart(e, 'move')}
+            onTouchStart={(e) => handleDragStart(e, 'move')}
+          >
+            <div className="w-6 h-6 rounded-full bg-white/80"></div>
           </div>
           
           {(['nw', 'ne', 'sw', 'se'] as const).map(pos => (
