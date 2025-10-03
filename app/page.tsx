@@ -9,7 +9,7 @@ import FilterPanel from './components/filter-panel'
 import Preview from './components/preview' 
 import WelcomeModal from './components/welcome-modal'
 import { Camera, Edit3, Sliders, Eye, LogOut, User } from 'lucide-react'
-
+import { FilterSettings } from './utils/filters'
 type ViewType = 'camera' | 'crop' | 'filter' | 'preview'
 
 export interface CapturedImage {
@@ -26,12 +26,7 @@ export interface CroppedImageData {
   rotation: number
 }
 
-export interface FilterSettings {
-  brightness: number
-  contrast: number
-  saturation: number
-  hue: number
-}
+
 
 export default function Home() {
   const [currentView, setCurrentView] = useState<ViewType>('camera')

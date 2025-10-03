@@ -1,14 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ArrowLeft, Download, Share2, RotateCcw, Copy, Save } from 'lucide-react'
-import { CroppedImageData, FilterSettings } from '../page'
+import { getCanvasFilterString, getCssFilterString, FilterSettings } from '../utils/filters'
 import MetadataModal from './metadata-modal'
 import ImageUploader from './image-uploader'
 import { GalleryMetadata } from '../lib/gallery-schema'
-import { saveGalleryMetadata,getImageUrl } from '../lib/upload-service'
+import { saveGalleryMetadata, getImageUrl } from '../lib/upload-service'
 import { toast } from 'sonner'
 import { createClient } from '../lib/supabase/client'
+
+interface CroppedImageData {
+  croppedImage: string
+  croppedBlob: Blob
+  rotation: number
+}
 
 interface PreviewProps {
   imageData: CroppedImageData
@@ -34,8 +40,7 @@ const Preview: React.FC<PreviewProps> = ({
   const BUCKET_NAME = process.env.NEXT_PUBLIC_IMAGE_GALLERY_BUCKET || 'gallery'
 
   const applyFilters = () => {
-    const { brightness, contrast, saturation, hue } = filterSettings
-    return `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%) hue-rotate(${hue}deg)`
+    return getCssFilterString(filterSettings)
   }
 
   // Create canvas with filters applied and return as blob
@@ -53,9 +58,8 @@ const Preview: React.FC<PreviewProps> = ({
         canvas.width = img.width
         canvas.height = img.height
 
-        // Apply filters via canvas
-        const { brightness, contrast, saturation, hue } = filterSettings
-        ctx.filter = `brightness(${brightness / 100}) contrast(${contrast / 100}) saturate(${saturation / 100}) hue-rotate(${hue}deg)`
+        // Apply CANVAS filters (correct syntax for canvas)
+        ctx.filter = getCanvasFilterString(filterSettings)
         ctx.drawImage(img, 0, 0)
 
         canvas.toBlob((blob) => {
@@ -235,6 +239,15 @@ const Preview: React.FC<PreviewProps> = ({
       setIsProcessing(false)
     }
   }
+
+  // Cleanup object URLs
+  useEffect(() => {
+    return () => {
+      if (imageData.croppedImage.startsWith('blob:')) {
+        URL.revokeObjectURL(imageData.croppedImage)
+      }
+    }
+  }, [imageData.croppedImage])
 
   return (
     <>

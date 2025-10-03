@@ -2,18 +2,12 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { ArrowLeft, Check, RotateCcw, ChevronDown, ChevronUp, X } from 'lucide-react'
+import { getCanvasFilterString, getCssFilterString, FilterSettings } from '../utils/filters'
 
 interface CroppedImageData {
   croppedImage: string
   croppedBlob: Blob
   rotation: number
-}
-
-interface FilterSettings {
-  brightness: number
-  contrast: number
-  saturation: number
-  hue: number
 }
 
 interface FilterPanelProps {
@@ -83,8 +77,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
   `
 
   const applyFilters = () => {
-    const { brightness, contrast, saturation, hue } = filterSettings
-    return `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%) hue-rotate(${hue}deg)`
+    return getCssFilterString(filterSettings)
   }
 
   const resetFilters = () => {
@@ -120,8 +113,8 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         canvas.width = img.width
         canvas.height = img.height
 
-        // Apply CSS filters to canvas context
-        ctx.filter = applyFilters()
+        // Apply CANVAS filters (correct syntax for canvas)
+        ctx.filter = getCanvasFilterString(filterSettings)
         
         // Draw the image with filters applied
         ctx.drawImage(img, 0, 0, img.width, img.height)
