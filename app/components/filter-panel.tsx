@@ -177,7 +177,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100 overflow-hidden">
+  <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100 overflow-hidden">
       <style>{sliderStyles}</style>
       {/* Header */}
       <div className="bg-white/90 backdrop-blur-sm shadow-sm px-4 py-3 flex items-center justify-between flex-shrink-0">
@@ -232,7 +232,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       <div className="bg-white/90 backdrop-blur-sm shadow-sm flex-grow overflow-hidden flex flex-col">
         {/* Filter Controls */}
         <div 
-          className="overflow-y-auto overscroll-contain scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent transition-all duration-500 ease-in-out"
+          className="overflow-y-auto overscroll-contain scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent transition-all duration-500 ease-in-out relative"
           style={{ 
             maxHeight: isFiltersExpanded ? '60vh' : '0',
             opacity: isFiltersExpanded ? 1 : 0,
@@ -240,6 +240,17 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             minHeight: 0
           }}
         >
+          {isFiltersExpanded && (
+            <button
+              onClick={() => setIsFiltersExpanded(false)}
+              className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center bg-white/80 hover:bg-white text-gray-600 rounded-full shadow-md hover:text-gray-900 transition-colors"
+              aria-label="Close filters"
+              disabled={isProcessing}
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+          
           <div className="p-6 space-y-8">
             {/* Brightness */}
             <div className="space-y-4 px-2">
@@ -371,8 +382,8 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
               className="w-full py-3 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
               disabled={isProcessing}
             >
-              <X className="w-5 h-5" />
-              <span>Close Filters</span>
+              <ChevronUp className="w-5 h-5" />
+              <span>Minimize Filters</span>
             </button>
           ) : (
             <button
