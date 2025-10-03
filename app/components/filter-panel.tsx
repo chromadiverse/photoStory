@@ -106,19 +106,77 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
         canvas.width = img.width
         canvas.height = img.height
 
-        // Apply filters using canvas filter property with correct decimal syntax
-        const { brightness, contrast, saturation, hue } = filterSettings
-        const brightnessValue = brightness / 100
-        const contrastValue = contrast / 100
-        const saturationValue = saturation / 100
-
-        ctx.filter = `brightness(${brightnessValue}) contrast(${contrastValue}) saturate(${saturationValue}) hue-rotate(${hue}deg)`
-
-        console.log("[v0] Applying canvas filter:", ctx.filter)
-
         ctx.drawImage(img, 0, 0)
 
-        ctx.filter = "none"
+        // Get image data for pixel manipulation
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const data = imageData.data
+
+        const { brightness, contrast, saturation, hue } = filterSettings
+
+        console.log("[v0] Applying filters:", { brightness, contrast, saturation, hue })
+
+        // Apply filters pixel by pixel for cross-browser compatibility
+        for (let i = 0; i < data.length; i += 4) {
+          let r = data[i]
+          let g = data[i + 1]
+          let b = data[i + 2]
+
+          // Apply brightness (additive)
+          const brightnessFactor = (brightness - 100) * 2.55
+          r += brightnessFactor
+          g += brightnessFactor
+          b += brightnessFactor
+
+          // Apply contrast (multiplicative around midpoint)
+          const contrastFactor = contrast / 100
+          r = (r - 128) * contrastFactor + 128
+          g = (g - 128) * contrastFactor + 128
+          b = (b - 128) * contrastFactor + 128
+
+          // Apply saturation (convert to HSL, adjust S, convert back)
+          if (saturation !== 100) {
+            const satFactor = saturation / 100
+            const gray = 0.2989 * r + 0.587 * g + 0.114 * b
+            r = gray + (r - gray) * satFactor
+            g = gray + (g - gray) * satFactor
+            b = gray + (b - gray) * satFactor
+          }
+
+          // Apply hue rotation (convert to HSL, rotate H, convert back)
+          if (hue !== 0) {
+            const hueRadians = (hue * Math.PI) / 180
+            const cosA = Math.cos(hueRadians)
+            const sinA = Math.sin(hueRadians)
+
+            const rr =
+              r * (0.299 + 0.701 * cosA + 0.168 * sinA) +
+              g * (0.587 - 0.587 * cosA + 0.33 * sinA) +
+              b * (0.114 - 0.114 * cosA - 0.497 * sinA)
+            const gg =
+              r * (0.299 - 0.299 * cosA - 0.328 * sinA) +
+              g * (0.587 + 0.413 * cosA + 0.035 * sinA) +
+              b * (0.114 - 0.114 * cosA + 0.292 * sinA)
+            const bb =
+              r * (0.299 - 0.299 * cosA + 1.25 * sinA) +
+              g * (0.587 - 0.587 * cosA - 1.05 * sinA) +
+              b * (0.114 + 0.886 * cosA - 0.203 * sinA)
+
+            r = rr
+            g = gg
+            b = bb
+          }
+
+          // Clamp values to 0-255
+          data[i] = Math.max(0, Math.min(255, r))
+          data[i + 1] = Math.max(0, Math.min(255, g))
+          data[i + 2] = Math.max(0, Math.min(255, b))
+        }
+
+        // Put the modified pixel data back
+        ctx.putImageData(imageData, 0, 0)
+
+        console.log("[v0] Filters applied via pixel manipulation")
 
         canvas.toBlob(
           (blob) => {
@@ -139,34 +197,9 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
         )
       }
 
-      img.onerror = (error) => {
-        console.error("[v0] Image load error:", error)
-        reject(new Error("Failed to load image"))
-      }
-
+      img.onerror = () => reject(new Error("Failed to load image"))
       img.src = imageData.croppedImage
     })
-  }
-
-  const handleComplete = async () => {
-    try {
-      setIsProcessing(true)
-
-      const processedImageData = await processImageWithFilters()
-      onComplete(processedImageData)
-    } catch (error) {
-      console.error("Error processing image with filters:", error)
-      try {
-        const fallbackData = await processImageWithFiltersFallback()
-        onComplete(fallbackData)
-      } catch (fallbackError) {
-        console.error("Fallback processing also failed:", fallbackError)
-        console.warn("Using original image data as final fallback")
-        onComplete(imageData)
-      }
-    } finally {
-      setIsProcessing(false)
-    }
   }
 
   const processImageWithFiltersFallback = async (): Promise<CroppedImageData> => {
@@ -228,6 +261,27 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
       img.onerror = () => reject(new Error("Failed to load image in fallback"))
       img.src = imageData.croppedImage
     })
+  }
+
+  const handleComplete = async () => {
+    try {
+      setIsProcessing(true)
+
+      const processedImageData = await processImageWithFilters()
+      onComplete(processedImageData)
+    } catch (error) {
+      console.error("Error processing image with filters:", error)
+      try {
+        const fallbackData = await processImageWithFiltersFallback()
+        onComplete(fallbackData)
+      } catch (fallbackError) {
+        console.error("Fallback processing also failed:", fallbackError)
+        console.warn("Using original image data as final fallback")
+        onComplete(imageData)
+      }
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   return (
