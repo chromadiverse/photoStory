@@ -986,147 +986,115 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   };
 
   return (
-    <div className="relative h-full flex flex-col">
-      <div className="relative flex-1 bg-black overflow-hidden">
-        {hasCamera ? (
-          <>
-            <Webcam
-              ref={webcamRef}
-              audio={false}
-              height="100%"
-              width="100%"
-              videoConstraints={videoConstraints}
-              className="w-full h-full object-cover"
-              onUserMediaError={onUserMediaError}
-              screenshotFormat="image/jpeg"
-              screenshotQuality={0.98}
-            />
-            <canvas ref={canvasRef} className="hidden" />
-            <canvas
-              ref={overlayCanvasRef}
-              className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-            />
-            
-            {/* Enhanced status indicator */}
-            <div className="absolute top-4 left-4">
-              <div className="flex items-center space-x-3 bg-black bg-opacity-80 px-6 py-3 rounded-full">
-                <div className={`w-4 h-4 rounded-full ${
-                  !isDetectionReady ? 'bg-yellow-400 animate-pulse' :
-                  bestShape ? (isShapeStable ? 'bg-green-400' : 'bg-blue-400 animate-pulse') : 'bg-gray-400'
-                }`} />
-                <span className="text-white text-base font-medium">
-                  {!isDetectionReady ? 'Loading...' :
-                   bestShape ? (isShapeStable ? 'Perfect! Ready to capture' : 'Almost there...') : 'Looking for shapes'}
-                </span>
-              </div>
-            </div>
-
-            {/* Detection info */}
-            {bestShape && (
-              <div className="absolute top-4 right-4">
-                <div className="bg-black bg-opacity-80 px-4 py-2 rounded-lg">
-                  <div className="text-white text-sm">
-                    <div>Type: <span className="font-bold">{bestShape.type}</span></div>
-                    <div>Confidence: <span className="font-bold">{Math.round(bestShape.confidence)}%</span></div>
-                    <div>Stable: <span className="font-bold">{stableFrameCount.current}/{getParams().MIN_STABLE_FRAMES}</span></div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="flex flex-col items-center justify-center h-full bg-gray-800">
-            <Camera size={64} className="mb-4 text-gray-400" />
-            <p className="text-gray-400 mb-4 text-lg">Camera not available</p>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg"
-            >
-              Select Photo from Gallery
-            </button>
+<div className="relative h-full flex flex-col">
+  <div className="relative flex-1 bg-black overflow-hidden">
+    {hasCamera ? (
+      <>
+        <Webcam
+          ref={webcamRef}
+          audio={false}
+          height="100%"
+          width="100%"
+          videoConstraints={videoConstraints}
+          className="w-full h-full object-cover"
+          onUserMediaError={onUserMediaError}
+          screenshotFormat="image/jpeg"
+          screenshotQuality={0.98}
+        />
+        <canvas ref={canvasRef} className="hidden" />
+        <canvas
+          ref={overlayCanvasRef}
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+        />
+        
+        {/* Status indicator - smaller */}
+        <div className="absolute top-4 left-4">
+          <div className="flex items-center space-x-2 bg-black bg-opacity-80 px-3 py-2 rounded-full">
+            <div className={`w-3 h-3 rounded-full ${
+              !isDetectionReady ? 'bg-yellow-400 animate-pulse' :
+              bestShape ? (isShapeStable ? 'bg-green-400' : 'bg-blue-400 animate-pulse') : 'bg-gray-400'
+            }`} />
+            <span className="text-white text-sm">
+              {!isDetectionReady ? 'Loading...' :
+               bestShape ? (isShapeStable ? 'Ready' : 'Hold steady') : 'Looking...'}
+            </span>
           </div>
+        </div>
+      </>
+    ) : (
+      <div className="flex flex-col items-center justify-center h-full bg-gray-800">
+        <Camera size={64} className="mb-4 text-gray-400" />
+        <p className="text-gray-400 mb-4 text-lg">Camera not available</p>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg"
+        >
+          Select Photo from Gallery
+        </button>
+      </div>
+    )}
+  </div>
+
+  {/* Smaller control panel */}
+  <div className="bg-black p-4">
+    <div className="flex items-center justify-center space-x-8 max-w-md mx-auto">
+      {/* Gallery button */}
+      <button
+        onClick={() => fileInputRef.current?.click()}
+        className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
+        title="Select from gallery"
+      >
+        <Square size={24} className="text-white" />
+      </button>
+
+      {/* Main capture button - stays green when document is found */}
+      <button
+        onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
+        disabled={isCapturing || (hasCamera && !bestShape)}
+        className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
+          isShapeStable && bestShape
+            ? 'bg-green-500 hover:bg-green-400 ring-6 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50' 
+            : bestShape && hasCamera
+            ? 'bg-blue-500 hover:bg-blue-400 ring-4 ring-blue-300 ring-opacity-50 scale-105 shadow-blue-500/50'
+            : hasCamera
+            ? 'bg-gray-600 cursor-not-allowed opacity-50'
+            : 'bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-300 ring-opacity-50'
+        }`}
+        title={
+          !hasCamera ? 'Select photo' :
+          !bestShape ? 'Point camera at document' :
+          isShapeStable ? 'Capture now!' : 'Hold steady to capture'
+        }
+      >
+        {isCapturing ? (
+          <div className="w-8 h-8 border-4 border-white rounded-full animate-spin border-t-transparent"></div>
+        ) : (
+          <div className="w-12 h-12 rounded-full bg-white shadow-inner"></div>
         )}
-      </div>
+      </button>
 
-      {/* Enhanced control panel */}
-      <div className="bg-black p-8">
-        <div className="flex items-center justify-center space-x-12 max-w-lg mx-auto">
-          {/* Gallery button */}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="p-4 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
-            title="Select from gallery"
-          >
-            <Square size={28} className="text-white" />
-          </button>
-
-          {/* Main capture button */}
-          <button
-            onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
-            disabled={isCapturing || (hasCamera && !bestShape)}
-            className={`w-24 h-24 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
-              isShapeStable && bestShape
-                ? 'bg-green-500 hover:bg-green-400 ring-8 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50' 
-                : bestShape && hasCamera
-                ? 'bg-blue-500 hover:bg-blue-400 ring-4 ring-blue-300 ring-opacity-50 scale-105 shadow-blue-500/50'
-                : hasCamera
-                ? 'bg-gray-600 cursor-not-allowed opacity-50'
-                : 'bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-300 ring-opacity-50'
-            }`}
-            title={
-              !hasCamera ? 'Select photo' :
-              !bestShape ? 'Point camera at document' :
-              isShapeStable ? 'Capture now!' : 'Hold steady to capture'
-            }
-          >
-            {isCapturing ? (
-              <div className="w-10 h-10 border-4 border-white rounded-full animate-spin border-t-transparent"></div>
-            ) : (
-              <div className="w-16 h-16 rounded-full bg-white shadow-inner"></div>
-            )}
-          </button>
-
-          {/* Camera toggle */}
-          {hasCamera && (
-            <button
-              onClick={toggleCamera}
-              className="p-4 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
-              title="Switch camera"
-            >
-              <RotateCcw size={28} className="text-white" />
-            </button>
-          )}
-        </div>
-
-        {/* Instructions for elderly users */}
-        <div className="mt-6 text-center">
-          <p className="text-gray-400 text-lg">
-            {!bestShape && hasCamera ? 
-              'Point your camera at any document, photo, or screen' :
-              bestShape && !isShapeStable ?
-              'Hold still for a moment...' :
-              isShapeStable ?
-              'Perfect! Tap to capture and auto-crop' :
-              'Select a photo from your gallery'
-            }
-          </p>
-          {bestShape && isShapeStable && (
-            <p className="text-green-400 text-sm mt-2">
-              📄 Auto-crop enabled - only the highlighted area will be captured
-            </p>
-          )}
-        </div>
-      </div>
-
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        onChange={handleFileCapture}
-        className="hidden"
-      />
+      {/* Camera toggle */}
+      {hasCamera && (
+        <button
+          onClick={toggleCamera}
+          className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
+          title="Switch camera"
+        >
+          <RotateCcw size={24} className="text-white" />
+        </button>
+      )}
     </div>
+  </div>
+
+  <input
+    ref={fileInputRef}
+    type="file"
+    accept="image/*"
+    capture="environment"
+    onChange={handleFileCapture}
+    className="hidden"
+  />
+</div>
   )
 }
 
