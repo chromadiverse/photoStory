@@ -126,8 +126,7 @@ export default function Home() {
   const handleCloseModal = () => {
     setShowWelcomeModal(false)
   }
-
-  if (loading) {
+ if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
         <div className="text-center">
@@ -199,7 +198,7 @@ export default function Home() {
   )
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 pb-20">
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 pb-20 overflow-hidden">
       <WelcomeModal 
         isVisible={showWelcomeModal} 
         onClose={handleCloseModal}
@@ -209,8 +208,10 @@ export default function Home() {
       
       <div className="pt-24 h-[calc(100vh-96px)] overflow-hidden">
         {currentView === 'camera' && (
-          <div className="w-full h-full">
-            <CameraView onImageCapture={handleImageCapture} />
+          <div className="w-full h-full flex flex-col">
+            <div className="flex-1 relative">
+              <CameraView onImageCapture={handleImageCapture} />
+            </div>
           </div>
         )}
         
