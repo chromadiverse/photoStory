@@ -243,7 +243,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           {isFiltersExpanded && (
             <button
               onClick={() => setIsFiltersExpanded(false)}
-              className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center bg-blue-400 hover:bg-white text-gray-600 rounded-full shadow-md hover:text-gray-900 transition-colors"
+              className="absolute top-1 right-4 z-10 w-8 h-8 flex items-center justify-center bg-blue-400 hover:bg-white text-black rounded-full shadow-md hover:text-gray-900 transition-colors"
               aria-label="Close filters"
               disabled={isProcessing}
             >
