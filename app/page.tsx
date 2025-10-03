@@ -10,6 +10,7 @@ import Preview from './components/preview'
 import WelcomeModal from './components/welcome-modal'
 import { Camera, Edit3, Sliders, Eye, LogOut, User } from 'lucide-react'
 import { FilterSettings } from './utils/filters'
+
 type ViewType = 'camera' | 'crop' | 'filter' | 'preview'
 
 export interface CapturedImage {
@@ -26,12 +27,11 @@ export interface CroppedImageData {
   rotation: number
 }
 
-
-
 export default function Home() {
   const [currentView, setCurrentView] = useState<ViewType>('camera')
   const [capturedImage, setCapturedImage] = useState<CapturedImage | null>(null)
   const [croppedImageData, setCroppedImageData] = useState<CroppedImageData | null>(null)
+  const [filteredImageData, setFilteredImageData] = useState<CroppedImageData | null>(null) // NEW: Store filtered image separately
   const [showWelcomeModal, setShowWelcomeModal] = useState(true)
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -99,18 +99,20 @@ export default function Home() {
 
   const handleCropComplete = (cropData: CroppedImageData) => {
     setCroppedImageData(cropData)
+    setFilteredImageData(null) // Reset filtered image when new crop comes in
     setCurrentView('filter')
   }
 
   const handleFilterComplete = (processedData: CroppedImageData) => {
-    // Update the cropped image data with the processed version
-    setCroppedImageData(processedData)
+    // Store the filtered image data separately
+    setFilteredImageData(processedData)
     setCurrentView('preview')
   }
 
   const handleStartOver = () => {
     setCapturedImage(null)
     setCroppedImageData(null)
+    setFilteredImageData(null) // Clear filtered image too
     setFilterSettings({
       brightness: 100,
       contrast: 100,
@@ -137,8 +139,6 @@ export default function Home() {
 
   const renderNavigation = () => (
     <div className="flex justify-between items-center p-4 bg-white/90 backdrop-blur-sm shadow-sm">
-    
-
       <div className="flex justify-center space-x-2 flex-1">
         <button
           onClick={() => setCurrentView('camera')}
@@ -181,8 +181,6 @@ export default function Home() {
           <span>Preview</span>
         </button>
       </div>
-
-    
     </div>
   )
 
@@ -218,10 +216,9 @@ export default function Home() {
           />
         )}
         
-        {currentView === 'preview' && croppedImageData && (
+        {currentView === 'preview' && filteredImageData && ( 
           <Preview
-            imageData={croppedImageData}
-        
+            imageData={filteredImageData} 
             onStartOver={handleStartOver}
             onBack={() => setCurrentView('filter')}
           />

@@ -94,7 +94,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
     })
   }
 
-  // FIXED: Use the canvas filter property (it actually works in modern browsers)
+  // FIXED: Properly apply filters using canvas filter property
   const processImageWithFilters = async (): Promise<CroppedImageData> => {
     return new Promise((resolve, reject) => {
       const img = new Image()
@@ -114,7 +114,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         canvas.height = img.height
 
         // Apply filters using the canvas filter property
-        applyFiltersToCanvas(ctx, filterSettings)
+        ctx.filter = getCssFilterString(filterSettings)
         
         // Draw the image with filters applied
         ctx.drawImage(img, 0, 0)
@@ -147,94 +147,27 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
     try {
       setIsProcessing(true)
       
+      console.log('Filter Panel - Processing image with filters:', filterSettings)
+      
       const processedImageData = await processImageWithFilters()
       
-      console.log('Filter Panel - Successfully processed image with filters:', filterSettings)
+      console.log('Filter Panel - Successfully processed image with filters')
+      console.log('Filter Panel - Processed image URL:', processedImageData.croppedImage)
+      console.log('Filter Panel - Processed blob size:', processedImageData.croppedBlob.size)
       
       onComplete(processedImageData)
     } catch (error) {
       console.error('Error processing image with filters:', error)
-      // On error, create a fallback processed image
-      try {
-        const fallbackBlob = await createFallbackProcessedImage()
-        const fallbackUrl = URL.createObjectURL(fallbackBlob)
-        onComplete({
-          croppedImage: fallbackUrl,
-          croppedBlob: fallbackBlob,
-          rotation: imageData.rotation
-        })
-      } catch (fallbackError) {
-        console.error('Fallback processing also failed:', fallbackError)
-        // Last resort: use original image
-        onComplete(imageData)
-      }
+      // On error, use the original image data but still proceed
+      console.warn('Using original image data as fallback')
+      onComplete(imageData)
     } finally {
       setIsProcessing(false)
     }
   }
 
-  // Fallback method using CSS filters rendered to canvas
-  const createFallbackProcessedImage = (): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      const tempImg = new Image()
-      tempImg.crossOrigin = 'anonymous'
-      
-      tempImg.onload = () => {
-        const tempCanvas = document.createElement('canvas')
-        const tempCtx = tempCanvas.getContext('2d')
-        
-        if (!tempCtx) {
-          reject(new Error('Could not get canvas context for fallback'))
-          return
-        }
-
-        tempCanvas.width = tempImg.width
-        tempCanvas.height = tempImg.height
-        
-        // Create a temporary div to apply CSS filters
-        const tempDiv = document.createElement('div')
-        tempDiv.style.width = `${tempImg.width}px`
-        tempDiv.style.height = `${tempImg.height}px`
-        tempDiv.style.filter = getCssFilterString(filterSettings)
-        tempDiv.style.position = 'absolute'
-        tempDiv.style.left = '-9999px'
-        tempDiv.style.top = '-9999px'
-        
-        const tempImgElement = document.createElement('img')
-        tempImgElement.src = imageData.croppedImage
-        tempImgElement.style.width = '100%'
-        tempImgElement.style.height = '100%'
-        tempImgElement.style.objectFit = 'cover'
-        
-        tempDiv.appendChild(tempImgElement)
-        document.body.appendChild(tempDiv)
-        
-        // Wait for the next frame to ensure filters are applied
-        requestAnimationFrame(() => {
-          // Draw the filtered image to canvas
-          tempCtx.drawImage(tempImgElement, 0, 0, tempCanvas.width, tempCanvas.height)
-          
-          tempCanvas.toBlob((blob) => {
-            document.body.removeChild(tempDiv)
-            if (blob) {
-              resolve(blob)
-            } else {
-              reject(new Error('Failed to create fallback blob'))
-            }
-          }, 'image/jpeg', 0.95)
-        })
-      }
-      
-      tempImg.onerror = () => {
-        reject(new Error('Failed to load image for fallback'))
-      }
-      
-      tempImg.src = imageData.croppedImage
-    })
-  }
-
   return (
-  <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100 overflow-hidden">
+    <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100 overflow-hidden">
       <style>{sliderStyles}</style>
       {/* Header */}
       <div className="bg-white/90 backdrop-blur-sm shadow-sm px-4 py-3 flex items-center justify-between flex-shrink-0">
