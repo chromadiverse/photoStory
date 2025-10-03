@@ -221,7 +221,7 @@ export default function Home() {
         {currentView === 'preview' && croppedImageData && (
           <Preview
             imageData={croppedImageData}
-            filterSettings={filterSettings}
+        
             onStartOver={handleStartOver}
             onBack={() => setCurrentView('filter')}
           />
