@@ -59,22 +59,22 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   // Performance parameters
   const getParams = () => {
     const baseParams = {
-      ios: {
-        high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 3, STABILITY_THRESHOLD: 120 },
-        medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 20, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 100 },
-        low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 25, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 80 }
-      },
-      android: {
-        high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 3, STABILITY_THRESHOLD: 120 },
-        medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 20, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 100 },
-        low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 25, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 80 }
-      },
-      other: {
-        high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 3, STABILITY_THRESHOLD: 120 },
-        medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 20, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 100 },
-        low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 25, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 80 }
-      }
-    };
+  ios: {
+    high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 200 },
+    medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 180 },
+    low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 18, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 150 }
+  },
+  android: {
+    high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 200 },
+    medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 180 },
+    low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 18, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 150 }
+  },
+  other: {
+    high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 200 },
+    medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 180 },
+    low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 18, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 150 }
+  }
+};
 
     return baseParams[deviceType][performanceTier];
   };
@@ -105,13 +105,17 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     }
   }, []);
 
-  const videoConstraints = {
-    width: { ideal: deviceType === 'ios' ? 1920 : 1280 },
-    height: { ideal: deviceType === 'ios' ? 1080 : 720 },
-    facingMode: facingMode,
-    frameRate: { ideal: 24, max: 30 },
-    aspectRatio: 16/9
-  }
+ const videoConstraints = {
+  width: { ideal: deviceType === 'ios' ? 1920 : 1280 },
+  height: { ideal: deviceType === 'ios' ? 1080 : 720 },
+  facingMode: facingMode,
+  frameRate: { ideal: 24, max: 30 },
+  aspectRatio: 16/9,
+  // Ensure maximum brightness and exposure
+  brightness: { ideal: 1.0 },
+  contrast: { ideal: 1.0 },
+  saturation: { ideal: 1.0 }
+}
 
   useEffect(() => {
     const loadOpenCV = async () => {
@@ -198,7 +202,15 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       window.cv.bilateralFilter(gray, blurred, 9, 75, 75);
       
       // Edge detection with performance-appropriate thresholds
-      window.cv.Canny(blurred, edges, 40, 120, 3, true);
+    const mean = window.cv.mean(blurred);
+const avgBrightness = mean[0];
+const isLightBackground = avgBrightness > 127;
+
+// Lower thresholds for light backgrounds, higher for dark
+const lowThreshold = isLightBackground ? 25 : 40;
+const highThreshold = isLightBackground ? 80 : 120;
+
+window.cv.Canny(blurred, edges, lowThreshold, highThreshold, 3, true);
       
       // Morphological operations
       const kernel = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(3, 3));

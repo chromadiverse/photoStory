@@ -48,7 +48,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const [originalDimensions, setOriginalDimensions] = useState({ width: 0, height: 0 });
   const [cropArea, setCropArea] = useState<CropArea>({ x: 0, y: 0, width: 0, height: 0 });
   const [rotation, setRotation] = useState(0); // Continuous rotation in degrees
-  const [zoom, setZoom] = useState(0.8);
+  const [zoom, setZoom] = useState(0.5);
   const [aspect, setAspect] = useState<number | null>(null);
   const [selectedRatio, setSelectedRatio] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState>({ 
