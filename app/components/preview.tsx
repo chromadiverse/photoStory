@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { ArrowLeft, Download, Share2, RotateCcw, Copy, Save } from 'lucide-react'
-import { getCanvasFilterString, getCssFilterString, FilterSettings } from '../utils/filters'
+import { getCssFilterString, FilterSettings } from '../utils/filters'
 import MetadataModal from './metadata-modal'
 import ImageUploader from './image-uploader'
 import { GalleryMetadata } from '../lib/gallery-schema'
@@ -43,39 +43,6 @@ const Preview: React.FC<PreviewProps> = ({
     return getCssFilterString(filterSettings)
   }
 
-  // Create canvas with filters applied and return as blob
-  const createFinalImage = (): Promise<Blob> => {
-    return new Promise((resolve, reject) => {
-      const canvas = document.createElement('canvas')
-      const ctx = canvas.getContext('2d')
-      if (!ctx) {
-        reject(new Error('Could not get canvas context'))
-        return
-      }
-
-      const img = new Image()
-      img.onload = () => {
-        canvas.width = img.width
-        canvas.height = img.height
-
-        // Apply CANVAS filters (correct syntax for canvas)
-        ctx.filter = getCanvasFilterString(filterSettings)
-        ctx.drawImage(img, 0, 0)
-
-        canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(blob)
-          } else {
-            reject(new Error('Failed to create blob'))
-          }
-        }, 'image/jpeg', 0.9)
-      }
-      
-      img.onerror = () => reject(new Error('Failed to load image'))
-      img.src = imageData.croppedImage
-    })
-  }
-
   const handleMetadataSubmit = async (metadata: GalleryMetadata) => {
     setIsUploading(true)
     
@@ -90,12 +57,13 @@ const Preview: React.FC<PreviewProps> = ({
         return
       }
 
-      // Create final image with filters
-      const finalBlob = await createFinalImage()
+      // The imageData.croppedBlob already has filters applied from filter-panel
+      // No need to reprocess - just use it directly
+      console.log('Preview - Using pre-processed image blob with filters')
       
       // Store metadata and blob, trigger upload
       setPendingMetadata(metadata)
-      setFinalImageBlob(finalBlob)
+      setFinalImageBlob(imageData.croppedBlob)
       
     } catch (error) {
       console.error('Error preparing upload:', error)
@@ -168,8 +136,8 @@ const Preview: React.FC<PreviewProps> = ({
     setSaveStatus('idle')
     
     try {
-      const blob = await createFinalImage()
-      const url = URL.createObjectURL(blob)
+      // Use the pre-processed blob that already has filters applied
+      const url = URL.createObjectURL(imageData.croppedBlob)
       
       const a = document.createElement('a')
       a.href = url
@@ -197,8 +165,8 @@ const Preview: React.FC<PreviewProps> = ({
     setIsProcessing(true)
     
     try {
-      const blob = await createFinalImage()
-      const file = new File([blob], 'edited-photo.jpg', { type: 'image/jpeg' })
+      // Use the pre-processed blob that already has filters applied
+      const file = new File([imageData.croppedBlob], 'edited-photo.jpg', { type: 'image/jpeg' })
       
       await navigator.share({
         files: [file],
@@ -226,8 +194,8 @@ const Preview: React.FC<PreviewProps> = ({
     setIsProcessing(true)
     
     try {
-      const blob = await createFinalImage()
-      const item = new ClipboardItem({ 'image/png': blob })
+      // Use the pre-processed blob that already has filters applied
+      const item = new ClipboardItem({ 'image/png': imageData.croppedBlob })
       await navigator.clipboard.write([item])
       toast.success('Image copied to clipboard!')
       setSaveStatus('success')

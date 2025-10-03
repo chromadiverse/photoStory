@@ -143,22 +143,20 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
   }
 
   const handleComplete = async () => {
-    // Check if any filters are applied
-    const hasFilters = 
-      filterSettings.brightness !== 100 ||
-      filterSettings.contrast !== 100 ||
-      filterSettings.saturation !== 100 ||
-      filterSettings.hue !== 0
-
-    if (!hasFilters) {
-      // No filters applied, return original data
-      onComplete(imageData)
-      return
-    }
-
     try {
       setIsProcessing(true)
+      
+      // ALWAYS process the image to apply current filter settings
+      // This ensures the filters are baked into the image blob
       const processedImageData = await processImageWithFilters()
+      
+      console.log('Filter Panel - Processed image with filters:', {
+        brightness: filterSettings.brightness,
+        contrast: filterSettings.contrast,
+        saturation: filterSettings.saturation,
+        hue: filterSettings.hue
+      })
+      
       onComplete(processedImageData)
     } catch (error) {
       console.error('Error processing image with filters:', error)

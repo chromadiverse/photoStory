@@ -102,7 +102,9 @@ export default function Home() {
     setCurrentView('filter')
   }
 
-  const handleFilterComplete = () => {
+  const handleFilterComplete = (processedData: CroppedImageData) => {
+    // Update the cropped image data with the processed version
+    setCroppedImageData(processedData)
     setCurrentView('preview')
   }
 
