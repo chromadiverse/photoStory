@@ -108,9 +108,8 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
 
         ctx.drawImage(img, 0, 0)
 
-        // Get image data for pixel manipulation
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const data = imageData.data
+        const pixelData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const data = pixelData.data
 
         const { brightness, contrast, saturation, hue } = filterSettings
 
@@ -173,8 +172,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
           data[i + 2] = Math.max(0, Math.min(255, b))
         }
 
-        // Put the modified pixel data back
-        ctx.putImageData(imageData, 0, 0)
+        ctx.putImageData(pixelData, 0, 0)
 
         console.log("[v0] Filters applied via pixel manipulation")
 
