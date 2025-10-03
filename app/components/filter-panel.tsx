@@ -232,7 +232,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       <div className="bg-white/90 backdrop-blur-sm shadow-sm flex-grow overflow-hidden flex flex-col">
         {/* Filter Controls */}
         <div 
-          className="overflow-y-auto overscroll-contain scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent transition-all duration-500 ease-in-out relative"
+          className=" overflow-y-auto overscroll-contain scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent transition-all duration-500 ease-in-out relative"
           style={{ 
             maxHeight: isFiltersExpanded ? '60vh' : '0',
             opacity: isFiltersExpanded ? 1 : 0,
@@ -253,7 +253,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           
           <div className="p-6 space-y-8">
             {/* Brightness */}
-            <div className="space-y-4 px-2 py-1.5">
+            <div className="space-y-4 px-2  mt-2">
               <div className="flex justify-between items-center min-h-[32px]">
                 <label className="text-base font-semibold text-gray-700">
                   Brightness
