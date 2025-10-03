@@ -986,7 +986,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   };
 
   return (
-     <div className="relative h-full flex flex-col">
+    <div className="relative h-full flex flex-col">
       <div className="relative flex-1 bg-black overflow-hidden">
         {hasCamera ? (
           <>
@@ -1009,12 +1009,12 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             
             {/* Enhanced status indicator */}
             <div className="absolute top-4 left-4">
-              <div className="flex items-center space-x-3 bg-black bg-opacity-80 px-4 py-2 rounded-full">
-                <div className={`w-3 h-3 rounded-full ${
+              <div className="flex items-center space-x-3 bg-black bg-opacity-80 px-6 py-3 rounded-full">
+                <div className={`w-4 h-4 rounded-full ${
                   !isDetectionReady ? 'bg-yellow-400 animate-pulse' :
                   bestShape ? (isShapeStable ? 'bg-green-400' : 'bg-blue-400 animate-pulse') : 'bg-gray-400'
                 }`} />
-                <span className="text-white text-sm">
+                <span className="text-white text-base font-medium">
                   {!isDetectionReady ? 'Loading...' :
                    bestShape ? (isShapeStable ? 'Perfect! Ready to capture' : 'Almost there...') : 'Looking for shapes'}
                 </span>
@@ -1024,8 +1024,8 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             {/* Detection info */}
             {bestShape && (
               <div className="absolute top-4 right-4">
-                <div className="bg-black bg-opacity-80 px-3 py-2 rounded-lg">
-                  <div className="text-white text-xs">
+                <div className="bg-black bg-opacity-80 px-4 py-2 rounded-lg">
+                  <div className="text-white text-sm">
                     <div>Type: <span className="font-bold">{bestShape.type}</span></div>
                     <div>Confidence: <span className="font-bold">{Math.round(bestShape.confidence)}%</span></div>
                     <div>Stable: <span className="font-bold">{stableFrameCount.current}/{getParams().MIN_STABLE_FRAMES}</span></div>
@@ -1049,24 +1049,24 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       </div>
 
       {/* Enhanced control panel */}
-      <div className="bg-black p-6">
-        <div className="flex items-center justify-center space-x-8 max-w-lg mx-auto">
+      <div className="bg-black p-8">
+        <div className="flex items-center justify-center space-x-12 max-w-lg mx-auto">
           {/* Gallery button */}
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
+            className="p-4 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
             title="Select from gallery"
           >
-            <Square size={24} className="text-white" />
+            <Square size={28} className="text-white" />
           </button>
 
           {/* Main capture button */}
           <button
             onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
             disabled={isCapturing || (hasCamera && !bestShape)}
-            className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
+            className={`w-24 h-24 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
               isShapeStable && bestShape
-                ? 'bg-green-500 hover:bg-green-400 ring-4 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50' 
+                ? 'bg-green-500 hover:bg-green-400 ring-8 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50' 
                 : bestShape && hasCamera
                 ? 'bg-blue-500 hover:bg-blue-400 ring-4 ring-blue-300 ring-opacity-50 scale-105 shadow-blue-500/50'
                 : hasCamera
@@ -1080,9 +1080,9 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             }
           >
             {isCapturing ? (
-              <div className="w-8 h-8 border-3 border-white rounded-full animate-spin border-t-transparent"></div>
+              <div className="w-10 h-10 border-4 border-white rounded-full animate-spin border-t-transparent"></div>
             ) : (
-              <div className="w-14 h-14 rounded-full bg-white shadow-inner"></div>
+              <div className="w-16 h-16 rounded-full bg-white shadow-inner"></div>
             )}
           </button>
 
@@ -1090,17 +1090,17 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           {hasCamera && (
             <button
               onClick={toggleCamera}
-              className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
+              className="p-4 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
               title="Switch camera"
             >
-              <RotateCcw size={24} className="text-white" />
+              <RotateCcw size={28} className="text-white" />
             </button>
           )}
         </div>
 
         {/* Instructions for elderly users */}
-        <div className="mt-4 text-center">
-          <p className="text-gray-400 text-base">
+        <div className="mt-6 text-center">
+          <p className="text-gray-400 text-lg">
             {!bestShape && hasCamera ? 
               'Point your camera at any document, photo, or screen' :
               bestShape && !isShapeStable ?
@@ -1111,7 +1111,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             }
           </p>
           {bestShape && isShapeStable && (
-            <p className="text-green-400 text-sm mt-1">
+            <p className="text-green-400 text-sm mt-2">
               📄 Auto-crop enabled - only the highlighted area will be captured
             </p>
           )}
@@ -1128,7 +1128,6 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       />
     </div>
   )
-  
 }
 
 export default CameraView
