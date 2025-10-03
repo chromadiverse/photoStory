@@ -212,22 +212,22 @@ const Preview: React.FC<PreviewProps> = ({
 
   return (
     <>
-      <div className="h-full flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
-        {/* Image Preview */}
-        <div className="flex-1 flex items-center justify-center p-4">
-          <div className="relative">
-            <img
-              src={imageData.croppedImage}
-              alt="Final Preview"
-              className="max-w-full max-h-full object-contain shadow-lg rounded-lg"
-            />
-            {(isProcessing || isUploading) && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-lg">
-                <div className="flex flex-col items-center gap-2">
-                  <div className="w-8 h-8 border-2 border-white rounded-full animate-spin border-t-transparent"></div>
-                  <span className="text-white text-sm font-medium">
-                    {isUploading ? 'Uploading...' : 'Processing...'}
-                  </span>
+     <div className="h-full flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
+      {/* Image Preview */}
+      <div className="flex-1 flex items-center justify-center p-4">
+        <div className="relative">
+          <img
+            src={imageData.croppedImage} // This now contains the filtered image
+            alt="Final Preview"
+            className="max-w-full max-h-full object-contain shadow-lg rounded-lg"
+          />
+          {(isProcessing || isUploading) && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-lg">
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-8 h-8 border-2 border-white rounded-full animate-spin border-t-transparent"></div>
+                <span className="text-white text-sm font-medium">
+                  {isUploading ? 'Uploading...' : 'Processing...'}
+                </span>
                 </div>
               </div>
             )}

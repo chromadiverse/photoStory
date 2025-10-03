@@ -8,7 +8,7 @@ import Cropper from './components/cropper'
 import FilterPanel from './components/filter-panel' 
 import Preview from './components/preview' 
 import WelcomeModal from './components/welcome-modal'
-import { Camera, Edit3, Sliders, Eye, LogOut, User } from 'lucide-react'
+import { Camera, Edit3, Sliders, Eye, LogOut, User, ArrowLeft } from 'lucide-react'
 import { FilterSettings } from './utils/filters'
 
 type ViewType = 'camera' | 'crop' | 'filter' | 'preview'
@@ -137,50 +137,47 @@ export default function Home() {
     )
   }
 
+  // Get the appropriate icon based on current view
+  const getIconForView = () => {
+    switch(currentView) {
+      case 'camera': return <Camera className="w-8 h-8" />;
+      case 'crop': return <Edit3 className="w-8 h-8" />;
+      case 'filter': return <Sliders className="w-8 h-8" />;
+      case 'preview': return <Eye className="w-8 h-8" />;
+      default: return <Camera className="w-8 h-8" />;
+    }
+  };
+
   const renderNavigation = () => (
     <div className="flex justify-between items-center p-4 bg-white/90 backdrop-blur-sm shadow-sm">
-      <div className="flex justify-center space-x-2 flex-1">
-        <button
-          onClick={() => setCurrentView('camera')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-            currentView === 'camera' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-700'
-          } text-white transition-colors`}
-          disabled={!capturedImage && currentView !== 'camera'}
-        >
-          <Camera className="w-5 h-5" />
-          <span>Camera</span>
-        </button>
-        <button
-          onClick={() => setCurrentView('crop')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-            currentView === 'crop' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-700'
-          } text-white transition-colors`}
-          disabled={!capturedImage}
-        >
-          <Edit3 className="w-5 h-5" />
-          <span>Crop</span>
-        </button>
-        <button
-          onClick={() => setCurrentView('filter')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-            currentView === 'filter' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-700'
-          } text-white transition-colors`}
-          disabled={!croppedImageData}
-        >
-          <Sliders className="w-5 h-5" />
-          <span>Filters</span>
-        </button>
-        <button
-          onClick={() => setCurrentView('preview')}
-          className={`flex items-center space-x-2 px-4 py-2 rounded-lg ${
-            currentView === 'preview' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-600 hover:bg-gray-700'
-          } text-white transition-colors`}
-          disabled={!croppedImageData}
-        >
-          <Eye className="w-5 h-5" />
-          <span>Preview</span>
-        </button>
+      <button
+        onClick={() => {
+          if (currentView === 'camera') return;
+          if (currentView === 'crop') setCurrentView('camera');
+          if (currentView === 'filter') setCurrentView('crop');
+          if (currentView === 'preview') setCurrentView('filter');
+        }}
+        className={`p-2 rounded-lg ${
+          currentView === 'camera' ? 'text-gray-400' : 'text-gray-600 hover:bg-gray-100'
+        } transition-colors`}
+        disabled={currentView === 'camera'}
+      >
+        <ArrowLeft className="w-5 h-5" />
+      </button>
+      
+      {/* Centered animated icon */}
+      <div className="relative w-16 h-16 flex items-center justify-center">
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center animate-pulse">
+            <div className="w-12 h-12 rounded-full bg-blue-200 flex items-center justify-center animate-ping opacity-30 absolute"></div>
+            <div className="relative z-10 text-blue-600">
+              {getIconForView()}
+            </div>
+          </div>
+        </div>
       </div>
+      
+      <div className="w-10"></div> {/* Spacer for alignment */}
     </div>
   )
 
