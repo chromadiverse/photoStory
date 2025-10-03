@@ -243,7 +243,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           {isFiltersExpanded && (
             <button
               onClick={() => setIsFiltersExpanded(false)}
-              className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center bg-white/80 hover:bg-white text-gray-600 rounded-full shadow-md hover:text-gray-900 transition-colors"
+              className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center bg-blue-400 hover:bg-white text-gray-600 rounded-full shadow-md hover:text-gray-900 transition-colors"
               aria-label="Close filters"
               disabled={isProcessing}
             >
@@ -253,7 +253,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           
           <div className="p-6 space-y-8">
             {/* Brightness */}
-            <div className="space-y-4 px-2">
+            <div className="space-y-4 px-2 py-1.5">
               <div className="flex justify-between items-center min-h-[32px]">
                 <label className="text-base font-semibold text-gray-700">
                   Brightness
