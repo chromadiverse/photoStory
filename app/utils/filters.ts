@@ -14,3 +14,12 @@ export const getCssFilterString = (filterSettings: FilterSettings): string => {
   const { brightness, contrast, saturation, hue } = filterSettings
   return `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%) hue-rotate(${hue}deg)`
 }
+
+// NEW: Helper function to apply filters via canvas context (more reliable)
+export const applyFiltersToCanvas = (
+  ctx: CanvasRenderingContext2D,
+  settings: FilterSettings
+) => {
+  const { brightness, contrast, saturation, hue } = settings
+  ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%) hue-rotate(${hue}deg)`
+}

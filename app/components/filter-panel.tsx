@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { ArrowLeft, Check, RotateCcw, ChevronDown, ChevronUp, X } from 'lucide-react'
-import { getCanvasFilterString, getCssFilterString, FilterSettings } from '../utils/filters'
+import { getCssFilterString, applyFiltersToCanvas, FilterSettings } from '../utils/filters'
 
 interface CroppedImageData {
   croppedImage: string
@@ -30,16 +30,14 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
   const [isFiltersExpanded, setIsFiltersExpanded] = useState(false)
   const [imageScale, setImageScale] = useState(1)
 
-  // Update image scale when filters expand/collapse
   useEffect(() => {
     if (isFiltersExpanded) {
-      setImageScale(0.85) // Slightly smaller when filters are open
+      setImageScale(0.85)
     } else {
       setImageScale(1)
     }
   }, [isFiltersExpanded])
 
-  // Add custom styles for enhanced sliders
   const sliderStyles = `
     .slider-enhanced::-webkit-slider-thumb {
       -webkit-appearance: none;
@@ -96,6 +94,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
     })
   }
 
+  // FIXED: Use the canvas filter property (it actually works in modern browsers)
   const processImageWithFilters = async (): Promise<CroppedImageData> => {
     return new Promise((resolve, reject) => {
       const img = new Image()
@@ -103,61 +102,22 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       
       img.onload = () => {
         const canvas = document.createElement('canvas')
-        const ctx = canvas.getContext('2d', { willReadFrequently: true })
+        const ctx = canvas.getContext('2d')
         
         if (!ctx) {
           reject(new Error('Could not get canvas context'))
           return
         }
 
+        // Set canvas dimensions to match the image
         canvas.width = img.width
         canvas.height = img.height
 
-        // Draw original image first
-        ctx.drawImage(img, 0, 0, img.width, img.height)
+        // Apply filters using the canvas filter property
+        applyFiltersToCanvas(ctx, filterSettings)
         
-        // Get image data to apply filters manually
-        const canvasImageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const data = canvasImageData.data
-        
-        // Apply filters manually
-        const { brightness, contrast, saturation, hue } = filterSettings
-        
-        // Convert percentages to multipliers
-        const brightnessFactor = brightness / 100
-        const contrastFactor = (contrast / 100) * 2 - 1 // -1 to 1 range
-        const saturationFactor = saturation / 100
-        
-        for (let i = 0; i < data.length; i += 4) {
-          let r = data[i]
-          let g = data[i + 1]
-          let b = data[i + 2]
-          
-          // Apply brightness
-          r = r * brightnessFactor
-          g = g * brightnessFactor  
-          b = b * brightnessFactor
-          
-          // Apply contrast
-          r = ((r - 128) * (contrastFactor + 1)) + 128
-          g = ((g - 128) * (contrastFactor + 1)) + 128
-          b = ((b - 128) * (contrastFactor + 1)) + 128
-          
-          // Apply saturation (simplified)
-          if (saturationFactor !== 1) {
-            const gray = r * 0.3 + g * 0.59 + b * 0.11
-            r = gray + saturationFactor * (r - gray)
-            g = gray + saturationFactor * (g - gray)
-            b = gray + saturationFactor * (b - gray)
-          }
-          
-          // Clamp values
-          data[i] = Math.max(0, Math.min(255, r))
-          data[i + 1] = Math.max(0, Math.min(255, g))
-          data[i + 2] = Math.max(0, Math.min(255, b))
-        }
-        
-        ctx.putImageData(canvasImageData, 0, 0)
+        // Draw the image with filters applied
+        ctx.drawImage(img, 0, 0)
         
         // Convert back to blob
         canvas.toBlob((blob) => {
@@ -166,7 +126,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
             resolve({
               croppedImage: url,
               croppedBlob: blob,
-              rotation: imageData.rotation // ← Now correctly using the original imageData prop
+              rotation: imageData.rotation
             })
           } else {
             reject(new Error('Failed to create blob'))
@@ -174,7 +134,8 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         }, 'image/jpeg', 0.95)
       }
       
-      img.onerror = () => {
+      img.onerror = (error) => {
+        console.error('Image load error:', error)
         reject(new Error('Failed to load image'))
       }
       
@@ -186,25 +147,90 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
     try {
       setIsProcessing(true)
       
-      // ALWAYS process the image to apply current filter settings
-      // This ensures the filters are baked into the image blob
       const processedImageData = await processImageWithFilters()
       
-      console.log('Filter Panel - Processed image with filters:', {
-        brightness: filterSettings.brightness,
-        contrast: filterSettings.contrast,
-        saturation: filterSettings.saturation,
-        hue: filterSettings.hue
-      })
+      console.log('Filter Panel - Successfully processed image with filters:', filterSettings)
       
       onComplete(processedImageData)
     } catch (error) {
       console.error('Error processing image with filters:', error)
-      // Even on error, try to use the original image but log the issue
-      onComplete(imageData)
+      // On error, create a fallback processed image
+      try {
+        const fallbackBlob = await createFallbackProcessedImage()
+        const fallbackUrl = URL.createObjectURL(fallbackBlob)
+        onComplete({
+          croppedImage: fallbackUrl,
+          croppedBlob: fallbackBlob,
+          rotation: imageData.rotation
+        })
+      } catch (fallbackError) {
+        console.error('Fallback processing also failed:', fallbackError)
+        // Last resort: use original image
+        onComplete(imageData)
+      }
     } finally {
       setIsProcessing(false)
     }
+  }
+
+  // Fallback method using CSS filters rendered to canvas
+  const createFallbackProcessedImage = (): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const tempImg = new Image()
+      tempImg.crossOrigin = 'anonymous'
+      
+      tempImg.onload = () => {
+        const tempCanvas = document.createElement('canvas')
+        const tempCtx = tempCanvas.getContext('2d')
+        
+        if (!tempCtx) {
+          reject(new Error('Could not get canvas context for fallback'))
+          return
+        }
+
+        tempCanvas.width = tempImg.width
+        tempCanvas.height = tempImg.height
+        
+        // Create a temporary div to apply CSS filters
+        const tempDiv = document.createElement('div')
+        tempDiv.style.width = `${tempImg.width}px`
+        tempDiv.style.height = `${tempImg.height}px`
+        tempDiv.style.filter = getCssFilterString(filterSettings)
+        tempDiv.style.position = 'absolute'
+        tempDiv.style.left = '-9999px'
+        tempDiv.style.top = '-9999px'
+        
+        const tempImgElement = document.createElement('img')
+        tempImgElement.src = imageData.croppedImage
+        tempImgElement.style.width = '100%'
+        tempImgElement.style.height = '100%'
+        tempImgElement.style.objectFit = 'cover'
+        
+        tempDiv.appendChild(tempImgElement)
+        document.body.appendChild(tempDiv)
+        
+        // Wait for the next frame to ensure filters are applied
+        requestAnimationFrame(() => {
+          // Draw the filtered image to canvas
+          tempCtx.drawImage(tempImgElement, 0, 0, tempCanvas.width, tempCanvas.height)
+          
+          tempCanvas.toBlob((blob) => {
+            document.body.removeChild(tempDiv)
+            if (blob) {
+              resolve(blob)
+            } else {
+              reject(new Error('Failed to create fallback blob'))
+            }
+          }, 'image/jpeg', 0.95)
+        })
+      }
+      
+      tempImg.onerror = () => {
+        reject(new Error('Failed to load image for fallback'))
+      }
+      
+      tempImg.src = imageData.croppedImage
+    })
   }
 
   return (
@@ -263,7 +289,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
       <div className="bg-white/90 backdrop-blur-sm shadow-sm flex-grow overflow-hidden flex flex-col">
         {/* Filter Controls */}
         <div 
-          className=" overflow-y-auto overscroll-contain scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent transition-all duration-500 ease-in-out relative"
+          className="overflow-y-auto overscroll-contain scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent transition-all duration-500 ease-in-out relative"
           style={{ 
             maxHeight: isFiltersExpanded ? '60vh' : '0',
             opacity: isFiltersExpanded ? 1 : 0,
@@ -284,7 +310,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
           
           <div className="p-6 space-y-8">
             {/* Brightness */}
-            <div className="space-y-4 px-2  mt-2">
+            <div className="space-y-4 px-2 mt-2">
               <div className="flex justify-between items-center min-h-[32px]">
                 <label className="text-base font-semibold text-gray-700">
                   Brightness
@@ -429,11 +455,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({
         </div>
       </div>
 
-      {/* Hidden canvas for processing */}
-      <canvas 
-        ref={canvasRef} 
-        className="hidden" 
-      />
+      <canvas ref={canvasRef} className="hidden" />
     </div> 
   )
 }
