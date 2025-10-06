@@ -65,60 +65,85 @@ const Preview: React.FC<PreviewProps> = ({
       setIsUploading(false)
     }
   }
+const handleUploadComplete = async (uploadedFile: {
+  name: string
+  path: string
+  type: string
+}) => {
+  console.log('🔍 [handleUploadComplete] Upload completed, starting database save:', {
+    uploadedFile,
+    hasPendingMetadata: !!pendingMetadata
+  })
 
-  const handleUploadComplete = async (uploadedFile: {
-    name: string
-    path: string
-    type: string
-  }) => {
-    if (!pendingMetadata) {
-      toast.error('Metadata missing')
+  if (!pendingMetadata) {
+    console.error('❌ [handleUploadComplete] No pending metadata found')
+    toast.error('Metadata missing')
+    setIsUploading(false)
+    return
+  }
+
+  try {
+    // Get current user
+    const supabase = createClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    console.log('🔍 [handleUploadComplete] User check:', {
+      user: user?.id,
+      userError: userError?.message
+    })
+    
+    if (!user) {
+      console.error('❌ [handleUploadComplete] User not found after upload')
+      toast.error('User not found')
       setIsUploading(false)
       return
     }
 
-    try {
-      // Get current user
-      const supabase = createClient()
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (!user) {
-        toast.error('User not found')
-        setIsUploading(false)
-        return
-      }
+    // Construct image URL
+    const imageUrl = getImageUrl(uploadedFile.path, BUCKET_NAME)
+    console.log('🔍 [handleUploadComplete] Image URL constructed:', imageUrl)
 
-      // Construct image URL
-      const imageUrl = getImageUrl(uploadedFile.path, BUCKET_NAME)
+    console.log('🔍 [handleUploadComplete] Calling saveGalleryMetadata with:', {
+      path: uploadedFile.path,
+      imageUrl,
+      userId: user.id,
+      fileName: uploadedFile.name,
+      fileType: uploadedFile.type,
+      metadata: pendingMetadata
+    })
 
-      // Save metadata to database (now with fileName and fileType)
-      const result = await saveGalleryMetadata(
-        uploadedFile.path,
-        imageUrl,
-        pendingMetadata,
-        user.id,
-        uploadedFile.name,
-        uploadedFile.type
-      )
+    // Save metadata to database - FIXED: Now passing all 6 required arguments
+    const result = await saveGalleryMetadata(
+      uploadedFile.path,    // imagePath
+      imageUrl,             // imageUrl
+      pendingMetadata,      // metadata
+      user.id,              // userId
+      uploadedFile.name,    // fileName
+      uploadedFile.type     // fileType
+    )
 
-      if (result.success) {
-        toast.success('Image saved to gallery successfully!')
-        setIsModalOpen(false)
-        setSaveStatus('success')
-        setPendingMetadata(null)
-        setFinalImageBlob(null)
-      } else {
-        toast.error(`Failed to save: ${result.error}`)
-        setSaveStatus('error')
-      }
-    } catch (error) {
-      console.error('Save to gallery error:', error)
-      toast.error('Failed to save image to gallery')
+    console.log('🔍 [handleUploadComplete] saveGalleryMetadata result:', result)
+
+    if (result.success) {
+      console.log('✅ [handleUploadComplete] SUCCESS - Gallery entry saved')
+      toast.success('Image saved to gallery successfully!')
+      setIsModalOpen(false)
+      setSaveStatus('success')
+      setPendingMetadata(null)
+      setFinalImageBlob(null)
+    } else {
+      console.error('❌ [handleUploadComplete] saveGalleryMetadata failed:', result.error)
+      toast.error(`Failed to save: ${result.error}`)
       setSaveStatus('error')
-    } finally {
-      setIsUploading(false)
     }
+  } catch (error) {
+    console.error('💥 [handleUploadComplete] UNEXPECTED ERROR:', error)
+    toast.error('Failed to save image to gallery')
+    setSaveStatus('error')
+  } finally {
+    setIsUploading(false)
   }
+}
 
   const handleUploadError = (error: Error) => {
     console.error('Upload error:', error)
@@ -220,7 +245,7 @@ const Preview: React.FC<PreviewProps> = ({
       <div className="flex-1 flex items-center justify-center p-4">
         <div className="relative">
           <img
-            src={imageData.croppedImage}
+            src={imageData.croppedImage} // This now contains the filtered image
             alt="Final Preview"
             className="max-w-full max-h-full object-contain shadow-lg rounded-lg"
           />
