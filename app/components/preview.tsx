@@ -91,12 +91,14 @@ const Preview: React.FC<PreviewProps> = ({
       // Construct image URL
       const imageUrl = getImageUrl(uploadedFile.path, BUCKET_NAME)
 
-      // Save metadata to database
+      // Save metadata to database (now with fileName and fileType)
       const result = await saveGalleryMetadata(
         uploadedFile.path,
         imageUrl,
         pendingMetadata,
-        user.id
+        user.id,
+        uploadedFile.name,
+        uploadedFile.type
       )
 
       if (result.success) {
@@ -218,7 +220,7 @@ const Preview: React.FC<PreviewProps> = ({
       <div className="flex-1 flex items-center justify-center p-4">
         <div className="relative">
           <img
-            src={imageData.croppedImage} // This now contains the filtered image
+            src={imageData.croppedImage}
             alt="Final Preview"
             className="max-w-full max-h-full object-contain shadow-lg rounded-lg"
           />

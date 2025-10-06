@@ -5,24 +5,47 @@ export async function saveGalleryMetadata(
   imagePath: string,
   imageUrl: string,
   metadata: GalleryMetadata,
-  userId: string
+  userId: string,
+  fileName: string,
+  fileType: string
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = createClient()
 
   try {
-    // Save metadata to database
+    // First, get the dancer_id from user_id (same as main app)
+    const { data: dancerData, error: dancerError } = await supabase
+      .from('dancers')
+      .select('id')
+      .eq('user_id', userId)
+      .single()
+
+    if (dancerError || !dancerData) {
+      console.error('Error getting dancer:', dancerError)
+      return { success: false, error: 'Dancer profile not found' }
+    }
+
+    const dancerId = dancerData.id
+
+    // Prepare metadata object (matching main app structure)
+    const metadataObject = {
+      title: metadata.title,
+      date: metadata.date,
+      location: metadata.location || null,
+      description: metadata.description || null,
+      tags: metadata.tags || null,
+    }
+
+    // Save to dancer_gallery_files table (matching main app)
     const { error: dbError } = await supabase
-      .from('gallery_items') // Make sure this table exists
+      .from('dancer_gallery_files')
       .insert({
-        user_id: userId,
-        title: metadata.title,
-        date: metadata.date,
-        location: metadata.location || null,
-        description: metadata.description || null,
-        tags: metadata.tags || null,
-        image_url: imageUrl,
-        image_path: imagePath,
-        created_at: new Date().toISOString()
+        dancer_id: dancerId,
+        name: fileName,
+        path: imagePath,
+        type: fileType,
+        metadata: JSON.stringify(metadataObject), // Store as JSON string
+        created_at: new Date().toISOString(),
+        other_organizations: null
       })
 
     if (dbError) {
