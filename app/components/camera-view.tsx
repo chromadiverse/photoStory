@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react'
 import Webcam from 'react-webcam'
-import { Camera, RotateCcw, Square, Eye, EyeOff } from 'lucide-react'
+import { Camera, RotateCcw, Square, Eye, EyeOff, Scan, Phone } from 'lucide-react'
 
 interface CapturedImage {
   src: string
@@ -56,7 +56,6 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const [deviceType, setDeviceType] = useState<'ios' | 'android' | 'other'>('other');
   const [performanceTier, setPerformanceTier] = useState<'high' | 'medium' | 'low'>('medium');
   const [isAutoDetectionEnabled, setIsAutoDetectionEnabled] = useState(true)
-  const [showCamera, setShowCamera] = useState(true)
 
   // Performance parameters
   const getParams = () => {
@@ -1006,70 +1005,70 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     setIsAutoDetectionEnabled(prev => !prev);
   };
 
-  const toggleCameraView = () => {
-    setShowCamera(prev => !prev);
-  };
-
   const onUserMediaError = () => {
     setHasCamera(false);
   };
 
+  const openNativeCamera = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
   return (
     <div className="relative h-full flex flex-col">
-      {showCamera && (
-        <div className="relative flex-1 bg-black overflow-hidden">
-          {hasCamera ? (
-            <>
-              <Webcam
-                ref={webcamRef}
-                audio={false}
-                height="100%"
-                width="100%"
-                videoConstraints={videoConstraints}
-                className="w-full h-full object-cover"
-                onUserMediaError={onUserMediaError}
-                screenshotFormat="image/jpeg"
-                screenshotQuality={0.98}
-              />
-              <canvas ref={canvasRef} className="hidden" />
-              <canvas
-                ref={overlayCanvasRef}
-                className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-              />
-              
-              {/* Status indicator - smaller */}
-              <div className="absolute top-4 left-4">
-                <div className="flex items-center space-x-2 bg-black bg-opacity-80 px-3 py-2 rounded-full">
-                  <div className={`w-3 h-3 rounded-full ${
-                    !isDetectionReady ? 'bg-yellow-400 animate-pulse' :
-                    bestShape ? (isShapeStable ? 'bg-green-400' : 'bg-blue-400 animate-pulse') : 'bg-gray-400'
-                  }`} />
-                  <span className="text-white text-sm">
-                    {!isDetectionReady ? 'Loading...' :
-                     bestShape ? (isShapeStable ? 'Ready' : 'Hold steady') : 'Looking...'}
-                  </span>
-                </div>
+      <div className="relative flex-1 bg-black overflow-hidden">
+        {hasCamera ? (
+          <>
+            <Webcam
+              ref={webcamRef}
+              audio={false}
+              height="100%"
+              width="100%"
+              videoConstraints={videoConstraints}
+              className="w-full h-full object-cover"
+              onUserMediaError={onUserMediaError}
+              screenshotFormat="image/jpeg"
+              screenshotQuality={0.98}
+            />
+            <canvas ref={canvasRef} className="hidden" />
+            <canvas
+              ref={overlayCanvasRef}
+              className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+            />
+            
+            {/* Status indicator - smaller */}
+            <div className="absolute top-4 left-4">
+              <div className="flex items-center space-x-2 bg-black bg-opacity-80 px-3 py-2 rounded-full">
+                <div className={`w-3 h-3 rounded-full ${
+                  !isDetectionReady ? 'bg-yellow-400 animate-pulse' :
+                  bestShape ? (isShapeStable ? 'bg-green-400' : 'bg-blue-400 animate-pulse') : 'bg-gray-400'
+                }`} />
+                <span className="text-white text-sm">
+                  {!isDetectionReady ? 'Loading...' :
+                   bestShape ? (isShapeStable ? 'Ready' : 'Hold steady') : 'Looking...'}
+                </span>
               </div>
-            </>
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full bg-gray-800">
-              <Camera size={64} className="mb-4 text-gray-400" />
-              <p className="text-gray-400 mb-4 text-lg">Camera not available</p>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg"
-              >
-                Select Photo from Gallery
-              </button>
             </div>
-          )}
-        </div>
-      )}
+          </>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full bg-gray-800">
+            <Camera size={64} className="mb-4 text-gray-400" />
+            <p className="text-gray-400 mb-4 text-lg">Camera not available</p>
+            <button
+              onClick={openNativeCamera}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg"
+            >
+              Select Photo from Gallery
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Smaller control panel */}
       <div className="bg-black p-4">
         <div className="flex items-center justify-center space-x-4 max-w-md mx-auto">
-          {/* Auto detection toggle */}
+          {/* Auto detection toggle - using Scan icon */}
           <button
             onClick={toggleAutoDetection}
             className={`p-3 rounded-full ${
@@ -1079,30 +1078,21 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
             } transition-all duration-200 shadow-lg`}
             title={isAutoDetectionEnabled ? 'Disable auto detection' : 'Enable auto detection'}
           >
-            {isAutoDetectionEnabled ? <Eye size={24} className="text-white" /> : <EyeOff size={24} className="text-white" />}
+            {isAutoDetectionEnabled ? <Scan size={24} className="text-white" /> : <Scan size={24} className="text-white opacity-60" />}
           </button>
 
-          {/* Camera view toggle */}
+          {/* Native camera button */}
           <button
-            onClick={toggleCameraView}
+            onClick={openNativeCamera}
             className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
-            title={showCamera ? 'Hide camera view' : 'Show camera view'}
+            title="Use native camera"
           >
-            <Camera size={24} className="text-white" />
-          </button>
-
-          {/* Gallery button */}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
-            title="Select from gallery"
-          >
-            <Square size={24} className="text-white" />
+            <Phone size={24} className="text-white" />
           </button>
 
           {/* Main capture button - stays green when document is found */}
           <button
-            onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
+            onClick={hasCamera ? handleCapture : openNativeCamera}
             disabled={isCapturing || (hasCamera && !bestShape)}
             className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
               isShapeStable && bestShape
