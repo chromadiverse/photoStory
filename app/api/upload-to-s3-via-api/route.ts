@@ -1,8 +1,6 @@
-// File: pages/api/upload-to-s3-via-api.ts OR app/api/upload-to-s3-via-api/route.ts
+// File: app/api/upload-to-s3-via-api/route.ts
 import { NextRequest, NextResponse } from "next/server"; // For App Router
-// import type { NextApiRequest, NextApiResponse } from 'next'; // For Pages Router
 
-// For App Router:
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -21,8 +19,14 @@ export async function POST(request: NextRequest) {
     const fileBuffer = await file.arrayBuffer();
     const fileBufferTyped = new Uint8Array(fileBuffer);
 
+    // --- FIX: Construct the full URL for the internal fetch ---
+    // Use VERCEL_URL for production deployments or NEXT_PUBLIC_BASE_URL if set, otherwise default to localhost
+    // NEXT_PUBLIC_BASE_URL is often set for this purpose
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+    const awsApiUrl = `${baseUrl}/api/aws`;
+
     // Call your existing /api/aws endpoint to get the signed URL and uniqueFileName
-    const signedUrlResponse = await fetch("/api/aws", { // This calls your internal route
+    const signedUrlResponse = await fetch(awsApiUrl, { // Use the full URL
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -70,9 +74,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Internal Server Error (PWA)" }, { status: 500 });
   }
 }
-
-// For Pages Router, the structure would be slightly different:
-// export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-//   // Similar logic inside, but using req.body, req.file, and res.status().json()
-//   // You'd need to handle multipart form data parsing differently (e.g., using 'busboy' or 'formidable')
-// }
