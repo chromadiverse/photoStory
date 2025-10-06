@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react'
 import Webcam from 'react-webcam'
-import { Camera, RotateCcw, Square } from 'lucide-react'
+import { Camera, RotateCcw, Square, Eye, EyeOff } from 'lucide-react'
 
 interface CapturedImage {
   src: string
@@ -55,26 +55,28 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   // Device detection
   const [deviceType, setDeviceType] = useState<'ios' | 'android' | 'other'>('other');
   const [performanceTier, setPerformanceTier] = useState<'high' | 'medium' | 'low'>('medium');
+  const [isAutoDetectionEnabled, setIsAutoDetectionEnabled] = useState(true)
+  const [showCamera, setShowCamera] = useState(true)
 
   // Performance parameters
   const getParams = () => {
     const baseParams = {
-  ios: {
-    high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 200 },
-    medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 180 },
-    low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 18, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 150 }
-  },
-  android: {
-    high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 200 },
-    medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 180 },
-    low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 18, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 150 }
-  },
-  other: {
-    high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 200 },
-    medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 180 },
-    low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 18, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 150 }
-  }
-};
+      ios: {
+        high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 200 },
+        medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 180 },
+        low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 18, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 150 }
+      },
+      android: {
+        high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 200 },
+        medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 180 },
+        low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 18, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 150 }
+      },
+      other: {
+        high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 200 },
+        medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 180 },
+        low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 18, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 150 }
+      }
+    };
 
     return baseParams[deviceType][performanceTier];
   };
@@ -105,17 +107,24 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     }
   }, []);
 
- const videoConstraints = {
-  width: { ideal: deviceType === 'ios' ? 1920 : 1280 },
-  height: { ideal: deviceType === 'ios' ? 1080 : 720 },
-  facingMode: facingMode,
-  frameRate: { ideal: 24, max: 30 },
-  aspectRatio: 16/9,
-  // Ensure maximum brightness and exposure
-  brightness: { ideal: 1.0 },
-  contrast: { ideal: 1.0 },
-  saturation: { ideal: 1.0 }
-}
+  // Disable auto detection on low-end devices
+  useEffect(() => {
+    if (performanceTier === 'low') {
+      setIsAutoDetectionEnabled(false)
+    }
+  }, [performanceTier]);
+
+  const videoConstraints = {
+    width: { ideal: deviceType === 'ios' ? 1920 : 1280 },
+    height: { ideal: deviceType === 'ios' ? 1080 : 720 },
+    facingMode: facingMode,
+    frameRate: { ideal: 24, max: 30 },
+    aspectRatio: 16/9,
+    // Ensure maximum brightness and exposure
+    brightness: { ideal: 1.0 },
+    contrast: { ideal: 1.0 },
+    saturation: { ideal: 1.0 }
+  }
 
   useEffect(() => {
     const loadOpenCV = async () => {
@@ -202,15 +211,15 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       window.cv.bilateralFilter(gray, blurred, 9, 75, 75);
       
       // Edge detection with performance-appropriate thresholds
-    const mean = window.cv.mean(blurred);
-const avgBrightness = mean[0];
-const isLightBackground = avgBrightness > 127;
+      const mean = window.cv.mean(blurred);
+      const avgBrightness = mean[0];
+      const isLightBackground = avgBrightness > 127;
 
-// Lower thresholds for light backgrounds, higher for dark
-const lowThreshold = isLightBackground ? 25 : 40;
-const highThreshold = isLightBackground ? 80 : 120;
+      // Lower thresholds for light backgrounds, higher for dark
+      const lowThreshold = isLightBackground ? 25 : 40;
+      const highThreshold = isLightBackground ? 80 : 120;
 
-window.cv.Canny(blurred, edges, lowThreshold, highThreshold, 3, true);
+      window.cv.Canny(blurred, edges, lowThreshold, highThreshold, 3, true);
       
       // Morphological operations
       const kernel = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(3, 3));
@@ -572,7 +581,7 @@ window.cv.Canny(blurred, edges, lowThreshold, highThreshold, 3, true);
   };
 
   useEffect(() => {
-    if (!isDetectionReady || !hasCamera) return;
+    if (!isDetectionReady || !hasCamera || !isAutoDetectionEnabled) return;
 
     const detectShapes = () => {
       const webcam = webcamRef.current;
@@ -644,7 +653,7 @@ window.cv.Canny(blurred, edges, lowThreshold, highThreshold, 3, true);
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isDetectionReady, hasCamera, bestShape, deviceType, performanceTier]);
+  }, [isDetectionReady, hasCamera, bestShape, deviceType, performanceTier, isAutoDetectionEnabled]);
 
   const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], bestShape: DetectedShape | null) => {
     const overlayCtx = overlayCanvas.getContext('2d');
@@ -706,7 +715,7 @@ window.cv.Canny(blurred, edges, lowThreshold, highThreshold, 3, true);
     });
 
     const corners = bestShape.corners;
-   const isStable = isShapeStable;
+    const isStable = isShapeStable;
     
     overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
@@ -993,120 +1002,152 @@ window.cv.Canny(blurred, edges, lowThreshold, highThreshold, 3, true);
     setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
   };
 
+  const toggleAutoDetection = () => {
+    setIsAutoDetectionEnabled(prev => !prev);
+  };
+
+  const toggleCameraView = () => {
+    setShowCamera(prev => !prev);
+  };
+
   const onUserMediaError = () => {
     setHasCamera(false);
   };
 
   return (
-<div className="relative h-full flex flex-col">
-  <div className="relative flex-1 bg-black overflow-hidden">
-    {hasCamera ? (
-      <>
-        <Webcam
-          ref={webcamRef}
-          audio={false}
-          height="100%"
-          width="100%"
-          videoConstraints={videoConstraints}
-          className="w-full h-full object-cover"
-          onUserMediaError={onUserMediaError}
-          screenshotFormat="image/jpeg"
-          screenshotQuality={0.98}
-        />
-        <canvas ref={canvasRef} className="hidden" />
-        <canvas
-          ref={overlayCanvasRef}
-          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
-        />
-        
-        {/* Status indicator - smaller */}
-        <div className="absolute top-4 left-4">
-          <div className="flex items-center space-x-2 bg-black bg-opacity-80 px-3 py-2 rounded-full">
-            <div className={`w-3 h-3 rounded-full ${
-              !isDetectionReady ? 'bg-yellow-400 animate-pulse' :
-              bestShape ? (isShapeStable ? 'bg-green-400' : 'bg-blue-400 animate-pulse') : 'bg-gray-400'
-            }`} />
-            <span className="text-white text-sm">
-              {!isDetectionReady ? 'Loading...' :
-               bestShape ? (isShapeStable ? 'Ready' : 'Hold steady') : 'Looking...'}
-            </span>
-          </div>
+    <div className="relative h-full flex flex-col">
+      {showCamera && (
+        <div className="relative flex-1 bg-black overflow-hidden">
+          {hasCamera ? (
+            <>
+              <Webcam
+                ref={webcamRef}
+                audio={false}
+                height="100%"
+                width="100%"
+                videoConstraints={videoConstraints}
+                className="w-full h-full object-cover"
+                onUserMediaError={onUserMediaError}
+                screenshotFormat="image/jpeg"
+                screenshotQuality={0.98}
+              />
+              <canvas ref={canvasRef} className="hidden" />
+              <canvas
+                ref={overlayCanvasRef}
+                className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+              />
+              
+              {/* Status indicator - smaller */}
+              <div className="absolute top-4 left-4">
+                <div className="flex items-center space-x-2 bg-black bg-opacity-80 px-3 py-2 rounded-full">
+                  <div className={`w-3 h-3 rounded-full ${
+                    !isDetectionReady ? 'bg-yellow-400 animate-pulse' :
+                    bestShape ? (isShapeStable ? 'bg-green-400' : 'bg-blue-400 animate-pulse') : 'bg-gray-400'
+                  }`} />
+                  <span className="text-white text-sm">
+                    {!isDetectionReady ? 'Loading...' :
+                     bestShape ? (isShapeStable ? 'Ready' : 'Hold steady') : 'Looking...'}
+                  </span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full bg-gray-800">
+              <Camera size={64} className="mb-4 text-gray-400" />
+              <p className="text-gray-400 mb-4 text-lg">Camera not available</p>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg"
+              >
+                Select Photo from Gallery
+              </button>
+            </div>
+          )}
         </div>
-      </>
-    ) : (
-      <div className="flex flex-col items-center justify-center h-full bg-gray-800">
-        <Camera size={64} className="mb-4 text-gray-400" />
-        <p className="text-gray-400 mb-4 text-lg">Camera not available</p>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg"
-        >
-          Select Photo from Gallery
-        </button>
-      </div>
-    )}
-  </div>
-
-  {/* Smaller control panel */}
-  <div className="bg-black p-4">
-    <div className="flex items-center justify-center space-x-8 max-w-md mx-auto">
-      {/* Gallery button */}
-      <button
-        onClick={() => fileInputRef.current?.click()}
-        className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
-        title="Select from gallery"
-      >
-        <Square size={24} className="text-white" />
-      </button>
-
-      {/* Main capture button - stays green when document is found */}
-      <button
-        onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
-        disabled={isCapturing || (hasCamera && !bestShape)}
-        className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
-          isShapeStable && bestShape
-            ? 'bg-green-500 hover:bg-green-400 ring-6 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50' 
-            : bestShape && hasCamera
-            ? 'bg-blue-500 hover:bg-blue-400 ring-4 ring-blue-300 ring-opacity-50 scale-105 shadow-blue-500/50'
-            : hasCamera
-            ? 'bg-gray-600 cursor-not-allowed opacity-50'
-            : 'bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-300 ring-opacity-50'
-        }`}
-        title={
-          !hasCamera ? 'Select photo' :
-          !bestShape ? 'Point camera at document' :
-          isShapeStable ? 'Capture now!' : 'Hold steady to capture'
-        }
-      >
-        {isCapturing ? (
-          <div className="w-8 h-8 border-4 border-white rounded-full animate-spin border-t-transparent"></div>
-        ) : (
-          <div className="w-12 h-12 rounded-full bg-white shadow-inner"></div>
-        )}
-      </button>
-
-      {/* Camera toggle */}
-      {hasCamera && (
-        <button
-          onClick={toggleCamera}
-          className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
-          title="Switch camera"
-        >
-          <RotateCcw size={24} className="text-white" />
-        </button>
       )}
-    </div>
-  </div>
 
-  <input
-    ref={fileInputRef}
-    type="file"
-    accept="image/*"
-    capture="environment"
-    onChange={handleFileCapture}
-    className="hidden"
-  />
-</div>
+      {/* Smaller control panel */}
+      <div className="bg-black p-4">
+        <div className="flex items-center justify-center space-x-4 max-w-md mx-auto">
+          {/* Auto detection toggle */}
+          <button
+            onClick={toggleAutoDetection}
+            className={`p-3 rounded-full ${
+              isAutoDetectionEnabled 
+                ? 'bg-green-600 hover:bg-green-500' 
+                : 'bg-gray-700 hover:bg-gray-600'
+            } transition-all duration-200 shadow-lg`}
+            title={isAutoDetectionEnabled ? 'Disable auto detection' : 'Enable auto detection'}
+          >
+            {isAutoDetectionEnabled ? <Eye size={24} className="text-white" /> : <EyeOff size={24} className="text-white" />}
+          </button>
+
+          {/* Camera view toggle */}
+          <button
+            onClick={toggleCameraView}
+            className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
+            title={showCamera ? 'Hide camera view' : 'Show camera view'}
+          >
+            <Camera size={24} className="text-white" />
+          </button>
+
+          {/* Gallery button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
+            title="Select from gallery"
+          >
+            <Square size={24} className="text-white" />
+          </button>
+
+          {/* Main capture button - stays green when document is found */}
+          <button
+            onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
+            disabled={isCapturing || (hasCamera && !bestShape)}
+            className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
+              isShapeStable && bestShape
+                ? 'bg-green-500 hover:bg-green-400 ring-6 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50' 
+                : bestShape && hasCamera
+                ? 'bg-blue-500 hover:bg-blue-400 ring-4 ring-blue-300 ring-opacity-50 scale-105 shadow-blue-500/50'
+                : hasCamera
+                ? 'bg-gray-600 cursor-not-allowed opacity-50'
+                : 'bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-300 ring-opacity-50'
+            }`}
+            title={
+              !hasCamera ? 'Select photo' :
+              !bestShape ? 'Point camera at document' :
+              isShapeStable ? 'Capture now!' : 'Hold steady to capture'
+            }
+          >
+            {isCapturing ? (
+              <div className="w-8 h-8 border-4 border-white rounded-full animate-spin border-t-transparent"></div>
+            ) : (
+              <div className="w-12 h-12 rounded-full bg-white shadow-inner"></div>
+            )}
+          </button>
+
+          {/* Camera toggle */}
+          {hasCamera && (
+            <button
+              onClick={toggleCamera}
+              className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
+              title="Switch camera"
+            >
+              <RotateCcw size={24} className="text-white" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleFileCapture}
+        className="hidden"
+      />
+    </div>
   )
 }
 
