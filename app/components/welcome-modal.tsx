@@ -8,6 +8,9 @@ import {
   Upload, 
   X, 
   ChevronRight, 
+  Scan,
+  Phone,
+  RotateCcw,
   LucideIcon
 } from 'lucide-react'
 
@@ -24,6 +27,7 @@ interface WelcomeModalProps {
     isVisible:boolean 
     onClose:()=>void
 }
+
 const tips:TipItem[] = [
   {
     icon: Lightbulb,
@@ -36,9 +40,19 @@ const tips:TipItem[] = [
     description: "Place your photo, poster, or document on a contrasting background. Ensure it's flat and well-positioned for clear edges and optimal detection."
   },
   {
-    icon: Camera,
-    title: "Manual Camera Control",
-    description: "Press the camera settings icon to access manual controls and disable auto AI cropping. This gives you full control over your capture experience."
+    icon: Scan,
+    title: "Smart Auto-Detection",
+    description: "Our AI automatically detects documents in your camera view. Toggle this feature on/off using the scan icon in the control panel when you need manual control."
+  },
+  {
+    icon: Phone,
+    title: "Native Camera Access",
+    description: "Prefer using your device's native camera? Tap the phone icon to open your system camera and select photos directly from your gallery or take new pictures."
+  },
+  {
+    icon: RotateCcw,
+    title: "Switch Camera Views",
+    description: "Need to use your front-facing camera? Tap the rotate icon to instantly switch between your rear and front cameras for flexible capture options."
   },
   {
     icon: Crop,
@@ -53,7 +67,7 @@ const tips:TipItem[] = [
   {
     icon: Upload,
     title: "Upload to CurtainConnect",
-    description: "Seamlessly upload your enhanced captures to your CC profile gallery.Share your polished documents with confidence and professional quality."
+    description: "Seamlessly upload your enhanced captures to your CC profile gallery. Share your polished documents with confidence and professional quality."
   }
 ]
 
