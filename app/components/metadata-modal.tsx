@@ -24,7 +24,21 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
     formState: { errors },
     reset
   } = useForm<GalleryMetadata>({
-    resolver: zodResolver(GalleryMetadataSchema)
+    resolver: zodResolver(GalleryMetadataSchema),
+    defaultValues: {
+      title: '',
+      date: new Date().toISOString().split('T')[0],
+      location: '',
+      companyGroup: '',
+      choreographers: '',
+      dancersPerformers: '',
+      genreStyle: '',
+      musicSoundtrack: '',
+      directorProducer: '',
+      description: '',
+      keywords: '',
+      rightsPermissions: ''
+    }
   })
 
   const handleFormSubmit = async (data: GalleryMetadata) => {
@@ -50,52 +64,128 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="p-6 space-y-4">
-          {/* Title */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Title <span className="text-red-500">*</span>
-            </label>
-            <input
-              {...register('title')}
-              type="text"
-              placeholder="Enter title"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              disabled={isUploading}
-            />
-            {errors.title && (
-              <p className="text-red-500 text-sm mt-1">{errors.title.message}</p>
-            )}
+        <form onSubmit={handleSubmit(handleFormSubmit)} className="p-6 space-y-6">
+          {/* Basic Info Section */}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Title <span className="text-red-500">*</span>
+              </label>
+              <input
+                {...register('title')}
+                type="text"
+                placeholder="Enter title"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isUploading}
+              />
+              {errors.title && (
+                <p className="text-red-500 text-sm mt-1">{errors.title.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Date <span className="text-red-500">*</span>
+              </label>
+              <input
+                {...register('date')}
+                type="date"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isUploading}
+              />
+              {errors.date && (
+                <p className="text-red-500 text-sm mt-1">{errors.date.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Location
+              </label>
+              <input
+                {...register('location')}
+                type="text"
+                placeholder="Where was this taken?"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isUploading}
+              />
+            </div>
           </div>
 
-          {/* Date */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Date <span className="text-red-500">*</span>
-            </label>
-            <input
-              {...register('date')}
-              type="date"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              disabled={isUploading}
-            />
-            {errors.date && (
-              <p className="text-red-500 text-sm mt-1">{errors.date.message}</p>
-            )}
+          {/* Performance Details Section */}
+          <div className="space-y-4 border-t border-gray-200 pt-4">
+            <h3 className="font-medium text-gray-800">Performance Details</h3>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Company/Group</label>
+              <input
+                {...register('companyGroup')}
+                type="text"
+                placeholder="Company or group name"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isUploading}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Choreographers</label>
+              <input
+                {...register('choreographers')}
+                type="text"
+                placeholder="Choreographer names"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isUploading}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Dancers/Performers</label>
+              <input
+                {...register('dancersPerformers')}
+                type="text"
+                placeholder="Dancer names"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isUploading}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Genre/Style</label>
+              <input
+                {...register('genreStyle')}
+                type="text"
+                placeholder="Ballet, Contemporary, etc."
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isUploading}
+              />
+            </div>
           </div>
 
-          {/* Location */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Location
-            </label>
-            <input
-              {...register('location')}
-              type="text"
-              placeholder="Where was this taken?"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              disabled={isUploading}
-            />
+          {/* Production Details Section */}
+          <div className="space-y-4 border-t border-gray-200 pt-4">
+            <h3 className="font-medium text-gray-800">Production Details</h3>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Music/Soundtrack</label>
+              <input
+                {...register('musicSoundtrack')}
+                type="text"
+                placeholder="Music or soundtrack details"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isUploading}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Director/Producer</label>
+              <input
+                {...register('directorProducer')}
+                type="text"
+                placeholder="Director or producer name"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isUploading}
+              />
+            </div>
           </div>
 
           {/* Description */}
@@ -112,19 +202,32 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
             />
           </div>
 
-          {/* Tags */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Tags
-            </label>
-            <input
-              {...register('tags')}
-              type="text"
-              placeholder="e.g., dance, performance, ballet"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              disabled={isUploading}
-            />
-            <p className="text-gray-500 text-xs mt-1">Separate tags with commas</p>
+          {/* Rights & Keywords Section */}
+          <div className="space-y-4 border-t border-gray-200 pt-4">
+            <h3 className="font-medium text-gray-800">Rights & Keywords</h3>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Keywords</label>
+              <input
+                {...register('keywords')}
+                type="text"
+                placeholder="e.g., dance, performance, ballet"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isUploading}
+              />
+              <p className="text-gray-500 text-xs mt-1">Separate keywords with commas</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Rights/Permissions</label>
+              <input
+                {...register('rightsPermissions')}
+                type="text"
+                placeholder="Rights and permissions information"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isUploading}
+              />
+            </div>
           </div>
 
           {/* Submit Button */}
