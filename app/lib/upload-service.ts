@@ -45,16 +45,16 @@ export async function saveGalleryMetadata(
     // Add optional fields if they exist
     if (metadata.location) metadataObject.location = metadata.location
     if (metadata.description) metadataObject.description = metadata.description
-    if (metadata.tags) metadataObject.keywords = metadata.tags // Note: might be 'keywords' in main app
+    if (metadata.keywords) metadataObject.keywords = metadata.keywords // Use keywords instead of tags
 
-    // Add any other fields from your GalleryMetadata schema
-    // Based on main app example, it also has: choreographers, musicSoundtrack, etc.
-    if ('choreographers' in metadata) metadataObject.choreographers = metadata.choreographers
-    if ('dancersPerformers' in metadata) metadataObject.dancersPerformers = metadata.dancersPerformers
-    if ('genreStyle' in metadata) metadataObject.genreStyle = metadata.genreStyle
-    if ('musicSoundtrack' in metadata) metadataObject.musicSoundtrack = metadata.musicSoundtrack
-    if ('directorProducer' in metadata) metadataObject.directorProducer = metadata.directorProducer
-    if ('rightsPermissions' in metadata) metadataObject.rightsPermissions = metadata.rightsPermissions
+    // Add all other fields from your GalleryMetadata schema
+    if (metadata.companyGroup) metadataObject.companyGroup = metadata.companyGroup
+    if (metadata.choreographers) metadataObject.choreographers = metadata.choreographers
+    if (metadata.dancersPerformers) metadataObject.dancersPerformers = metadata.dancersPerformers
+    if (metadata.genreStyle) metadataObject.genreStyle = metadata.genreStyle
+    if (metadata.musicSoundtrack) metadataObject.musicSoundtrack = metadata.musicSoundtrack
+    if (metadata.directorProducer) metadataObject.directorProducer = metadata.directorProducer
+    if (metadata.rightsPermissions) metadataObject.rightsPermissions = metadata.rightsPermissions
 
     const metadataString = JSON.stringify(metadataObject)
     console.log('Metadata string:', metadataString)
