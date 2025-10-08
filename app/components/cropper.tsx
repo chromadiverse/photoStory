@@ -2,13 +2,8 @@
 
 import type React from "react"
 
-import { useState, useRef, useEffect, useCallback } from "react"
-import {
-  ArrowLeft,
-  RotateCwIcon as RotateIcon,
-  ArrowRightIcon as AutoStraightenIcon,
-  FlipHorizontal,
-} from "lucide-react"
+import { useState, useRef, useEffect, useCallback, useMemo } from "react"
+import { ArrowLeft, RotateCcw as RotateIcon, ArrowRight as AutoStraightenIcon } from "lucide-react"
 import type { CapturedImage, CroppedImageData } from "../page"
 
 interface CropperProps {
@@ -55,7 +50,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const [zoom, setZoom] = useState(0.5)
   const [aspect, setAspect] = useState<number | null>(null)
   const [selectedRatio, setSelectedRatio] = useState<string | null>(null)
-  const [isPortrait, setIsPortrait] = useState(false)
   const [dragState, setDragState] = useState<DragState>({
     isDragging: false,
     dragType: "none",
@@ -71,6 +65,14 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLDivElement>(null)
 
+  // Calculate effective aspect ratio based on rotation
+  const effectiveAspect = useMemo(() => {
+    if (aspect === null) return null;
+    // When rotated 90° or 270°, the aspect ratio effectively inverts
+    return (rotation % 180 === 0) ? aspect : 1 / aspect;
+  }, [aspect, rotation]);
+
+  // Initialize image
   useEffect(() => {
     const img = new Image()
     img.onload = () => {
@@ -87,8 +89,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         width: width,
         height: height,
       })
-
-      setIsPortrait(height > width)
     }
     img.src = image.src
   }, [image.src])
@@ -151,27 +151,11 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
   const handleRatioSelect = (ratioOption: (typeof printRatios)[0]) => {
     setSelectedRatio(ratioOption.label)
-    const effectiveRatio =
-      ratioOption.value && ratioOption.value !== 1 && isPortrait ? 1 / ratioOption.value : ratioOption.value
-    setAspect(effectiveRatio)
-    resizeImageToRatio(effectiveRatio)
+    setAspect(ratioOption.value)
+    resizeImageToRatio(ratioOption.value)
   }
 
-  const toggleOrientation = () => {
-    if (!selectedRatio || selectedRatio === "Free" || selectedRatio === "1:1") {
-      return
-    }
-
-    const newIsPortrait = !isPortrait
-    setIsPortrait(newIsPortrait)
-
-    if (aspect) {
-      const newAspect = 1 / aspect
-      setAspect(newAspect)
-      resizeImageToRatio(newAspect)
-    }
-  }
-
+  // Handle drag start
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent, dragType: DragState["dragType"]) => {
     e.preventDefault()
     e.stopPropagation()
@@ -241,8 +225,25 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
           return
       }
 
-      if (aspect && dragState.dragType !== "move") {
-        newCrop.height = newCrop.width / aspect
+      // Apply aspect ratio constraint based on effective aspect
+      if (effectiveAspect && dragState.dragType !== "move") {
+        const currentRatio = newCrop.width / newCrop.height;
+        
+        if (currentRatio > effectiveAspect) {
+          // Too wide: adjust width
+          newCrop.width = newCrop.height * effectiveAspect;
+        } else {
+          // Too tall: adjust height
+          newCrop.height = newCrop.width / effectiveAspect;
+        }
+        
+        // Adjust position based on drag direction
+        if (dragState.dragType === "nw" || dragState.dragType === "sw") {
+          newCrop.x = dragState.initialCropStart.x + (dragState.initialCrop.width - newCrop.width);
+        }
+        if (dragState.dragType === "nw" || dragState.dragType === "ne") {
+          newCrop.y = dragState.initialCropStart.y + (dragState.initialCrop.height - newCrop.height);
+        }
       }
 
       const minSize = 50
@@ -255,7 +256,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
       setCropArea(newCrop)
     },
-    [dragState, aspect, rotatedBoundingBox, zoom],
+    [dragState, effectiveAspect, rotatedBoundingBox, zoom],
   )
 
   const handleDragEnd = useCallback(() => {
@@ -295,10 +296,12 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     setRotatedBoundingBox({ width: rotatedWidth, height: rotatedHeight })
   }, [rotation, imageDimensions])
 
+  // =============== ROTATION: 90° BUTTON ===============
   const rotateImage = () => {
     const newRotation = (rotation + 90) % 360
     setRotation(newRotation)
 
+    // Swap dimensions only on 90/270
     if (newRotation % 180 !== 0) {
       const oldWidth = imageDimensions.width
       const oldHeight = imageDimensions.height
@@ -353,10 +356,12 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     }
   }
 
+  // =============== AUTO-STRAIGHTEN ===============
   const autoStraighten = () => {
     setRotation(0)
   }
 
+  // =============== SAVE ===============
   const handleSave = async () => {
     const imgSrc = processedImage || image.src
     const tempImg = new Image()
@@ -544,7 +549,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
       {/* Controls */}
       <div className="bg-black/80 p-4 space-y-5">
-        <div className="flex justify-center gap-6">
+        {/* ROTATE BUTTON - ABOVE RATIOS */}
+        <div className="flex justify-center">
           <button
             onClick={rotateImage}
             className="flex flex-col items-center gap-1.5 text-white hover:text-blue-300 active:scale-95 transition-transform"
@@ -554,27 +560,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
               <RotateIcon className="w-6 h-6" />
             </div>
             <span className="text-xs font-medium">Rotate</span>
-          </button>
-
-          {/* Orientation Toggle Button */}
-          <button
-            onClick={toggleOrientation}
-            disabled={!selectedRatio || selectedRatio === "Free" || selectedRatio === "1:1"}
-            className={`flex flex-col items-center gap-1.5 active:scale-95 transition-transform ${
-              !selectedRatio || selectedRatio === "Free" || selectedRatio === "1:1"
-                ? "text-gray-600 cursor-not-allowed"
-                : "text-white hover:text-blue-300"
-            }`}
-            aria-label="Toggle orientation"
-          >
-            <div
-              className={`w-12 h-12 flex items-center justify-center rounded-full ${
-                !selectedRatio || selectedRatio === "Free" || selectedRatio === "1:1" ? "bg-gray-900" : "bg-gray-800"
-              }`}
-            >
-              <FlipHorizontal className="w-6 h-6" />
-            </div>
-            <span className="text-xs font-medium">{isPortrait ? "Portrait" : "Landscape"}</span>
           </button>
         </div>
 
