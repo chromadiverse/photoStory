@@ -39,7 +39,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null)
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment')
+
   const [isCapturing, setIsCapturing] = useState(false)
   const [hasCamera, setHasCamera] = useState(true)
   const [isDetectionReady, setIsDetectionReady] = useState(false)
@@ -116,7 +116,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const videoConstraints = {
     width: { ideal: deviceType === 'ios' ? 1920 : 1280 },
     height: { ideal: deviceType === 'ios' ? 1080 : 720 },
-    facingMode: facingMode,
+   
     frameRate: { ideal: 24, max: 30 },
     aspectRatio: 16/9,
     // Ensure maximum brightness and exposure
@@ -997,9 +997,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     }
   };
 
-  const toggleCamera = () => {
-    setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
-  };
+
 
   const toggleAutoDetection = () => {
     setIsAutoDetectionEnabled(prev => !prev);
@@ -1066,17 +1064,8 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       </div>
 
       {/* Smaller control panel */}
-      <div className="bg-black p-4">
+  <div className="bg-black p-4">
   <div className="flex items-center justify-center space-x-4 max-w-md mx-auto">
-    {/* Native camera button (where camera switch was) */}
-    <button
-      onClick={openNativeCamera}
-      className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
-      title="Use native camera"
-    >
-      <Phone size={24} className="text-white" />
-    </button>
-
     {/* Auto detection toggle - now with text button */}
     <button
       onClick={toggleAutoDetection}
@@ -1115,6 +1104,15 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       ) : (
         <div className="w-12 h-12 rounded-full bg-white shadow-inner"></div>
       )}
+    </button>
+
+    {/* Native camera button (on the right) */}
+    <button
+      onClick={openNativeCamera}
+      className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
+      title="Use native camera"
+    >
+      <Phone size={24} className="text-white" />
     </button>
   </div>
 </div>
