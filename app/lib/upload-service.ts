@@ -36,35 +36,35 @@ export async function saveGalleryMetadata(
     console.log('Found dancerId:', dancerId)
 
     // Prepare metadata object (matching main app structure exactly)
-    const metadataObject: Record<string, any> = {
+    const metadataObject = {
       file: imagePath, // IMPORTANT: Main app includes this
       title: metadata.title,
       date: metadata.date,
+      location: metadata.location || undefined,
+      companyGroup: metadata.companyGroup || undefined,
+      choreographers: metadata.choreographers || undefined,
+      dancersPerformers: metadata.dancersPerformers || undefined,
+      genreStyle: metadata.genreStyle || undefined,
+      musicSoundtrack: metadata.musicSoundtrack || undefined,
+      directorProducer: metadata.directorProducer || undefined,
+      description: metadata.description || undefined,
+      keywords: metadata.keywords || undefined,
+      rightsPermissions: metadata.rightsPermissions || undefined,
     }
 
-    // Add optional fields if they exist
-    if (metadata.location) metadataObject.location = metadata.location
-    if (metadata.description) metadataObject.description = metadata.description
-    if (metadata.keywords) metadataObject.keywords = metadata.keywords // Use keywords instead of tags
+    // Remove undefined values to keep the object clean
+    const cleanMetadataObject = Object.fromEntries(
+      Object.entries(metadataObject).filter(([_, value]) => value !== undefined)
+    )
 
-    // Add all other fields from your GalleryMetadata schema
-    if (metadata.companyGroup) metadataObject.companyGroup = metadata.companyGroup
-    if (metadata.choreographers) metadataObject.choreographers = metadata.choreographers
-    if (metadata.dancersPerformers) metadataObject.dancersPerformers = metadata.dancersPerformers
-    if (metadata.genreStyle) metadataObject.genreStyle = metadata.genreStyle
-    if (metadata.musicSoundtrack) metadataObject.musicSoundtrack = metadata.musicSoundtrack
-    if (metadata.directorProducer) metadataObject.directorProducer = metadata.directorProducer
-    if (metadata.rightsPermissions) metadataObject.rightsPermissions = metadata.rightsPermissions
-
-    const metadataString = JSON.stringify(metadataObject)
-    console.log('Metadata string:', metadataString)
+    console.log('Clean metadata object:', cleanMetadataObject)
 
     const insertData = {
       dancer_id: dancerId,
       name: fileName,
       path: imagePath,
       type: fileType,
-      metadata: metadataString,
+      metadata: cleanMetadataObject, // Store as actual object, not string
       other_organizations: null
     }
 
