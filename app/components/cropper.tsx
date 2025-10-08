@@ -271,6 +271,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         }
       }
 
+      // Ensure crop area stays within bounds
       const minSize = 50
       newCrop.width = Math.max(minSize, newCrop.width)
       newCrop.height = Math.max(minSize, newCrop.height)
@@ -278,6 +279,20 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       newCrop.y = Math.max(0, Math.min(rotatedBoundingBox.height - newCrop.height, newCrop.y))
       newCrop.width = Math.min(rotatedBoundingBox.width - newCrop.x, newCrop.width)
       newCrop.height = Math.min(rotatedBoundingBox.height - newCrop.y, newCrop.height)
+
+      // Ensure aspect ratio is maintained after bounds correction
+      if (effectiveAspect && dragState.dragType !== "move") {
+        const currentRatio = newCrop.width / newCrop.height;
+        if (Math.abs(currentRatio - effectiveAspect) > 0.001) { // Small tolerance for floating point errors
+          if (currentRatio > effectiveAspect) {
+            // Too wide: adjust width
+            newCrop.width = newCrop.height * effectiveAspect;
+          } else {
+            // Too tall: adjust height
+            newCrop.height = newCrop.width / effectiveAspect;
+          }
+        }
+      }
 
       setCropArea(newCrop)
     },
