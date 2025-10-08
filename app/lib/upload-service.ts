@@ -64,7 +64,7 @@ export async function saveGalleryMetadata(
       name: fileName,
       path: imagePath,
       type: fileType,
-      metadata: cleanMetadataObject, // Store as actual object, not string
+      metadata: cleanMetadataObject, // Store as actual object
       other_organizations: null
     }
 
