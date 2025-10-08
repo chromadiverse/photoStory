@@ -387,17 +387,28 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       canvas.width = cropArea.width
       canvas.height = cropArea.height
 
+      const cropCenterX = cropArea.x + cropArea.width / 2
+      const cropCenterY = cropArea.y + cropArea.height / 2
+
+      const imageCenterX = imageDimensions.width / 2
+      const imageCenterY = imageDimensions.height / 2
+
+      const offsetX = cropCenterX - imageCenterX
+      const offsetY = cropCenterY - imageCenterY
+
+      ctx.save()
+      ctx.translate(canvas.width / 2, canvas.height / 2)
+      ctx.rotate(rad)
+
       ctx.drawImage(
         rotatedCanvas,
-        cropArea.x,
-        cropArea.y,
-        cropArea.width,
-        cropArea.height,
-        0,
-        0,
-        cropArea.width,
-        cropArea.height,
+        -imageDimensions.width / 2 - offsetX,
+        -imageDimensions.height / 2 - offsetY,
+        imageDimensions.width,
+        imageDimensions.height,
       )
+
+      ctx.restore()
 
       canvas.toBlob(
         (blob) => {
