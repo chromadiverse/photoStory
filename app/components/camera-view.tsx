@@ -1067,67 +1067,57 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
 
       {/* Smaller control panel */}
       <div className="bg-black p-4">
-        <div className="flex items-center justify-center space-x-4 max-w-md mx-auto">
-          {/* Auto detection toggle - using Scan icon */}
-          <button
-            onClick={toggleAutoDetection}
-            className={`p-3 rounded-full ${
-              isAutoDetectionEnabled 
-                ? 'bg-green-600 hover:bg-green-500' 
-                : 'bg-gray-700 hover:bg-gray-600'
-            } transition-all duration-200 shadow-lg`}
-            title={isAutoDetectionEnabled ? 'Disable auto detection' : 'Enable auto detection'}
-          >
-            {isAutoDetectionEnabled ? <Scan size={24} className="text-white" /> : <Scan size={24} className="text-white opacity-60" />}
-          </button>
+  <div className="flex items-center justify-center space-x-4 max-w-md mx-auto">
+    {/* Native camera button (where camera switch was) */}
+    <button
+      onClick={openNativeCamera}
+      className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
+      title="Use native camera"
+    >
+      <Phone size={24} className="text-white" />
+    </button>
 
-          {/* Native camera button */}
-          <button
-            onClick={openNativeCamera}
-            className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
-            title="Use native camera"
-          >
-            <Phone size={24} className="text-white" />
-          </button>
+    {/* Auto detection toggle - now with text button */}
+    <button
+      onClick={toggleAutoDetection}
+      className={`px-4 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg flex flex-col items-center justify-center min-w-[80px] ${
+        isAutoDetectionEnabled 
+          ? 'bg-green-600 hover:bg-green-500 text-white' 
+          : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+      }`}
+      title={isAutoDetectionEnabled ? 'Disable auto detection' : 'Enable auto detection'}
+    >
+      <span className="text-xs leading-tight">Auto</span>
+      <span className="text-xs leading-tight">Detect</span>
+    </button>
 
-          {/* Main capture button - stays green when document is found */}
-          <button
-            onClick={hasCamera ? handleCapture : openNativeCamera}
-            disabled={isCapturing || (hasCamera && !bestShape)}
-            className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
-              isShapeStable && bestShape
-                ? 'bg-green-500 hover:bg-green-400 ring-6 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50' 
-                : bestShape && hasCamera
-                ? 'bg-blue-500 hover:bg-blue-400 ring-4 ring-blue-300 ring-opacity-50 scale-105 shadow-blue-500/50'
-                : hasCamera
-                ? 'bg-gray-600 cursor-not-allowed opacity-50'
-                : 'bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-300 ring-opacity-50'
-            }`}
-            title={
-              !hasCamera ? 'Select photo' :
-              !bestShape ? 'Point camera at document' :
-              isShapeStable ? 'Capture now!' : 'Hold steady to capture'
-            }
-          >
-            {isCapturing ? (
-              <div className="w-8 h-8 border-4 border-white rounded-full animate-spin border-t-transparent"></div>
-            ) : (
-              <div className="w-12 h-12 rounded-full bg-white shadow-inner"></div>
-            )}
-          </button>
-
-          {/* Camera toggle */}
-          {hasCamera && (
-            <button
-              onClick={toggleCamera}
-              className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
-              title="Switch camera"
-            >
-              <RotateCcw size={24} className="text-white" />
-            </button>
-          )}
-        </div>
-      </div>
+    {/* Main capture button - stays green when document is found */}
+    <button
+      onClick={hasCamera ? handleCapture : openNativeCamera}
+      disabled={isCapturing || (hasCamera && !bestShape)}
+      className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
+        isShapeStable && bestShape
+          ? 'bg-green-500 hover:bg-green-400 ring-6 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50' 
+          : bestShape && hasCamera
+          ? 'bg-blue-500 hover:bg-blue-400 ring-4 ring-blue-300 ring-opacity-50 scale-105 shadow-blue-500/50'
+          : hasCamera
+          ? 'bg-gray-600 cursor-not-allowed opacity-50'
+          : 'bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-300 ring-opacity-50'
+      }`}
+      title={
+        !hasCamera ? 'Select photo' :
+        !bestShape ? 'Point camera at document' :
+        isShapeStable ? 'Capture now!' : 'Hold steady to capture'
+      }
+    >
+      {isCapturing ? (
+        <div className="w-8 h-8 border-4 border-white rounded-full animate-spin border-t-transparent"></div>
+      ) : (
+        <div className="w-12 h-12 rounded-full bg-white shadow-inner"></div>
+      )}
+    </button>
+  </div>
+</div>
 
       <input
         ref={fileInputRef}
