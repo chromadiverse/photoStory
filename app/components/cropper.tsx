@@ -145,6 +145,19 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     resizeImageToRatio(ratioOption.value)
   }
 
+  const transformDeltaForRotation = useCallback((deltaX: number, deltaY: number, rotationDeg: number) => {
+    // Convert rotation to radians and negate it (we're transforming screen coords to image coords)
+    const rad = (-rotationDeg * Math.PI) / 180
+    const cos = Math.cos(rad)
+    const sin = Math.sin(rad)
+
+    // Apply rotation matrix
+    return {
+      x: deltaX * cos - deltaY * sin,
+      y: deltaX * sin + deltaY * cos,
+    }
+  }, [])
+
   // Handle drag start
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent, dragType: DragState["dragType"]) => {
     e.preventDefault()
@@ -181,8 +194,9 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       const scaleY = containerHeight / imageDimensions.height
       const scale = Math.min(scaleX, scaleY) * zoom
 
-      const imageDeltaX = deltaX / scale
-      const imageDeltaY = deltaY / scale
+      const transformed = transformDeltaForRotation(deltaX, deltaY, rotation)
+      const imageDeltaX = transformed.x / scale
+      const imageDeltaY = transformed.y / scale
 
       const newCrop = { ...dragState.initialCrop }
 
@@ -229,7 +243,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
       setCropArea(newCrop)
     },
-    [dragState, aspect, imageDimensions, zoom],
+    [dragState, aspect, imageDimensions, zoom, rotation, transformDeltaForRotation],
   )
 
   const handleDragEnd = useCallback(() => {
