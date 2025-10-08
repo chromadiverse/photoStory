@@ -2,24 +2,24 @@ export interface FilterSettings {
   brightness: number
   contrast: number
   saturation: number
-  hue: number
+ 
 }
 
 // For CSS filters (used in FilterPanel preview)
 export const getCssFilterString = (filterSettings: FilterSettings): string => {
-  const { brightness, contrast, saturation, hue } = filterSettings
-  return `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%) hue-rotate(${hue}deg)`
+  const { brightness, contrast, saturation } = filterSettings
+  return `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
 }
 
 export const getCanvasFilterString = (filterSettings: FilterSettings): string => {
-  const { brightness, contrast, saturation, hue } = filterSettings
+  const { brightness, contrast, saturation } = filterSettings
 
   // Canvas filter uses decimal values: 1 = 100%, 2 = 200%
   const brightnessValue = brightness / 100
   const contrastValue = contrast / 100
   const saturationValue = saturation / 100
 
-  return `brightness(${brightnessValue}) contrast(${contrastValue}) saturate(${saturationValue}) hue-rotate(${hue}deg)`
+  return `brightness(${brightnessValue}) contrast(${contrastValue}) saturate(${saturationValue}) `
 }
 
 // Apply filters to canvas context

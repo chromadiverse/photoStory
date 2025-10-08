@@ -196,53 +196,78 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
       const newCrop = { ...dragState.initialCrop }
 
-      switch (dragState.dragType) {
-        case "nw":
-          newCrop.x = dragState.initialCropStart.x + imageDeltaX
-          newCrop.y = dragState.initialCropStart.y + imageDeltaY
-          newCrop.width = dragState.initialCrop.width - imageDeltaX
-          newCrop.height = dragState.initialCrop.height - imageDeltaY
-          break
-        case "ne":
-          newCrop.y = dragState.initialCropStart.y + imageDeltaY
-          newCrop.width = dragState.initialCrop.width + imageDeltaX
-          newCrop.height = dragState.initialCrop.height - imageDeltaY
-          break
-        case "sw":
-          newCrop.x = dragState.initialCropStart.x + imageDeltaX
-          newCrop.width = dragState.initialCrop.width - imageDeltaX
-          newCrop.height = dragState.initialCrop.height + imageDeltaY
-          break
-        case "se":
-          newCrop.width = dragState.initialCrop.width + imageDeltaX
-          newCrop.height = dragState.initialCrop.height + imageDeltaY
-          break
-        case "move":
-          newCrop.x = dragState.initialCropStart.x + imageDeltaX
-          newCrop.y = dragState.initialCropStart.y + imageDeltaY
-          break
-        default:
-          return
-      }
-
-      // Apply aspect ratio constraint based on effective aspect
       if (effectiveAspect && dragState.dragType !== "move") {
-        const currentRatio = newCrop.width / newCrop.height;
-        
-        if (currentRatio > effectiveAspect) {
-          // Too wide: adjust width
-          newCrop.width = newCrop.height * effectiveAspect;
-        } else {
-          // Too tall: adjust height
-          newCrop.height = newCrop.width / effectiveAspect;
+        // Handle aspect ratio constraint
+        switch (dragState.dragType) {
+          case "nw":
+            // Calculate new dimensions maintaining aspect ratio
+            const newWidthNw = dragState.initialCrop.width - imageDeltaX;
+            const newHeightNw = newWidthNw / effectiveAspect;
+            
+            newCrop.x = dragState.initialCropStart.x + imageDeltaX;
+            newCrop.y = dragState.initialCropStart.y + (dragState.initialCrop.height - newHeightNw);
+            newCrop.width = newWidthNw;
+            newCrop.height = newHeightNw;
+            break;
+            
+          case "ne":
+            const newWidthNe = dragState.initialCrop.width + imageDeltaX;
+            const newHeightNe = newWidthNe / effectiveAspect;
+            
+            newCrop.y = dragState.initialCropStart.y + (dragState.initialCrop.height - newHeightNe);
+            newCrop.width = newWidthNe;
+            newCrop.height = newHeightNe;
+            break;
+            
+          case "sw":
+            const newWidthSw = dragState.initialCrop.width - imageDeltaX;
+            const newHeightSw = newWidthSw / effectiveAspect;
+            
+            newCrop.x = dragState.initialCropStart.x + imageDeltaX;
+            newCrop.width = newWidthSw;
+            newCrop.height = newHeightSw;
+            break;
+            
+          case "se":
+            const newWidthSe = dragState.initialCrop.width + imageDeltaX;
+            const newHeightSe = newWidthSe / effectiveAspect;
+            
+            newCrop.width = newWidthSe;
+            newCrop.height = newHeightSe;
+            break;
+            
+          default:
+            return
         }
-        
-        // Adjust position based on drag direction
-        if (dragState.dragType === "nw" || dragState.dragType === "sw") {
-          newCrop.x = dragState.initialCropStart.x + (dragState.initialCrop.width - newCrop.width);
-        }
-        if (dragState.dragType === "nw" || dragState.dragType === "ne") {
-          newCrop.y = dragState.initialCropStart.y + (dragState.initialCrop.height - newCrop.height);
+      } else {
+        // Free-form cropping (no aspect ratio lock)
+        switch (dragState.dragType) {
+          case "nw":
+            newCrop.x = dragState.initialCropStart.x + imageDeltaX
+            newCrop.y = dragState.initialCropStart.y + imageDeltaY
+            newCrop.width = dragState.initialCrop.width - imageDeltaX
+            newCrop.height = dragState.initialCrop.height - imageDeltaY
+            break
+          case "ne":
+            newCrop.y = dragState.initialCropStart.y + imageDeltaY
+            newCrop.width = dragState.initialCrop.width + imageDeltaX
+            newCrop.height = dragState.initialCrop.height - imageDeltaY
+            break
+          case "sw":
+            newCrop.x = dragState.initialCropStart.x + imageDeltaX
+            newCrop.width = dragState.initialCrop.width - imageDeltaX
+            newCrop.height = dragState.initialCrop.height + imageDeltaY
+            break
+          case "se":
+            newCrop.width = dragState.initialCrop.width + imageDeltaX
+            newCrop.height = dragState.initialCrop.height + imageDeltaY
+            break
+          case "move":
+            newCrop.x = dragState.initialCropStart.x + imageDeltaX
+            newCrop.y = dragState.initialCropStart.y + imageDeltaY
+            break
+          default:
+            return
         }
       }
 

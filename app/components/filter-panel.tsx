@@ -69,6 +69,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
       box-shadow: 0 3px 12px rgba(59,130,246,0.5);
     }
   `
+
   const applyFilters = () => {
     return getCssFilterString(filterSettings)
   }
@@ -78,7 +79,6 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
       brightness: 100,
       contrast: 100,
       saturation: 100,
-      hue: 0,
     })
   }
 
@@ -111,71 +111,9 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
         const pixelData = ctx.getImageData(0, 0, canvas.width, canvas.height)
         const data = pixelData.data
 
-        const { brightness, contrast, saturation, hue } = filterSettings
+        const { brightness, contrast, saturation } = filterSettings
 
-        console.log("[v0] Applying filters:", { brightness, contrast, saturation, hue })
-
-        // Helper functions for RGB <-> HSL conversion
-        const rgbToHsl = (r: number, g: number, b: number): [number, number, number] => {
-          r /= 255
-          g /= 255
-          b /= 255
-
-          const max = Math.max(r, g, b)
-          const min = Math.min(r, g, b)
-          let h = 0
-          let s = 0
-          const l = (max + min) / 2
-
-          if (max !== min) {
-            const d = max - min
-            s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
-
-            switch (max) {
-              case r:
-                h = ((g - b) / d + (g < b ? 6 : 0)) / 6
-                break
-              case g:
-                h = ((b - r) / d + 2) / 6
-                break
-              case b:
-                h = ((r - g) / d + 4) / 6
-                break
-            }
-          }
-
-          return [h * 360, s * 100, l * 100]
-        }
-
-        const hslToRgb = (h: number, s: number, l: number): [number, number, number] => {
-          h /= 360
-          s /= 100
-          l /= 100
-
-          let r, g, b
-
-          if (s === 0) {
-            r = g = b = l
-          } else {
-            const hue2rgb = (p: number, q: number, t: number) => {
-              if (t < 0) t += 1
-              if (t > 1) t -= 1
-              if (t < 1 / 6) return p + (q - p) * 6 * t
-              if (t < 1 / 2) return q
-              if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
-              return p
-            }
-
-            const q = l < 0.5 ? l * (1 + s) : l + s - l * s
-            const p = 2 * l - q
-
-            r = hue2rgb(p, q, h + 1 / 3)
-            g = hue2rgb(p, q, h)
-            b = hue2rgb(p, q, h - 1 / 3)
-          }
-
-          return [r * 255, g * 255, b * 255]
-        }
+        console.log("[v0] Applying filters:", { brightness, contrast, saturation })
 
         // Apply filters pixel by pixel for cross-browser compatibility
         for (let i = 0; i < data.length; i += 4) {
@@ -204,26 +142,6 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
             b = gray + (b - gray) * satFactor
           }
 
-          // Apply hue rotation (convert to HSL, rotate H, convert back to RGB)
-          if (hue !== 0) {
-            // Clamp before conversion to ensure valid RGB values
-            r = Math.max(0, Math.min(255, r))
-            g = Math.max(0, Math.min(255, g))
-            b = Math.max(0, Math.min(255, b))
-
-            const [h, s, l] = rgbToHsl(r, g, b)
-            let newH = h + hue
-
-            // Normalize hue to 0-360 range
-            while (newH < 0) newH += 360
-            while (newH >= 360) newH -= 360
-
-            const [newR, newG, newB] = hslToRgb(newH, s, l)
-            r = newR
-            g = newG
-            b = newB
-          }
-
           // Clamp values to 0-255
           data[i] = Math.max(0, Math.min(255, r))
           data[i + 1] = Math.max(0, Math.min(255, g))
@@ -232,7 +150,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
 
         ctx.putImageData(pixelData, 0, 0)
 
-        console.log("[v0] Filters applied via pixel manipulation with HSL hue rotation")
+        console.log("[v0] Filters applied via pixel manipulation")
 
         canvas.toBlob(
           (blob) => {
@@ -478,32 +396,6 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
                   style={{
                     WebkitAppearance: "none",
                     background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${(filterSettings.saturation / 200) * 100}%, #e5e7eb ${(filterSettings.saturation / 200) * 100}%, #e5e7eb 100%)`,
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* Hue */}
-            <div className="space-y-4 px-2">
-              <div className="flex justify-between items-center min-h-[32px]">
-                <label className="text-base font-semibold text-gray-700">Hue</label>
-                <span className="text-base text-gray-600 font-mono w-16 text-right">
-                  {filterSettings.hue > 0 ? "+" : ""}
-                  {filterSettings.hue}°
-                </span>
-              </div>
-              <div className="py-2" style={{ touchAction: "none" }}>
-                <input
-                  type="range"
-                  min="-180"
-                  max="180"
-                  value={filterSettings.hue}
-                  onChange={(e) => handleSliderChange("hue", Number(e.target.value))}
-                  disabled={isProcessing}
-                  className="w-full h-10 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-enhanced"
-                  style={{
-                    WebkitAppearance: "none",
-                    background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${((filterSettings.hue + 180) / 360) * 100}%, #e5e7eb ${((filterSettings.hue + 180) / 360) * 100}%, #e5e7eb 100%)`,
                   }}
                 />
               </div>
