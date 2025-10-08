@@ -116,7 +116,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const videoConstraints = {
     width: { ideal: deviceType === 'ios' ? 1920 : 1280 },
     height: { ideal: deviceType === 'ios' ? 1080 : 720 },
-   
+    facingMode: 'environment',
     frameRate: { ideal: 24, max: 30 },
     aspectRatio: 16/9,
     // Ensure maximum brightness and exposure

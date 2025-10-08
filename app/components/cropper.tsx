@@ -255,7 +255,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   }, [dragState.isDragging, handleDragMove, handleDragEnd]);
 
  // =============== ROTATION: 90° BUTTON ===============
-  const rotateImage = () => {
+   const rotateImage = () => {
     const newRotation = (rotation + 90) % 360;
     setRotation(newRotation);
     
@@ -269,35 +269,50 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         height: oldWidth
       });
       
-      // Transform crop coordinates for 90° clockwise rotation
-      setCropArea(prev => {
-        // For 90° CW: new_x = old_y, new_y = (oldWidth - old_x - old_width)
-        // For 270° (or -90°): new_x = (oldHeight - old_y - old_height), new_y = old_x
-        const isClockwise = (newRotation === 90 || newRotation === 270);
+      // Reset crop to fill entire rotated image
+      if (aspect) {
+        // If aspect ratio is locked, fit it to the new dimensions
+        const newWidth = oldHeight;
+        const newHeight = oldWidth;
+        const newRatio = newWidth / newHeight;
         
-        let newX, newY, newWidth, newHeight;
-        
-        if (newRotation === 90 || newRotation === -270) {
-          // 90° clockwise
-          newX = prev.y;
-          newY = oldWidth - prev.x - prev.width;
-          newWidth = prev.height;
-          newHeight = prev.width;
+        if (newRatio > aspect) {
+          // Width is limiting factor
+          const cropHeight = newWidth / aspect;
+          const cropY = (newHeight - cropHeight) / 2;
+          setCropArea({
+            x: 0,
+            y: Math.max(0, cropY),
+            width: newWidth,
+            height: Math.min(cropHeight, newHeight)
+          });
         } else {
-          // 270° clockwise (or 90° counter-clockwise)
-          newX = oldHeight - prev.y - prev.height;
-          newY = prev.x;
-          newWidth = prev.height;
-          newHeight = prev.width;
+          // Height is limiting factor
+          const cropWidth = newHeight * aspect;
+          const cropX = (newWidth - cropWidth) / 2;
+          setCropArea({
+            x: Math.max(0, cropX),
+            y: 0,
+            width: Math.min(cropWidth, newWidth),
+            height: newHeight
+          });
         }
-        
-        // Ensure crop stays within bounds
-        return {
-          x: Math.max(0, Math.min(newX, oldHeight - newWidth)),
-          y: Math.max(0, Math.min(newY, oldWidth - newHeight)),
-          width: Math.min(newWidth, oldHeight),
-          height: Math.min(newHeight, oldWidth)
-        };
+      } else {
+        // No aspect ratio - fill entire image
+        setCropArea({
+          x: 0,
+          y: 0,
+          width: oldHeight,
+          height: oldWidth
+        });
+      }
+    } else {
+      // Rotating back to 0° or 180° - reset to original dimensions
+      setCropArea({
+        x: 0,
+        y: 0,
+        width: imageDimensions.width,
+        height: imageDimensions.height
       });
     }
   };
