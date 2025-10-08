@@ -339,7 +339,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     tempImg.src = imgSrc
 
     tempImg.onload = () => {
-      // Create a canvas to apply rotation and crop
+      // Create canvas for the rotated image
       const canvas = document.createElement("canvas")
       const ctx = canvas.getContext("2d")
       if (!ctx) return
@@ -361,7 +361,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       ctx.drawImage(tempImg, -tempImg.width / 2, -tempImg.height / 2)
       ctx.restore()
       
-      // Create final crop canvas
+      // Calculate the crop area in the rotated image space
+      // The crop area coordinates need to be transformed to match the rotated image
       const cropCanvas = document.createElement("canvas")
       const cropCtx = cropCanvas.getContext("2d")
       if (!cropCtx) return
