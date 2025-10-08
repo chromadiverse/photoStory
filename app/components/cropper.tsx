@@ -145,19 +145,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     resizeImageToRatio(ratioOption.value)
   }
 
-  const transformDeltaForRotation = useCallback((deltaX: number, deltaY: number, rotationDeg: number) => {
-    // Convert rotation to radians and negate it (we're transforming screen coords to image coords)
-    const rad = (-rotationDeg * Math.PI) / 180
-    const cos = Math.cos(rad)
-    const sin = Math.sin(rad)
-
-    // Apply rotation matrix
-    return {
-      x: deltaX * cos - deltaY * sin,
-      y: deltaX * sin + deltaY * cos,
-    }
-  }, [])
-
   // Handle drag start
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent, dragType: DragState["dragType"]) => {
     e.preventDefault()
@@ -194,9 +181,15 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       const scaleY = containerHeight / imageDimensions.height
       const scale = Math.min(scaleX, scaleY) * zoom
 
-      const transformed = transformDeltaForRotation(deltaX, deltaY, rotation)
-      const imageDeltaX = transformed.x / scale
-      const imageDeltaY = transformed.y / scale
+      // Transform delta based on rotation
+      const rad = (-rotation * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const transformedDeltaX = deltaX * cos - deltaY * sin;
+      const transformedDeltaY = deltaX * sin + deltaY * cos;
+
+      const imageDeltaX = transformedDeltaX / scale
+      const imageDeltaY = transformedDeltaY / scale
 
       const newCrop = { ...dragState.initialCrop }
 
@@ -243,7 +236,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
       setCropArea(newCrop)
     },
-    [dragState, aspect, imageDimensions, zoom, rotation, transformDeltaForRotation],
+    [dragState, aspect, imageDimensions, zoom, rotation],
   )
 
   const handleDragEnd = useCallback(() => {
@@ -340,41 +333,56 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   }
 
   // =============== SAVE ===============
- const handleSave = async () => {
+  const handleSave = async () => {
     const imgSrc = processedImage || image.src
     const tempImg = new Image()
     tempImg.src = imgSrc
 
     tempImg.onload = () => {
+      // Create a canvas to apply rotation and crop
       const canvas = document.createElement("canvas")
       const ctx = canvas.getContext("2d")
       if (!ctx) return
 
-      canvas.width = cropArea.width
-      canvas.height = cropArea.height
-
+      // Calculate the rotated dimensions
       const rad = (rotation * Math.PI) / 180
-
-      // Draw rotated and cropped image directly
+      const sin = Math.abs(Math.sin(rad))
+      const cos = Math.abs(Math.cos(rad))
+      const newWidth = tempImg.width * cos + tempImg.height * sin
+      const newHeight = tempImg.width * sin + tempImg.height * cos
+      
+      canvas.width = newWidth
+      canvas.height = newHeight
+      
+      // Translate to center and rotate
       ctx.save()
-      ctx.translate(canvas.width / 2, canvas.height / 2)
+      ctx.translate(newWidth / 2, newHeight / 2)
       ctx.rotate(rad)
+      ctx.drawImage(tempImg, -tempImg.width / 2, -tempImg.height / 2)
+      ctx.restore()
       
-      // Calculate where to draw the image so the crop area is centered
-      const drawX = -cropArea.x - cropArea.width / 2
-      const drawY = -cropArea.y - cropArea.height / 2
+      // Create final crop canvas
+      const cropCanvas = document.createElement("canvas")
+      const cropCtx = cropCanvas.getContext("2d")
+      if (!cropCtx) return
       
-      ctx.drawImage(
-        tempImg,
-        drawX,
-        drawY,
-        tempImg.width,
-        tempImg.height
+      cropCanvas.width = cropArea.width
+      cropCanvas.height = cropArea.height
+      
+      // Draw the rotated image onto the crop canvas
+      cropCtx.drawImage(
+        canvas,
+        cropArea.x, 
+        cropArea.y,
+        cropArea.width,
+        cropArea.height,
+        0,
+        0,
+        cropArea.width,
+        cropArea.height
       )
 
-      ctx.restore()
-
-      canvas.toBlob(
+      cropCanvas.toBlob(
         (blob) => {
           if (blob) {
             const url = URL.createObjectURL(blob)
@@ -390,6 +398,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       )
     }
   }
+
   // Calculate display
   const containerRect = containerRef.current?.getBoundingClientRect()
   const containerWidth = containerRect?.width || 400
