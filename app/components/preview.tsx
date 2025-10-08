@@ -65,85 +65,86 @@ const Preview: React.FC<PreviewProps> = ({
       setIsUploading(false)
     }
   }
-const handleUploadComplete = async (uploadedFile: {
-  name: string
-  path: string
-  type: string
-}) => {
-  console.log('🔍 [handleUploadComplete] Upload completed, starting database save:', {
-    uploadedFile,
-    hasPendingMetadata: !!pendingMetadata
-  })
-
-  if (!pendingMetadata) {
-    console.error('❌ [handleUploadComplete] No pending metadata found')
-    toast.error('Metadata missing')
-    setIsUploading(false)
-    return
-  }
-
-  try {
-    // Get current user
-    const supabase = createClient()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    console.log('🔍 [handleUploadComplete] User check:', {
-      user: user?.id,
-      userError: userError?.message
+  
+  const handleUploadComplete = async (uploadedFile: {
+    name: string
+    path: string
+    type: string
+  }) => {
+    console.log('🔍 [handleUploadComplete] Upload completed, starting database save:', {
+      uploadedFile,
+      hasPendingMetadata: !!pendingMetadata
     })
-    
-    if (!user) {
-      console.error('❌ [handleUploadComplete] User not found after upload')
-      toast.error('User not found')
+
+    if (!pendingMetadata) {
+      console.error('❌ [handleUploadComplete] No pending metadata found')
+      toast.error('Metadata missing')
       setIsUploading(false)
       return
     }
 
-    // Construct image URL
-    const imageUrl = getImageUrl(uploadedFile.path, BUCKET_NAME)
-    console.log('🔍 [handleUploadComplete] Image URL constructed:', imageUrl)
+    try {
+      // Get current user
+      const supabase = createClient()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      console.log('🔍 [handleUploadComplete] User check:', {
+        user: user?.id,
+        userError: userError?.message
+      })
+      
+      if (!user) {
+        console.error('❌ [handleUploadComplete] User not found after upload')
+        toast.error('User not found')
+        setIsUploading(false)
+        return
+      }
 
-    console.log('🔍 [handleUploadComplete] Calling saveGalleryMetadata with:', {
-      path: uploadedFile.path,
-      imageUrl,
-      userId: user.id,
-      fileName: uploadedFile.name,
-      fileType: uploadedFile.type,
-      metadata: pendingMetadata
-    })
+      // Construct image URL
+      const imageUrl = getImageUrl(uploadedFile.path, BUCKET_NAME)
+      console.log('🔍 [handleUploadComplete] Image URL constructed:', imageUrl)
 
-    // Save metadata to database - FIXED: Now passing all 6 required arguments
-    const result = await saveGalleryMetadata(
-      uploadedFile.path,    // imagePath
-      imageUrl,             // imageUrl
-      pendingMetadata,      // metadata
-      user.id,              // userId
-      uploadedFile.name,    // fileName
-      uploadedFile.type     // fileType
-    )
+      console.log('🔍 [handleUploadComplete] Calling saveGalleryMetadata with:', {
+        path: uploadedFile.path,
+        imageUrl,
+        userId: user.id,
+        fileName: uploadedFile.name,
+        fileType: uploadedFile.type,
+        metadata: pendingMetadata
+      })
 
-    console.log('🔍 [handleUploadComplete] saveGalleryMetadata result:', result)
+      // Save metadata to database - FIXED: Now passing all 6 required arguments
+      const result = await saveGalleryMetadata(
+        uploadedFile.path,    // imagePath
+        imageUrl,             // imageUrl
+        pendingMetadata,      // metadata
+        user.id,              // userId
+        uploadedFile.name,    // fileName
+        uploadedFile.type     // fileType
+      )
 
-    if (result.success) {
-      console.log('✅ [handleUploadComplete] SUCCESS - Gallery entry saved')
-      toast.success('Image saved to gallery successfully!')
-      setIsModalOpen(false)
-      setSaveStatus('success')
-      setPendingMetadata(null)
-      setFinalImageBlob(null)
-    } else {
-      console.error('❌ [handleUploadComplete] saveGalleryMetadata failed:', result.error)
-      toast.error(`Failed to save: ${result.error}`)
+      console.log('🔍 [handleUploadComplete] saveGalleryMetadata result:', result)
+
+      if (result.success) {
+        console.log('✅ [handleUploadComplete] SUCCESS - Gallery entry saved')
+        toast.success('Image saved to gallery successfully!')
+        setIsModalOpen(false)
+        setSaveStatus('success')
+        setPendingMetadata(null)
+        setFinalImageBlob(null)
+      } else {
+        console.error('❌ [handleUploadComplete] saveGalleryMetadata failed:', result.error)
+        toast.error(`Failed to save: ${result.error}`)
+        setSaveStatus('error')
+      }
+    } catch (error) {
+      console.error('💥 [handleUploadComplete] UNEXPECTED ERROR:', error)
+      toast.error('Failed to save image to gallery')
       setSaveStatus('error')
+    } finally {
+      setIsUploading(false)
     }
-  } catch (error) {
-    console.error('💥 [handleUploadComplete] UNEXPECTED ERROR:', error)
-    toast.error('Failed to save image to gallery')
-    setSaveStatus('error')
-  } finally {
-    setIsUploading(false)
   }
-}
 
   const handleUploadError = (error: Error) => {
     console.error('Upload error:', error)
@@ -152,35 +153,53 @@ const handleUploadComplete = async (uploadedFile: {
     setSaveStatus('error')
   }
 
-  const handleDownload = async () => {
+  const handleSaveToPhotos = async () => {
     setIsProcessing(true)
     setSaveStatus('idle')
     
     try {
-      // Use the pre-processed blob that already has filters applied
-      const url = URL.createObjectURL(imageData.croppedBlob)
-      
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `edited-photo-${Date.now()}.jpg`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      
-      URL.revokeObjectURL(url)
-      setSaveStatus('success')
+      // Check if the Web Share API is available (iOS 12.2+)
+      if (navigator.share && imageData.croppedBlob.size > 0) {
+        // Create a file object for sharing
+        const file = new File([imageData.croppedBlob], 'edited-photo.jpg', { 
+          type: 'image/jpeg' 
+        });
+        
+        await navigator.share({
+          files: [file],
+          title: 'Save to Photos',
+          text: 'Save this image to your photo library'
+        });
+        
+        setSaveStatus('success');
+        toast.success('Image saved to photos!');
+      } else {
+        // Fallback: try to save directly (works on some browsers)
+        const url = URL.createObjectURL(imageData.croppedBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `edited-photo-${Date.now()}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        setSaveStatus('success');
+        toast.success('Image saved to downloads');
+      }
     } catch (error) {
-      console.error('Download error:', error)
-      setSaveStatus('error')
+      console.error('Error saving to photos:', error);
+      setSaveStatus('error');
+      toast.error('Failed to save image');
     } finally {
-      setIsProcessing(false)
+      setIsProcessing(false);
     }
-  }
+  };
 
   const handleShare = async () => {
     if (!navigator.share) {
-      handleCopyToClipboard()
-      return
+      handleCopyToClipboard();
+      return;
     }
 
     setIsProcessing(true)
@@ -208,24 +227,24 @@ const handleUploadComplete = async (uploadedFile: {
 
   const handleCopyToClipboard = async () => {
     if (!navigator.clipboard) {
-      alert('Clipboard not supported on this device')
-      return
+      alert('Clipboard not supported on this device');
+      return;
     }
 
     setIsProcessing(true)
     
     try {
       // Use the pre-processed blob that already has filters applied
-      const item = new ClipboardItem({ 'image/png': imageData.croppedBlob })
-      await navigator.clipboard.write([item])
-      toast.success('Image copied to clipboard!')
-      setSaveStatus('success')
+      const item = new ClipboardItem({ 'image/jpeg': imageData.croppedBlob });
+      await navigator.clipboard.write([item]);
+      toast.success('Image copied to clipboard!');
+      setSaveStatus('success');
     } catch (error) {
-      console.error('Error copying to clipboard:', error)
-      toast.error('Failed to copy to clipboard')
-      setSaveStatus('error')
+      console.error('Error copying to clipboard:', error);
+      toast.error('Failed to copy to clipboard');
+      setSaveStatus('error');
     } finally {
-      setIsProcessing(false)
+      setIsProcessing(false);
     }
   }
 
@@ -293,12 +312,12 @@ const handleUploadComplete = async (uploadedFile: {
             </button>
 
             <button
-              onClick={handleDownload}
+              onClick={handleSaveToPhotos}
               disabled={isProcessing || isUploading}
-              className="flex flex-col items-center gap-2 p-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
+              className="flex flex-col items-center gap-2 p-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
             >
               <Download className="w-6 h-6" />
-              <span className="text-sm font-medium">Download</span>
+              <span className="text-sm font-medium">Save to Photos</span>
             </button>
           </div>
 
@@ -307,7 +326,7 @@ const handleUploadComplete = async (uploadedFile: {
             <button
               onClick={handleShare}
               disabled={isProcessing || isUploading}
-              className="flex items-center justify-center gap-2 p-3 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
+              className="flex items-center justify-center gap-2 p-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
             >
               <Share2 className="w-5 h-5" />
               <span className="text-sm font-medium">Share</span>
@@ -316,7 +335,7 @@ const handleUploadComplete = async (uploadedFile: {
             <button
               onClick={handleCopyToClipboard}
               disabled={isProcessing || isUploading}
-              className="flex items-center justify-center gap-2 p-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
+              className="flex items-center justify-center gap-2 p-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
             >
               <Copy className="w-5 h-5" />
               <span className="text-sm font-medium">Copy</span>

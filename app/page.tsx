@@ -42,7 +42,7 @@ export default function Home() {
     brightness: 100,
     contrast: 100,
     saturation: 100,
-    hue: 0,
+    
   })
 
   useEffect(() => {
@@ -121,7 +121,7 @@ export default function Home() {
       brightness: 100,
       contrast: 100,
       saturation: 100,
-      hue: 0,
+      
     })
     setCurrentView("camera")
   }
