@@ -254,24 +254,51 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     }
   }, [dragState.isDragging, handleDragMove, handleDragEnd]);
 
-  // =============== ROTATION: 90° BUTTON ===============
+ // =============== ROTATION: 90° BUTTON ===============
   const rotateImage = () => {
     const newRotation = (rotation + 90) % 360;
     setRotation(newRotation);
     
     // Swap dimensions only on 90/270
     if (newRotation % 180 !== 0) {
-      setImageDimensions(prev => ({
-        width: prev.height,
-        height: prev.width
-      }));
+      const oldWidth = imageDimensions.width;
+      const oldHeight = imageDimensions.height;
       
-      setCropArea(prev => ({
-        x: Math.min(prev.x, imageDimensions.height - 50),
-        y: Math.min(prev.y, imageDimensions.width - 50),
-        width: Math.min(prev.width, imageDimensions.height),
-        height: Math.min(prev.height, imageDimensions.width)
-      }));
+      setImageDimensions({
+        width: oldHeight,
+        height: oldWidth
+      });
+      
+      // Transform crop coordinates for 90° clockwise rotation
+      setCropArea(prev => {
+        // For 90° CW: new_x = old_y, new_y = (oldWidth - old_x - old_width)
+        // For 270° (or -90°): new_x = (oldHeight - old_y - old_height), new_y = old_x
+        const isClockwise = (newRotation === 90 || newRotation === 270);
+        
+        let newX, newY, newWidth, newHeight;
+        
+        if (newRotation === 90 || newRotation === -270) {
+          // 90° clockwise
+          newX = prev.y;
+          newY = oldWidth - prev.x - prev.width;
+          newWidth = prev.height;
+          newHeight = prev.width;
+        } else {
+          // 270° clockwise (or 90° counter-clockwise)
+          newX = oldHeight - prev.y - prev.height;
+          newY = prev.x;
+          newWidth = prev.height;
+          newHeight = prev.width;
+        }
+        
+        // Ensure crop stays within bounds
+        return {
+          x: Math.max(0, Math.min(newX, oldHeight - newWidth)),
+          y: Math.max(0, Math.min(newY, oldWidth - newHeight)),
+          width: Math.min(newWidth, oldHeight),
+          height: Math.min(newHeight, oldWidth)
+        };
+      });
     }
   };
 

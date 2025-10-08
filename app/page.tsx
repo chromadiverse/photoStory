@@ -8,7 +8,7 @@ import Cropper from "./components/cropper"
 import FilterPanel from "./components/filter-panel"
 import Preview from "./components/preview"
 import WelcomeModal from "./components/welcome-modal"
-import { Camera, Edit3, Sliders, Eye, ArrowLeft } from "lucide-react"
+import { Camera, Sliders, Search, ArrowLeft,Crop } from "lucide-react"
 import type { FilterSettings } from "./utils/filters"
 
 type ViewType = "camera" | "crop" | "filter" | "preview"
@@ -146,11 +146,11 @@ export default function Home() {
       case "camera":
         return <Camera className="w-8 h-8" />
       case "crop":
-        return <Edit3 className="w-8 h-8" />
+        return <Crop className="w-8 h-8" />
       case "filter":
         return <Sliders className="w-8 h-8" />
       case "preview":
-        return <Eye className="w-8 h-8" />
+        return <Search className="w-8 h-8" />
       default:
         return <Camera className="w-8 h-8" />
     }
