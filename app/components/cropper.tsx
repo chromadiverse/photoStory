@@ -182,11 +182,11 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       const scale = Math.min(scaleX, scaleY) * zoom
 
       // Transform delta based on rotation
-      const rad = (-rotation * Math.PI) / 180;
-      const cos = Math.cos(rad);
-      const sin = Math.sin(rad);
-      const transformedDeltaX = deltaX * cos - deltaY * sin;
-      const transformedDeltaY = deltaX * sin + deltaY * cos;
+      const rad = (-rotation * Math.PI) / 180
+      const cos = Math.cos(rad)
+      const sin = Math.sin(rad)
+      const transformedDeltaX = deltaX * cos - deltaY * sin
+      const transformedDeltaY = deltaX * sin + deltaY * cos
 
       const imageDeltaX = transformedDeltaX / scale
       const imageDeltaY = transformedDeltaY / scale
@@ -350,37 +350,37 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       const cos = Math.abs(Math.cos(rad))
       const newWidth = tempImg.width * cos + tempImg.height * sin
       const newHeight = tempImg.width * sin + tempImg.height * cos
-      
+
       canvas.width = newWidth
       canvas.height = newHeight
-      
+
       // Translate to center and rotate
       ctx.save()
       ctx.translate(newWidth / 2, newHeight / 2)
       ctx.rotate(rad)
       ctx.drawImage(tempImg, -tempImg.width / 2, -tempImg.height / 2)
       ctx.restore()
-      
+
       // Calculate the crop area in the rotated image space
       // The crop area coordinates need to be transformed to match the rotated image
       const cropCanvas = document.createElement("canvas")
       const cropCtx = cropCanvas.getContext("2d")
       if (!cropCtx) return
-      
+
       cropCanvas.width = cropArea.width
       cropCanvas.height = cropArea.height
-      
+
       // Draw the rotated image onto the crop canvas
       cropCtx.drawImage(
         canvas,
-        cropArea.x, 
+        cropArea.x,
         cropArea.y,
         cropArea.width,
         cropArea.height,
         0,
         0,
         cropArea.width,
-        cropArea.height
+        cropArea.height,
       )
 
       cropCanvas.toBlob(
