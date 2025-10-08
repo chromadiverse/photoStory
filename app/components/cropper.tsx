@@ -1,301 +1,305 @@
-'use client'
+"use client"
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { 
-  ArrowLeft,
-  RotateCw as RotateIcon,
-  RotateCcw as AutoStraightenIcon
-} from 'lucide-react';
-import { CapturedImage, CroppedImageData } from '../page';
+import type React from "react"
+
+import { useState, useRef, useEffect, useCallback } from "react"
+import { ArrowLeft, RotateCwIcon as RotateIcon, ArrowRightIcon as AutoStraightenIcon } from "lucide-react"
+import type { CapturedImage, CroppedImageData } from "../page"
 
 interface CropperProps {
-  image: CapturedImage;
-  onCropComplete: (cropData: CroppedImageData) => void;
-  onBack: () => void;
+  image: CapturedImage
+  onCropComplete: (cropData: CroppedImageData) => void
+  onBack: () => void
 }
 
 interface Point {
-  x: number;
-  y: number;
+  x: number
+  y: number
 }
 
 interface CropArea {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+  x: number
+  y: number
+  width: number
+  height: number
 }
 
 interface DragState {
-  isDragging: boolean;
-  dragType: 'none' | 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'w' | 'e' | 'move';
-  start: Point;
-  initialCrop: CropArea;
-  initialMouse: Point;
-  initialCropStart: Point;
+  isDragging: boolean
+  dragType: "none" | "nw" | "ne" | "sw" | "se" | "n" | "s" | "w" | "e" | "move"
+  start: Point
+  initialCrop: CropArea
+  initialMouse: Point
+  initialCropStart: Point
 }
 
 const printRatios = [
-  { label: 'Free', value: null },
-  { label: '3:2', value: 3/2 },
-  { label: '5:4', value: 5/4 },
-  { label: '7:5', value: 7/5 },
-  { label: '1:1', value: 1 },
-];
+  { label: "Free", value: null },
+  { label: "3:2", value: 3 / 2 },
+  { label: "5:4", value: 5 / 4 },
+  { label: "7:5", value: 7 / 5 },
+  { label: "1:1", value: 1 },
+]
 
 const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
-  const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
-  const [originalDimensions, setOriginalDimensions] = useState({ width: 0, height: 0 });
-  const [cropArea, setCropArea] = useState<CropArea>({ x: 0, y: 0, width: 0, height: 0 });
-  const [rotation, setRotation] = useState(0); // Continuous rotation in degrees
-  const [zoom, setZoom] = useState(0.5);
-  const [aspect, setAspect] = useState<number | null>(null);
-  const [selectedRatio, setSelectedRatio] = useState<string | null>(null);
-  const [dragState, setDragState] = useState<DragState>({ 
-    isDragging: false, 
-    dragType: 'none', 
-    start: { x: 0, y: 0 }, 
+  const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 })
+  const [originalDimensions, setOriginalDimensions] = useState({ width: 0, height: 0 })
+  const [cropArea, setCropArea] = useState<CropArea>({ x: 0, y: 0, width: 0, height: 0 })
+  const [rotation, setRotation] = useState(0) // Continuous rotation in degrees
+  const [zoom, setZoom] = useState(0.5)
+  const [aspect, setAspect] = useState<number | null>(null)
+  const [selectedRatio, setSelectedRatio] = useState<string | null>(null)
+  const [dragState, setDragState] = useState<DragState>({
+    isDragging: false,
+    dragType: "none",
+    start: { x: 0, y: 0 },
     initialCrop: { x: 0, y: 0, width: 0, height: 0 },
     initialMouse: { x: 0, y: 0 },
-    initialCropStart: { x: 0, y: 0 }
-  });
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [processedImage, setProcessedImage] = useState<string | null>(null);
-  const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null);
-  
-  const containerRef = useRef<HTMLDivElement>(null);
+    initialCropStart: { x: 0, y: 0 },
+  })
+  const [imageLoaded, setImageLoaded] = useState(false)
+  const [processedImage, setProcessedImage] = useState<string | null>(null)
+  const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null)
+
+  const containerRef = useRef<HTMLDivElement>(null)
 
   // Initialize image
   useEffect(() => {
-    const img = new Image();
+    const img = new Image()
     img.onload = () => {
-      const { width, height } = img;
-      setOriginalDimensions({ width, height });
-      setImageDimensions({ width, height });
-      setOriginalImageSrc(image.src);
-      setImageLoaded(true);
-      
+      const { width, height } = img
+      setOriginalDimensions({ width, height })
+      setImageDimensions({ width, height })
+      setOriginalImageSrc(image.src)
+      setImageLoaded(true)
+
       setCropArea({
         x: 0,
         y: 0,
         width: width,
-        height: height
-      });
-    };
-    img.src = image.src;
-  }, [image.src]);
-
-  const resizeImageToRatio = useCallback(async (targetRatio: number | null) => {
-    if (!originalImageSrc || targetRatio === null) {
-      setProcessedImage(null);
-      setImageDimensions({ width: originalDimensions.width, height: originalDimensions.height });
-      setCropArea({
-        x: 0,
-        y: 0,
-        width: originalDimensions.width,
-        height: originalDimensions.height
-      });
-      return;
+        height: height,
+      })
     }
+    img.src = image.src
+  }, [image.src])
 
-    const originalWidth = originalDimensions.width;
-    const originalHeight = originalDimensions.height;
-    const originalRatio = originalWidth / originalHeight;
+  const resizeImageToRatio = useCallback(
+    async (targetRatio: number | null) => {
+      if (!originalImageSrc || targetRatio === null) {
+        setProcessedImage(null)
+        setImageDimensions({ width: originalDimensions.width, height: originalDimensions.height })
+        setCropArea({
+          x: 0,
+          y: 0,
+          width: originalDimensions.width,
+          height: originalDimensions.height,
+        })
+        return
+      }
 
-    let newWidth: number, newHeight: number;
+      const originalWidth = originalDimensions.width
+      const originalHeight = originalDimensions.height
+      const originalRatio = originalWidth / originalHeight
 
-    if (originalRatio > targetRatio) {
-      newWidth = originalWidth;
-      newHeight = originalWidth / targetRatio;
-    } else {
-      newHeight = originalHeight;
-      newWidth = originalHeight * targetRatio;
-    }
+      let newWidth: number, newHeight: number
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+      if (originalRatio > targetRatio) {
+        newWidth = originalWidth
+        newHeight = originalWidth / targetRatio
+      } else {
+        newHeight = originalHeight
+        newWidth = originalHeight * targetRatio
+      }
 
-    canvas.width = newWidth;
-    canvas.height = newHeight;
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, newWidth, newHeight);
+      const canvas = document.createElement("canvas")
+      const ctx = canvas.getContext("2d")
+      if (!ctx) return
 
-    const tempImg = new Image();
-    tempImg.src = originalImageSrc;
-    await new Promise<void>((resolve) => tempImg.onload = () => resolve());
+      canvas.width = newWidth
+      canvas.height = newHeight
+      ctx.fillStyle = "white"
+      ctx.fillRect(0, 0, newWidth, newHeight)
 
-    const offsetX = (newWidth - originalWidth) / 2;
-    const offsetY = (newHeight - originalHeight) / 2;
-    ctx.drawImage(tempImg, offsetX, offsetY, originalWidth, originalHeight);
+      const tempImg = new Image()
+      tempImg.src = originalImageSrc
+      await new Promise<void>((resolve) => (tempImg.onload = () => resolve()))
 
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.95));
-    if (blob) {
-      const url = URL.createObjectURL(blob);
-      setProcessedImage(url);
-      setImageDimensions({ width: newWidth, height: newHeight });
-      setCropArea({ x: 0, y: 0, width: newWidth, height: newHeight });
-    }
-  }, [originalImageSrc, originalDimensions]);
+      const offsetX = (newWidth - originalWidth) / 2
+      const offsetY = (newHeight - originalHeight) / 2
+      ctx.drawImage(tempImg, offsetX, offsetY, originalWidth, originalHeight)
 
-  const handleRatioSelect = (ratioOption: typeof printRatios[0]) => {
-    setSelectedRatio(ratioOption.label);
-    setAspect(ratioOption.value);
-    resizeImageToRatio(ratioOption.value);
-  };
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.95))
+      if (blob) {
+        const url = URL.createObjectURL(blob)
+        setProcessedImage(url)
+        setImageDimensions({ width: newWidth, height: newHeight })
+        setCropArea({ x: 0, y: 0, width: newWidth, height: newHeight })
+      }
+    },
+    [originalImageSrc, originalDimensions],
+  )
+
+  const handleRatioSelect = (ratioOption: (typeof printRatios)[0]) => {
+    setSelectedRatio(ratioOption.label)
+    setAspect(ratioOption.value)
+    resizeImageToRatio(ratioOption.value)
+  }
 
   // Handle drag start
-  const handleDragStart = (e: React.MouseEvent | React.TouchEvent, dragType: DragState['dragType']) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent, dragType: DragState["dragType"]) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY
+
     setDragState({
       isDragging: true,
       dragType,
       start: { x: clientX, y: clientY },
       initialCrop: { ...cropArea },
       initialMouse: { x: clientX, y: clientY },
-      initialCropStart: { x: cropArea.x, y: cropArea.y }
-    });
-  };
+      initialCropStart: { x: cropArea.x, y: cropArea.y },
+    })
+  }
 
-  const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
-    if (!dragState.isDragging || !containerRef.current) return;
-    e.preventDefault();
-    
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    
-    const deltaX = clientX - dragState.start.x;
-    const deltaY = clientY - dragState.start.y;
-    
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const containerWidth = containerRect.width;
-    const containerHeight = containerRect.height;
-    const scaleX = containerWidth / imageDimensions.width;
-    const scaleY = containerHeight / imageDimensions.height;
-    const scale = Math.min(scaleX, scaleY) * zoom;
-    
-    const imageDeltaX = deltaX / scale;
-    const imageDeltaY = deltaY / scale;
-    
-    let newCrop = { ...dragState.initialCrop };
-    
-    switch (dragState.dragType) {
-      case 'nw':
-        newCrop.x = dragState.initialCropStart.x + imageDeltaX;
-        newCrop.y = dragState.initialCropStart.y + imageDeltaY;
-        newCrop.width = dragState.initialCrop.width - imageDeltaX;
-        newCrop.height = dragState.initialCrop.height - imageDeltaY;
-        break;
-      case 'ne':
-        newCrop.y = dragState.initialCropStart.y + imageDeltaY;
-        newCrop.width = dragState.initialCrop.width + imageDeltaX;
-        newCrop.height = dragState.initialCrop.height - imageDeltaY;
-        break;
-      case 'sw':
-        newCrop.x = dragState.initialCropStart.x + imageDeltaX;
-        newCrop.width = dragState.initialCrop.width - imageDeltaX;
-        newCrop.height = dragState.initialCrop.height + imageDeltaY;
-        break;
-      case 'se':
-        newCrop.width = dragState.initialCrop.width + imageDeltaX;
-        newCrop.height = dragState.initialCrop.height + imageDeltaY;
-        break;
-      case 'move':
-        newCrop.x = dragState.initialCropStart.x + imageDeltaX;
-        newCrop.y = dragState.initialCropStart.y + imageDeltaY;
-        break;
-      default:
-        return;
-    }
-    
-    if (aspect && dragState.dragType !== 'move') {
-      newCrop.height = newCrop.width / aspect;
-    }
-    
-    const minSize = 50;
-    newCrop.width = Math.max(minSize, newCrop.width);
-    newCrop.height = Math.max(minSize, newCrop.height);
-    newCrop.x = Math.max(0, Math.min(imageDimensions.width - newCrop.width, newCrop.x));
-    newCrop.y = Math.max(0, Math.min(imageDimensions.height - newCrop.height, newCrop.y));
-    newCrop.width = Math.min(imageDimensions.width - newCrop.x, newCrop.width);
-    newCrop.height = Math.min(imageDimensions.height - newCrop.y, newCrop.height);
-    
-    setCropArea(newCrop);
-  }, [dragState, aspect, imageDimensions, zoom]);
+  const handleDragMove = useCallback(
+    (e: MouseEvent | TouchEvent) => {
+      if (!dragState.isDragging || !containerRef.current) return
+      e.preventDefault()
+
+      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX
+      const clientY = "touches" in e ? e.touches[0].clientY : e.clientY
+
+      const deltaX = clientX - dragState.start.x
+      const deltaY = clientY - dragState.start.y
+
+      const containerRect = containerRef.current.getBoundingClientRect()
+      const containerWidth = containerRect.width
+      const containerHeight = containerRect.height
+      const scaleX = containerWidth / imageDimensions.width
+      const scaleY = containerHeight / imageDimensions.height
+      const scale = Math.min(scaleX, scaleY) * zoom
+
+      const imageDeltaX = deltaX / scale
+      const imageDeltaY = deltaY / scale
+
+      const newCrop = { ...dragState.initialCrop }
+
+      switch (dragState.dragType) {
+        case "nw":
+          newCrop.x = dragState.initialCropStart.x + imageDeltaX
+          newCrop.y = dragState.initialCropStart.y + imageDeltaY
+          newCrop.width = dragState.initialCrop.width - imageDeltaX
+          newCrop.height = dragState.initialCrop.height - imageDeltaY
+          break
+        case "ne":
+          newCrop.y = dragState.initialCropStart.y + imageDeltaY
+          newCrop.width = dragState.initialCrop.width + imageDeltaX
+          newCrop.height = dragState.initialCrop.height - imageDeltaY
+          break
+        case "sw":
+          newCrop.x = dragState.initialCropStart.x + imageDeltaX
+          newCrop.width = dragState.initialCrop.width - imageDeltaX
+          newCrop.height = dragState.initialCrop.height + imageDeltaY
+          break
+        case "se":
+          newCrop.width = dragState.initialCrop.width + imageDeltaX
+          newCrop.height = dragState.initialCrop.height + imageDeltaY
+          break
+        case "move":
+          newCrop.x = dragState.initialCropStart.x + imageDeltaX
+          newCrop.y = dragState.initialCropStart.y + imageDeltaY
+          break
+        default:
+          return
+      }
+
+      if (aspect && dragState.dragType !== "move") {
+        newCrop.height = newCrop.width / aspect
+      }
+
+      const minSize = 50
+      newCrop.width = Math.max(minSize, newCrop.width)
+      newCrop.height = Math.max(minSize, newCrop.height)
+      newCrop.x = Math.max(0, Math.min(imageDimensions.width - newCrop.width, newCrop.x))
+      newCrop.y = Math.max(0, Math.min(imageDimensions.height - newCrop.height, newCrop.y))
+      newCrop.width = Math.min(imageDimensions.width - newCrop.x, newCrop.width)
+      newCrop.height = Math.min(imageDimensions.height - newCrop.y, newCrop.height)
+
+      setCropArea(newCrop)
+    },
+    [dragState, aspect, imageDimensions, zoom],
+  )
 
   const handleDragEnd = useCallback(() => {
-    setDragState(prev => ({ ...prev, isDragging: false }));
-  }, []);
+    setDragState((prev) => ({ ...prev, isDragging: false }))
+  }, [])
 
   useEffect(() => {
     if (dragState.isDragging) {
-      const handleMouseMove = (e: MouseEvent) => handleDragMove(e);
+      const handleMouseMove = (e: MouseEvent) => handleDragMove(e)
       const handleTouchMove = (e: TouchEvent) => {
-        e.preventDefault();
-        handleDragMove(e);
-      };
-      
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('touchmove', handleTouchMove, { passive: false });
-      window.addEventListener('mouseup', handleDragEnd);
-      window.addEventListener('touchend', handleDragEnd);
-      
-      return () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('touchmove', handleTouchMove);
-        window.removeEventListener('mouseup', handleDragEnd);
-        window.removeEventListener('touchend', handleDragEnd);
-      };
-    }
-  }, [dragState.isDragging, handleDragMove, handleDragEnd]);
+        e.preventDefault()
+        handleDragMove(e)
+      }
 
- // =============== ROTATION: 90° BUTTON ===============
- const rotateImage = () => {
-    const newRotation = (rotation + 90) % 360;
-    setRotation(newRotation);
-    
+      window.addEventListener("mousemove", handleMouseMove)
+      window.addEventListener("touchmove", handleTouchMove, { passive: false })
+      window.addEventListener("mouseup", handleDragEnd)
+      window.addEventListener("touchend", handleDragEnd)
+
+      return () => {
+        window.removeEventListener("mousemove", handleMouseMove)
+        window.removeEventListener("touchmove", handleTouchMove)
+        window.removeEventListener("mouseup", handleDragEnd)
+        window.removeEventListener("touchend", handleDragEnd)
+      }
+    }
+  }, [dragState.isDragging, handleDragMove, handleDragEnd])
+
+  // =============== ROTATION: 90° BUTTON ===============
+  const rotateImage = () => {
+    const newRotation = (rotation + 90) % 360
+    setRotation(newRotation)
+
     // Swap dimensions only on 90/270
     if (newRotation % 180 !== 0) {
-      const oldWidth = imageDimensions.width;
-      const oldHeight = imageDimensions.height;
-      
+      const oldWidth = imageDimensions.width
+      const oldHeight = imageDimensions.height
+
       setImageDimensions({
         width: oldHeight,
-        height: oldWidth
-      });
-      
+        height: oldWidth,
+      })
+
       // Reset crop to fill entire rotated image
       if (aspect) {
         // If aspect ratio is locked, fit it to the new dimensions
-        const newWidth = oldHeight;
-        const newHeight = oldWidth;
-        const newRatio = newWidth / newHeight;
-        
+        const newWidth = oldHeight
+        const newHeight = oldWidth
+        const newRatio = newWidth / newHeight
+
         if (newRatio > aspect) {
           // Width is limiting factor
-          const cropHeight = newWidth / aspect;
-          const cropY = (newHeight - cropHeight) / 2;
+          const cropHeight = newWidth / aspect
+          const cropY = (newHeight - cropHeight) / 2
           setCropArea({
             x: 0,
             y: Math.max(0, cropY),
             width: newWidth,
-            height: Math.min(cropHeight, newHeight)
-          });
+            height: Math.min(cropHeight, newHeight),
+          })
         } else {
           // Height is limiting factor
-          const cropWidth = newHeight * aspect;
-          const cropX = (newWidth - cropWidth) / 2;
+          const cropWidth = newHeight * aspect
+          const cropX = (newWidth - cropWidth) / 2
           setCropArea({
             x: Math.max(0, cropX),
             y: 0,
             width: Math.min(cropWidth, newWidth),
-            height: newHeight
-          });
+            height: newHeight,
+          })
         }
       } else {
         // No aspect ratio - fill entire image
@@ -303,8 +307,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
           x: 0,
           y: 0,
           width: oldHeight,
-          height: oldWidth
-        });
+          height: oldWidth,
+        })
       }
     } else {
       // Rotating back to 0° or 180° - reset to original dimensions
@@ -312,189 +316,211 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         x: 0,
         y: 0,
         width: imageDimensions.width,
-        height: imageDimensions.height
-      });
+        height: imageDimensions.height,
+      })
     }
-  };
+  }
   // =============== AUTO-STRAIGHTEN ===============
   const autoStraighten = () => {
-    setRotation(0);
-  };
+    setRotation(0)
+  }
 
   // =============== SAVE ===============
   const handleSave = async () => {
-    const imgSrc = processedImage || image.src;
-    const tempImg = new Image();
-    tempImg.src = imgSrc;
-    
+    const imgSrc = processedImage || image.src
+    const tempImg = new Image()
+    tempImg.src = imgSrc
+
     tempImg.onload = () => {
       // First, create a canvas to rotate the entire image
-      const rotatedCanvas = document.createElement('canvas');
-      const rotatedCtx = rotatedCanvas.getContext('2d');
-      if (!rotatedCtx) return;
+      const rotatedCanvas = document.createElement("canvas")
+      const rotatedCtx = rotatedCanvas.getContext("2d")
+      if (!rotatedCtx) return
 
-      const rad = (rotation * Math.PI) / 180;
-      
+      const rad = (rotation * Math.PI) / 180
+
       // Calculate rotated dimensions
       if (rotation % 90 === 0) {
         // For 90° increments, use simple dimension swap
-        const times = Math.round(rotation / 90);
+        const times = Math.round(rotation / 90)
         if (times % 2 !== 0) {
-          rotatedCanvas.width = tempImg.height;
-          rotatedCanvas.height = tempImg.width;
+          rotatedCanvas.width = tempImg.height
+          rotatedCanvas.height = tempImg.width
         } else {
-          rotatedCanvas.width = tempImg.width;
-          rotatedCanvas.height = tempImg.height;
+          rotatedCanvas.width = tempImg.width
+          rotatedCanvas.height = tempImg.height
         }
       } else {
         // For other angles, calculate bounding box
-        const sin = Math.abs(Math.sin(rad));
-        const cos = Math.abs(Math.cos(rad));
-        rotatedCanvas.width = tempImg.width * cos + tempImg.height * sin;
-        rotatedCanvas.height = tempImg.width * sin + tempImg.height * cos;
+        const sin = Math.abs(Math.sin(rad))
+        const cos = Math.abs(Math.cos(rad))
+        rotatedCanvas.width = tempImg.width * cos + tempImg.height * sin
+        rotatedCanvas.height = tempImg.width * sin + tempImg.height * cos
       }
 
       // Rotate the entire image
-      rotatedCtx.save();
-      rotatedCtx.translate(rotatedCanvas.width / 2, rotatedCanvas.height / 2);
-      rotatedCtx.rotate(rad);
-      rotatedCtx.drawImage(tempImg, -tempImg.width / 2, -tempImg.height / 2);
-      rotatedCtx.restore();
+      rotatedCtx.save()
+      rotatedCtx.translate(rotatedCanvas.width / 2, rotatedCanvas.height / 2)
+      rotatedCtx.rotate(rad)
+      rotatedCtx.drawImage(tempImg, -tempImg.width / 2, -tempImg.height / 2)
+      rotatedCtx.restore()
 
       // Now crop from the rotated image
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+      const canvas = document.createElement("canvas")
+      const ctx = canvas.getContext("2d")
+      if (!ctx) return
 
-      canvas.width = cropArea.width;
-      canvas.height = cropArea.height;
-      
+      canvas.width = cropArea.width
+      canvas.height = cropArea.height
+
       ctx.drawImage(
         rotatedCanvas,
-        cropArea.x, cropArea.y, cropArea.width, cropArea.height,
-        0, 0, cropArea.width, cropArea.height
-      );
+        cropArea.x,
+        cropArea.y,
+        cropArea.width,
+        cropArea.height,
+        0,
+        0,
+        cropArea.width,
+        cropArea.height,
+      )
 
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const url = URL.createObjectURL(blob);
-          onCropComplete({
-            croppedImage: url,
-            croppedBlob: blob,
-            rotation: 0
-          });
-        }
-      }, 'image/jpeg', 0.92);
-    };
-  };
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            const url = URL.createObjectURL(blob)
+            onCropComplete({
+              croppedImage: url,
+              croppedBlob: blob,
+              rotation: 0,
+            })
+          }
+        },
+        "image/jpeg",
+        0.92,
+      )
+    }
+  }
 
   // Calculate display
-  const containerRect = containerRef.current?.getBoundingClientRect();
-  const containerWidth = containerRect?.width || 400;
-  const containerHeight = containerRect?.height || 400;
-  
-  const scaleX = containerWidth / imageDimensions.width;
-  const scaleY = containerHeight / imageDimensions.height;
-  const scale = Math.min(scaleX, scaleY) * zoom;
-  
-  const displayWidth = imageDimensions.width * scale;
-  const displayHeight = imageDimensions.height * scale;
-  
-  const offsetX = (containerWidth - displayWidth) / 2;
-  const offsetY = (containerHeight - displayHeight) / 2;
+  const containerRect = containerRef.current?.getBoundingClientRect()
+  const containerWidth = containerRect?.width || 400
+  const containerHeight = containerRect?.height || 400
+
+  const scaleX = containerWidth / imageDimensions.width
+  const scaleY = containerHeight / imageDimensions.height
+  const scale = Math.min(scaleX, scaleY) * zoom
+
+  const displayWidth = imageDimensions.width * scale
+  const displayHeight = imageDimensions.height * scale
+
+  const offsetX = (containerWidth - displayWidth) / 2
+  const offsetY = (containerHeight - displayHeight) / 2
 
   if (!imageLoaded) {
     return (
       <div className="h-full flex items-center justify-center bg-black">
         <div className="text-white text-lg">Loading...</div>
       </div>
-    );
+    )
   }
 
   return (
     <div className="h-full flex flex-col bg-black text-white">
       {/* Header */}
       <div className="px-4 py-3 flex items-center justify-between bg-black/80">
-        <button 
-          onClick={onBack} 
-          className="flex items-center gap-2 text-white hover:text-blue-300"
-        >
+        <button onClick={onBack} className="flex items-center gap-2 text-white hover:text-blue-300">
           <ArrowLeft className="w-5 h-5" />
           <span>Cancel</span>
         </button>
         <h2 className="font-bold text-lg">Edit</h2>
-        <button 
-          onClick={handleSave} 
-          className="text-blue-400 font-medium hover:text-blue-300"
-        >
+        <button onClick={handleSave} className="text-blue-400 font-medium hover:text-blue-300">
           Done
         </button>
       </div>
 
       {/* Crop Area */}
-      <div 
+      <div
         ref={containerRef}
         className="relative flex-1 min-h-0 bg-black overflow-hidden"
-        style={{ touchAction: 'none' }}
+        style={{ touchAction: "none" }}
       >
-        <img
-          src={processedImage || image.src}
-          alt="Crop source"
-          className="absolute select-none"
+        <div
+          className="absolute"
           style={{
             width: displayWidth,
             height: displayHeight,
             left: offsetX,
             top: offsetY,
             transform: `rotate(${rotation}deg)`,
-            transformOrigin: 'center center',
-          }}
-          draggable={false}
-        />
-        
-        <div 
-          className="absolute border-2 border-white border-opacity-80"
-          style={{
-            left: offsetX + cropArea.x * scale,
-            top: offsetY + cropArea.y * scale,
-            width: cropArea.width * scale,
-            height: cropArea.height * scale,
+            transformOrigin: "center center",
           }}
         >
-          <div className="absolute inset-0 pointer-events-none">
-            {[...Array(2)].map((_, i) => (
-              <div key={`v-${i}`} className="absolute top-0 bottom-0 border-l border-white border-opacity-30" style={{ left: `${(i + 1) * 33.33}%` }} />
-            ))}
-            {[...Array(2)].map((_, i) => (
-              <div key={`h-${i}`} className="absolute left-0 right-0 border-t border-white border-opacity-30" style={{ top: `${(i + 1) * 33.33}%` }} />
-            ))}
-          </div>
-          
-          {/* Center Move Button */}
+          <img
+            src={processedImage || image.src}
+            alt="Crop source"
+            className="absolute select-none"
+            style={{
+              width: displayWidth,
+              height: displayHeight,
+              left: 0,
+              top: 0,
+            }}
+            draggable={false}
+          />
+
           <div
-            className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center z-10"
-            style={{ touchAction: 'none' }}
-            onMouseDown={(e) => handleDragStart(e, 'move')}
-            onTouchStart={(e) => handleDragStart(e, 'move')}
+            className="absolute border-2 border-white border-opacity-80"
+            style={{
+              left: cropArea.x * scale,
+              top: cropArea.y * scale,
+              width: cropArea.width * scale,
+              height: cropArea.height * scale,
+            }}
           >
-            <div className="w-6 h-6 rounded-full bg-white/80"></div>
-          </div>
-          
-          {(['nw', 'ne', 'sw', 'se'] as const).map(pos => (
+            <div className="absolute inset-0 pointer-events-none">
+              {[...Array(2)].map((_, i) => (
+                <div
+                  key={`v-${i}`}
+                  className="absolute top-0 bottom-0 border-l border-white border-opacity-30"
+                  style={{ left: `${(i + 1) * 33.33}%` }}
+                />
+              ))}
+              {[...Array(2)].map((_, i) => (
+                <div
+                  key={`h-${i}`}
+                  className="absolute left-0 right-0 border-t border-white border-opacity-30"
+                  style={{ top: `${(i + 1) * 33.33}%` }}
+                />
+              ))}
+            </div>
+
+            {/* Center Move Button */}
             <div
-              key={pos}
-              className="absolute w-8 h-8 bg-white rounded-full border-2 border-white shadow-lg"
-              style={{
-                top: pos.includes('n') ? '-16px' : 'auto',
-                bottom: pos.includes('s') ? '-16px' : 'auto',
-                left: pos.includes('w') ? '-16px' : 'auto',
-                right: pos.includes('e') ? '-16px' : 'auto',
-                touchAction: 'none',
-              }}
-              onMouseDown={(e) => handleDragStart(e, pos)}
-              onTouchStart={(e) => handleDragStart(e, pos)}
-            />
-          ))}
+              className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center z-10"
+              style={{ touchAction: "none" }}
+              onMouseDown={(e) => handleDragStart(e, "move")}
+              onTouchStart={(e) => handleDragStart(e, "move")}
+            >
+              <div className="w-6 h-6 rounded-full bg-white/80"></div>
+            </div>
+
+            {(["nw", "ne", "sw", "se"] as const).map((pos) => (
+              <div
+                key={pos}
+                className="absolute w-8 h-8 bg-white rounded-full border-2 border-white shadow-lg"
+                style={{
+                  top: pos.includes("n") ? "-16px" : "auto",
+                  bottom: pos.includes("s") ? "-16px" : "auto",
+                  left: pos.includes("w") ? "-16px" : "auto",
+                  right: pos.includes("e") ? "-16px" : "auto",
+                  touchAction: "none",
+                }}
+                onMouseDown={(e) => handleDragStart(e, pos)}
+                onTouchStart={(e) => handleDragStart(e, pos)}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
@@ -521,9 +547,9 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
               key={ratio.label}
               onClick={() => handleRatioSelect(ratio)}
               className={`px-4 py-2.5 rounded-xl text-sm font-medium min-w-[60px] transition-colors ${
-                selectedRatio === ratio.label 
-                  ? 'bg-white text-black' 
-                  : 'bg-gray-700 text-white active:bg-gray-600 hover:bg-gray-600'
+                selectedRatio === ratio.label
+                  ? "bg-white text-black"
+                  : "bg-gray-700 text-white active:bg-gray-600 hover:bg-gray-600"
               }`}
             >
               {ratio.label}
@@ -580,7 +606,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Cropper;
+export default Cropper
