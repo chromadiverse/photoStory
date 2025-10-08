@@ -44,6 +44,7 @@ const printRatios = [
 const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 })
   const [originalDimensions, setOriginalDimensions] = useState({ width: 0, height: 0 })
+  const [rotatedBoundingBox, setRotatedBoundingBox] = useState({ width: 0, height: 0 })
   const [cropArea, setCropArea] = useState<CropArea>({ x: 0, y: 0, width: 0, height: 0 })
   const [rotation, setRotation] = useState(0) // Continuous rotation in degrees
   const [zoom, setZoom] = useState(0.5)
@@ -71,6 +72,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       const { width, height } = img
       setOriginalDimensions({ width, height })
       setImageDimensions({ width, height })
+      setRotatedBoundingBox({ width, height })
       setOriginalImageSrc(image.src)
       setImageLoaded(true)
 
@@ -178,8 +180,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       const containerRect = containerRef.current.getBoundingClientRect()
       const containerWidth = containerRect.width
       const containerHeight = containerRect.height
-      const scaleX = containerWidth / imageDimensions.width
-      const scaleY = containerHeight / imageDimensions.height
+      const scaleX = containerWidth / rotatedBoundingBox.width
+      const scaleY = containerHeight / rotatedBoundingBox.height
       const scale = Math.min(scaleX, scaleY) * zoom
 
       const imageDeltaX = deltaX / scale
@@ -223,14 +225,14 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       const minSize = 50
       newCrop.width = Math.max(minSize, newCrop.width)
       newCrop.height = Math.max(minSize, newCrop.height)
-      newCrop.x = Math.max(0, Math.min(imageDimensions.width - newCrop.width, newCrop.x))
-      newCrop.y = Math.max(0, Math.min(imageDimensions.height - newCrop.height, newCrop.y))
-      newCrop.width = Math.min(imageDimensions.width - newCrop.x, newCrop.width)
-      newCrop.height = Math.min(imageDimensions.height - newCrop.y, newCrop.height)
+      newCrop.x = Math.max(0, Math.min(rotatedBoundingBox.width - newCrop.width, newCrop.x))
+      newCrop.y = Math.max(0, Math.min(rotatedBoundingBox.height - newCrop.height, newCrop.y))
+      newCrop.width = Math.min(rotatedBoundingBox.width - newCrop.x, newCrop.width)
+      newCrop.height = Math.min(rotatedBoundingBox.height - newCrop.y, newCrop.height)
 
       setCropArea(newCrop)
     },
-    [dragState, aspect, imageDimensions, zoom],
+    [dragState, aspect, rotatedBoundingBox, zoom],
   )
 
   const handleDragEnd = useCallback(() => {
@@ -259,6 +261,17 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     }
   }, [dragState.isDragging, handleDragMove, handleDragEnd])
 
+  useEffect(() => {
+    const rad = (rotation * Math.PI) / 180
+    const sin = Math.abs(Math.sin(rad))
+    const cos = Math.abs(Math.cos(rad))
+
+    const rotatedWidth = imageDimensions.width * cos + imageDimensions.height * sin
+    const rotatedHeight = imageDimensions.width * sin + imageDimensions.height * cos
+
+    setRotatedBoundingBox({ width: rotatedWidth, height: rotatedHeight })
+  }, [rotation, imageDimensions])
+
   // =============== ROTATION: 90° BUTTON ===============
   const rotateImage = () => {
     const newRotation = (rotation + 90) % 360
@@ -274,45 +287,42 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         height: oldWidth,
       })
 
-      // Reset crop to fill entire rotated image
-      if (aspect) {
-        // If aspect ratio is locked, fit it to the new dimensions
-        const newWidth = oldHeight
-        const newHeight = oldWidth
-        const newRatio = newWidth / newHeight
+      const rad = (newRotation * Math.PI) / 180
+      const sin = Math.abs(Math.sin(rad))
+      const cos = Math.abs(Math.cos(rad))
+      const rotatedWidth = oldHeight * cos + oldWidth * sin
+      const rotatedHeight = oldHeight * sin + oldWidth * cos
 
+      if (aspect) {
+        const newRatio = rotatedWidth / rotatedHeight
         if (newRatio > aspect) {
-          // Width is limiting factor
-          const cropHeight = newWidth / aspect
-          const cropY = (newHeight - cropHeight) / 2
+          const cropHeight = rotatedWidth / aspect
+          const cropY = (rotatedHeight - cropHeight) / 2
           setCropArea({
             x: 0,
             y: Math.max(0, cropY),
-            width: newWidth,
-            height: Math.min(cropHeight, newHeight),
+            width: rotatedWidth,
+            height: Math.min(cropHeight, rotatedHeight),
           })
         } else {
-          // Height is limiting factor
-          const cropWidth = newHeight * aspect
-          const cropX = (newWidth - cropWidth) / 2
+          const cropWidth = rotatedHeight * aspect
+          const cropX = (rotatedWidth - cropWidth) / 2
           setCropArea({
             x: Math.max(0, cropX),
             y: 0,
-            width: Math.min(cropWidth, newWidth),
-            height: newHeight,
+            width: Math.min(cropWidth, rotatedWidth),
+            height: rotatedHeight,
           })
         }
       } else {
-        // No aspect ratio - fill entire image
         setCropArea({
           x: 0,
           y: 0,
-          width: imageDimensions.width,
-          height: imageDimensions.height,
+          width: rotatedWidth,
+          height: rotatedHeight,
         })
       }
     } else {
-      // Rotating back to 0° or 180° - reset to original dimensions
       setCropArea({
         x: 0,
         y: 0,
@@ -321,6 +331,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       })
     }
   }
+
   // =============== AUTO-STRAIGHTEN ===============
   const autoStraighten = () => {
     setRotation(0)
@@ -337,27 +348,22 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       const ctx = canvas.getContext("2d")
       if (!ctx) return
 
-      // Step 1: Rotate the original image
       const rad = (rotation * Math.PI) / 180
       const sin = Math.abs(Math.sin(rad))
       const cos = Math.abs(Math.cos(rad))
 
-      // Calculate rotated canvas dimensions
       const rotatedWidth = tempImg.width * cos + tempImg.height * sin
       const rotatedHeight = tempImg.width * sin + tempImg.height * cos
 
       canvas.width = rotatedWidth
       canvas.height = rotatedHeight
 
-      // Draw rotated image
       ctx.save()
       ctx.translate(rotatedWidth / 2, rotatedHeight / 2)
       ctx.rotate(rad)
       ctx.drawImage(tempImg, -tempImg.width / 2, -tempImg.height / 2)
       ctx.restore()
 
-      // Step 2: Crop from the rotated image
-      // The crop coordinates are already in the rotated image space
       const cropCanvas = document.createElement("canvas")
       const cropCtx = cropCanvas.getContext("2d")
       if (!cropCtx) return
@@ -365,7 +371,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       cropCanvas.width = cropArea.width
       cropCanvas.height = cropArea.height
 
-      // Extract the crop area from the rotated image
       cropCtx.drawImage(
         canvas,
         cropArea.x,
@@ -395,20 +400,21 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     }
   }
 
-  // Calculate display
   const containerRect = containerRef.current?.getBoundingClientRect()
   const containerWidth = containerRect?.width || 400
   const containerHeight = containerRect?.height || 400
 
-  const scaleX = containerWidth / imageDimensions.width
-  const scaleY = containerHeight / imageDimensions.height
+  const scaleX = containerWidth / rotatedBoundingBox.width
+  const scaleY = containerHeight / rotatedBoundingBox.height
   const scale = Math.min(scaleX, scaleY) * zoom
 
   const displayWidth = imageDimensions.width * scale
   const displayHeight = imageDimensions.height * scale
 
-  const offsetX = (containerWidth - displayWidth) / 2
-  const offsetY = (containerHeight - displayHeight) / 2
+  const rotatedDisplayWidth = rotatedBoundingBox.width * scale
+  const rotatedDisplayHeight = rotatedBoundingBox.height * scale
+  const offsetX = (containerWidth - rotatedDisplayWidth) / 2
+  const offsetY = (containerHeight - rotatedDisplayHeight) / 2
 
   if (!imageLoaded) {
     return (
@@ -444,8 +450,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
           style={{
             width: displayWidth,
             height: displayHeight,
-            left: offsetX,
-            top: offsetY,
+            left: offsetX + (rotatedDisplayWidth - displayWidth) / 2,
+            top: offsetY + (rotatedDisplayHeight - displayHeight) / 2,
             transform: `rotate(${rotation}deg)`,
             transformOrigin: "center center",
           }}
