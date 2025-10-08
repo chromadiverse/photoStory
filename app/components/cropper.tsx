@@ -255,7 +255,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   }, [dragState.isDragging, handleDragMove, handleDragEnd]);
 
  // =============== ROTATION: 90° BUTTON ===============
-   const rotateImage = () => {
+ const rotateImage = () => {
     const newRotation = (rotation + 90) % 360;
     setRotation(newRotation);
     
@@ -316,7 +316,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       });
     }
   };
-
   // =============== AUTO-STRAIGHTEN ===============
   const autoStraighten = () => {
     setRotation(0);
