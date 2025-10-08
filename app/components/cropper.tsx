@@ -26,7 +26,7 @@ interface CropArea {
 
 interface DragState {
   isDragging: boolean
-  dragType: "none" | "nw" | "ne" | "sw" | "se" | "n" | "s" | "w" | "e" | "move"
+  dragType: "none" | "nw" | "ne" | "sw" | "se" | "move"
   start: Point
   initialCrop: CropArea
   initialMouse: Point
@@ -62,6 +62,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
+  const imageRef = useRef<HTMLDivElement>(null)
 
   // Initialize image
   useEffect(() => {
@@ -181,15 +182,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       const scaleY = containerHeight / imageDimensions.height
       const scale = Math.min(scaleX, scaleY) * zoom
 
-      // Transform delta based on rotation
-      const rad = (-rotation * Math.PI) / 180
-      const cos = Math.cos(rad)
-      const sin = Math.sin(rad)
-      const transformedDeltaX = deltaX * cos - deltaY * sin
-      const transformedDeltaY = deltaX * sin + deltaY * cos
-
-      const imageDeltaX = transformedDeltaX / scale
-      const imageDeltaY = transformedDeltaY / scale
+      const imageDeltaX = deltaX / scale
+      const imageDeltaY = deltaY / scale
 
       const newCrop = { ...dragState.initialCrop }
 
@@ -236,7 +230,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
       setCropArea(newCrop)
     },
-    [dragState, aspect, imageDimensions, zoom, rotation],
+    [dragState, aspect, imageDimensions, zoom],
   )
 
   const handleDragEnd = useCallback(() => {
@@ -313,8 +307,8 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         setCropArea({
           x: 0,
           y: 0,
-          width: oldHeight,
-          height: oldWidth,
+          width: imageDimensions.width,
+          height: imageDimensions.height,
         })
       }
     } else {
@@ -339,30 +333,31 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     tempImg.src = imgSrc
 
     tempImg.onload = () => {
-      // Create canvas for the rotated image
       const canvas = document.createElement("canvas")
       const ctx = canvas.getContext("2d")
       if (!ctx) return
 
-      // Calculate the rotated dimensions
+      // Step 1: Rotate the original image
       const rad = (rotation * Math.PI) / 180
       const sin = Math.abs(Math.sin(rad))
       const cos = Math.abs(Math.cos(rad))
-      const newWidth = tempImg.width * cos + tempImg.height * sin
-      const newHeight = tempImg.width * sin + tempImg.height * cos
 
-      canvas.width = newWidth
-      canvas.height = newHeight
+      // Calculate rotated canvas dimensions
+      const rotatedWidth = tempImg.width * cos + tempImg.height * sin
+      const rotatedHeight = tempImg.width * sin + tempImg.height * cos
 
-      // Translate to center and rotate
+      canvas.width = rotatedWidth
+      canvas.height = rotatedHeight
+
+      // Draw rotated image
       ctx.save()
-      ctx.translate(newWidth / 2, newHeight / 2)
+      ctx.translate(rotatedWidth / 2, rotatedHeight / 2)
       ctx.rotate(rad)
       ctx.drawImage(tempImg, -tempImg.width / 2, -tempImg.height / 2)
       ctx.restore()
 
-      // Calculate the crop area in the rotated image space
-      // The crop area coordinates need to be transformed to match the rotated image
+      // Step 2: Crop from the rotated image
+      // The crop coordinates are already in the rotated image space
       const cropCanvas = document.createElement("canvas")
       const cropCtx = cropCanvas.getContext("2d")
       if (!cropCtx) return
@@ -370,7 +365,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       cropCanvas.width = cropArea.width
       cropCanvas.height = cropArea.height
 
-      // Draw the rotated image onto the crop canvas
+      // Extract the crop area from the rotated image
       cropCtx.drawImage(
         canvas,
         cropArea.x,
@@ -444,6 +439,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         style={{ touchAction: "none" }}
       >
         <div
+          ref={imageRef}
           className="absolute"
           style={{
             width: displayWidth,
@@ -466,59 +462,58 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
             }}
             draggable={false}
           />
+        </div>
 
-          <div
-            className="absolute border-2 border-white border-opacity-80"
-            style={{
-              left: cropArea.x * scale,
-              top: cropArea.y * scale,
-              width: cropArea.width * scale,
-              height: cropArea.height * scale,
-            }}
-          >
-            <div className="absolute inset-0 pointer-events-none">
-              {[...Array(2)].map((_, i) => (
-                <div
-                  key={`v-${i}`}
-                  className="absolute top-0 bottom-0 border-l border-white border-opacity-30"
-                  style={{ left: `${(i + 1) * 33.33}%` }}
-                />
-              ))}
-              {[...Array(2)].map((_, i) => (
-                <div
-                  key={`h-${i}`}
-                  className="absolute left-0 right-0 border-t border-white border-opacity-30"
-                  style={{ top: `${(i + 1) * 33.33}%` }}
-                />
-              ))}
-            </div>
-
-            {/* Center Move Button */}
-            <div
-              className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center z-10"
-              style={{ touchAction: "none" }}
-              onMouseDown={(e) => handleDragStart(e, "move")}
-              onTouchStart={(e) => handleDragStart(e, "move")}
-            >
-              <div className="w-6 h-6 rounded-full bg-white/80"></div>
-            </div>
-
-            {(["nw", "ne", "sw", "se"] as const).map((pos) => (
+        <div
+          className="absolute border-2 border-white border-opacity-80 pointer-events-none"
+          style={{
+            left: offsetX + cropArea.x * scale,
+            top: offsetY + cropArea.y * scale,
+            width: cropArea.width * scale,
+            height: cropArea.height * scale,
+          }}
+        >
+          <div className="absolute inset-0">
+            {[...Array(2)].map((_, i) => (
               <div
-                key={pos}
-                className="absolute w-8 h-8 bg-white rounded-full border-2 border-white shadow-lg"
-                style={{
-                  top: pos.includes("n") ? "-16px" : "auto",
-                  bottom: pos.includes("s") ? "-16px" : "auto",
-                  left: pos.includes("w") ? "-16px" : "auto",
-                  right: pos.includes("e") ? "-16px" : "auto",
-                  touchAction: "none",
-                }}
-                onMouseDown={(e) => handleDragStart(e, pos)}
-                onTouchStart={(e) => handleDragStart(e, pos)}
+                key={`v-${i}`}
+                className="absolute top-0 bottom-0 border-l border-white border-opacity-30"
+                style={{ left: `${(i + 1) * 33.33}%` }}
+              />
+            ))}
+            {[...Array(2)].map((_, i) => (
+              <div
+                key={`h-${i}`}
+                className="absolute left-0 right-0 border-t border-white border-opacity-30"
+                style={{ top: `${(i + 1) * 33.33}%` }}
               />
             ))}
           </div>
+
+          <div
+            className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center z-10 pointer-events-auto cursor-move"
+            style={{ touchAction: "none" }}
+            onMouseDown={(e) => handleDragStart(e, "move")}
+            onTouchStart={(e) => handleDragStart(e, "move")}
+          >
+            <div className="w-6 h-6 rounded-full bg-white/80"></div>
+          </div>
+
+          {(["nw", "ne", "sw", "se"] as const).map((pos) => (
+            <div
+              key={pos}
+              className="absolute w-8 h-8 bg-white rounded-full border-2 border-white shadow-lg pointer-events-auto cursor-pointer"
+              style={{
+                top: pos.includes("n") ? "-16px" : "auto",
+                bottom: pos.includes("s") ? "-16px" : "auto",
+                left: pos.includes("w") ? "-16px" : "auto",
+                right: pos.includes("e") ? "-16px" : "auto",
+                touchAction: "none",
+              }}
+              onMouseDown={(e) => handleDragStart(e, pos)}
+              onTouchStart={(e) => handleDragStart(e, pos)}
+            />
+          ))}
         </div>
       </div>
 
