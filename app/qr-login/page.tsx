@@ -1,13 +1,13 @@
-
+// app/qr-login/page.tsx - FIXED: Removed blocking health check
 'use client';
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { createClient } from '../lib/supabase/client'; 
+import { createClient } from '../utils/supabase/client'; 
 import { Loader2, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
-import { Button } from '../components/ui/button'; 
-import { ServerDebugConsole } from '../components/server-debut'; 
+import { Button } from '../components/ui/button';
+import { ServerDebugConsole } from '../components/server-debug'; 
 
 interface DebugInfo {
   error?: string;
@@ -19,11 +19,6 @@ interface DebugInfo {
     timestamp: string;
   };
   configError?: string;
-  networkTest?: {
-    canReachAlumni: boolean;
-    networkError?: string;
-    pingResult?: any;
-  };
   request?: {
     url: string;
     method: string;
@@ -78,41 +73,6 @@ function QRLoginContent() {
     handleQRLogin(token);
   }, [token]);
 
-  const testNetworkConnectivity = async (baseUrl: string): Promise<{ canReach: boolean; error?: string; result?: any }> => {
-    try {
-      console.log('🌐 Testing network connectivity to:', baseUrl);
-      
-      // Try a simple GET request to the base URL first
-      const testResponse = await fetch(`${baseUrl}/api/health-check`, {
-        method: 'GET',
-        mode: 'cors',
-        headers: {
-          'Accept': 'application/json',
-        },
-      });
-      
-      return {
-        canReach: true,
-        result: {
-          status: testResponse.status,
-          ok: testResponse.ok,
-          headers: Object.fromEntries(testResponse.headers.entries())
-        }
-      };
-    } catch (error: any) {
-      console.error('🚫 Network connectivity test failed:', error);
-      return {
-        canReach: false,
-        error: error.message,
-        result: {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        }
-      };
-    }
-  };
-
   const handleQRLogin = async (token: string) => {
     try {
       console.log('🔍 Starting QR login with token:', token);
@@ -139,24 +99,6 @@ function QRLoginContent() {
         throw new Error(error);
       }
 
-      // Test network connectivity first
-      const networkTest = await testNetworkConnectivity(baseUrl);
-      console.log('🔌 Network test result:', networkTest);
-      setDebugInfo(prev => ({ 
-        ...prev, 
-        networkTest: {
-          canReachAlumni: networkTest.canReach,
-          networkError: networkTest.error,
-          pingResult: networkTest.result
-        }
-      }));
-
-      if (!networkTest.canReach) {
-        setStatus('network-error');
-        setMessage(`Cannot connect to Alumni app: ${networkTest.error}`);
-        return;
-      }
-
       const apiUrl = `${baseUrl}/api/validate-qr-token`;
       console.log('🌐 API URL constructed:', apiUrl);
       
@@ -179,6 +121,7 @@ function QRLoginContent() {
         response = await fetch(apiUrl, {
           method: 'POST',
           mode: 'cors',
+          credentials: 'omit', // Don't send cookies for cross-origin
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
@@ -197,7 +140,7 @@ function QRLoginContent() {
             cause: fetchError.cause
           }
         }));
-        throw new Error(`Network request failed: ${fetchError.message}`);
+        throw new Error(`Network request failed: ${fetchError.message}. Please check if the main app is accessible.`);
       }
 
       // Log response details
@@ -231,8 +174,8 @@ function QRLoginContent() {
       console.log('✅ API Response data:', responseData);
       setDebugInfo(prev => ({ ...prev, successResponse: responseData }));
 
-      // FIXED: Check for new response format with session tokens
-       if (responseData.session && responseData.session.access_token) {
+      // Check for new response format with session tokens
+      if (responseData.session && responseData.session.access_token) {
         console.log('🔐 Setting session with tokens from response...');
 
         // Use the session tokens directly from the API response
@@ -346,9 +289,9 @@ function QRLoginContent() {
       } else if (error.message.includes('NEXT_PUBLIC_ALUMNI_API_URL')) {
         setStatus('error');
         setMessage('Configuration error: Alumni app URL not configured');
-      } else if (error.message.includes('Network request failed') || error.name === 'TypeError') {
+      } else if (error.message.includes('Network request failed') || error.message.includes('Load failed') || error.name === 'TypeError') {
         setStatus('network-error');
-        setMessage(`Network error: ${error.message}`);
+        setMessage(`Cannot connect to main app. This might be a CORS configuration issue.`);
       } else {
         setStatus('error');
         setMessage(error.message || 'Authentication failed');
