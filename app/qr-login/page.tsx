@@ -3,11 +3,11 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { createClient } from '../utils/supabase/client'; 
+import { createClient } from '../lib/supabase/client'; 
 import { Loader2, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
 import { Button } from '../components/ui/button';
-import { ServerDebugConsole } from '../components/server-debug'; 
+import { ServerDebugConsole } from '../components/server-debut'; 
 
 interface DebugInfo {
   error?: string;
