@@ -715,18 +715,8 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
 
     const corners = bestShape.corners;
     const isStable = isShapeStable;
-    
-    overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-    
-    overlayCtx.globalCompositeOperation = 'destination-out';
-    overlayCtx.beginPath();
-    overlayCtx.moveTo(corners[0].x, corners[0].y);
-    corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y));
-    overlayCtx.closePath();
-    overlayCtx.fill();
-    
-    overlayCtx.globalCompositeOperation = 'source-over';
+
+    // Only draw the border — no black overlay, no hole
     overlayCtx.strokeStyle = isStable ? '#00FF00' : '#00AAFF';
     overlayCtx.lineWidth = isStable ? 3 : 2;
     overlayCtx.setLineDash(isStable ? [] : [20, 15]);
@@ -740,6 +730,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     overlayCtx.setLineDash([]);
     overlayCtx.shadowBlur = 0;
 
+    // Draw corner dots
     corners.forEach((corner) => {
       overlayCtx.fillStyle = isStable ? '#00FF00' : '#00AAFF';
       overlayCtx.beginPath();
@@ -752,6 +743,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       overlayCtx.fill();
     });
     
+    // Draw label (centered on shape)
     const centerX = corners.reduce((sum, c) => sum + c.x, 0) / corners.length;
     const centerY = corners.reduce((sum, c) => sum + c.y, 0) / corners.length;
     
