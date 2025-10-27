@@ -912,51 +912,52 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     });
   };
 
-  const handleCapture = useCallback(async () => {
-    if (!webcamRef.current) return;
+ const handleCapture = useCallback(async () => {
+  if (!webcamRef.current) return;
+  
+  setIsCapturing(true);
+  try {
+    const video = webcamRef.current.video!;
     
-    setIsCapturing(true);
-    try {
-      const video = webcamRef.current.video!;
-      
-      console.log('Camera actual resolution:', video.videoWidth, 'x', video.videoHeight);
-      
-      const captureCanvas = document.createElement('canvas');
-      captureCanvas.width = video.videoWidth;
-      captureCanvas.height = video.videoHeight;
-      const ctx = captureCanvas.getContext('2d')!;
-      ctx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
-      
-      const imageSrc = captureCanvas.toDataURL('image/jpeg', 0.95);
+    console.log('Camera actual resolution:', video.videoWidth, 'x', video.videoHeight);
+    
+    const captureCanvas = document.createElement('canvas');
+    captureCanvas.width = video.videoWidth;
+    captureCanvas.height = video.videoHeight;
+    const ctx = captureCanvas.getContext('2d')!;
+    ctx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+    
+    const imageSrc = captureCanvas.toDataURL('image/jpeg', 0.95);
 
-      if (imageSrc) {
-        let finalImageSrc = imageSrc;
-        let finalBlob: Blob;
+    if (imageSrc) {
+      let finalImageSrc = imageSrc;
+      let finalBlob: Blob;
 
-        if (bestShape && canvasRef.current) {
-          finalImageSrc = await cropAndCorrectPerspective(imageSrc, bestShape.corners, canvasRef.current);
-        }
-
-        const response = await fetch(finalImageSrc);
-        finalBlob = await response.blob();
-        
-        const image = new Image();
-        image.onload = () => {
-          onImageCapture({
-            src: finalImageSrc,
-            blob: finalBlob,
-            width: image.width,
-            height: image.height
-          });
-        };
-        image.src = finalImageSrc;
+      // Only apply perspective correction if auto-detection is enabled AND a shape is found
+      if (isAutoDetectionEnabled && bestShape && canvasRef.current) {
+        finalImageSrc = await cropAndCorrectPerspective(imageSrc, bestShape.corners, canvasRef.current);
       }
-    } catch (error) {
-      console.error('Error capturing image:', error);
-    } finally {
-      setIsCapturing(false);
+
+      const response = await fetch(finalImageSrc);
+      finalBlob = await response.blob();
+      
+      const image = new Image();
+      image.onload = () => {
+        onImageCapture({
+          src: finalImageSrc,
+          blob: finalBlob,
+          width: image.width,
+          height: image.height
+        });
+      };
+      image.src = finalImageSrc;
     }
-  }, [onImageCapture, bestShape]);
+  } catch (error) {
+    console.error('Error capturing image:', error);
+  } finally {
+    setIsCapturing(false);
+  }
+}, [onImageCapture, bestShape, isAutoDetectionEnabled]);
 
   const handleFileCapture = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -1066,7 +1067,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     {/* Main capture button - stays green when document is found */}
     <button
       onClick={hasCamera ? handleCapture : openNativeCamera}
-      disabled={isCapturing || (hasCamera && !bestShape)}
+      disabled={isCapturing || (hasCamera && isAutoDetectionEnabled && !bestShape)}
       className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
         isShapeStable && bestShape
           ? 'bg-green-500 hover:bg-green-400 ring-6 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50' 

@@ -322,64 +322,108 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   }, [rotation, imageDimensions])
 
   // =============== ROTATION: 90° BUTTON ===============
-  const rotateImage = () => {
-    const newRotation = (rotation + 90) % 360
-    setRotation(newRotation)
+const rotateImage = () => {
+  const newRotation = (rotation + 90) % 360;
+  setRotation(newRotation);
 
-    // Swap dimensions only on 90/270
-    if (newRotation % 180 !== 0) {
-      const oldWidth = imageDimensions.width
-      const oldHeight = imageDimensions.height
+  // Swap dimensions only on 90/270 degree rotations
+  if (newRotation % 180 !== 0) {
+    // Update imageDimensions to swapped values
+    setImageDimensions(prev => ({
+      width: prev.height,
+      height: prev.width,
+    }));
 
-      setImageDimensions({
-        width: oldHeight,
-        height: oldWidth,
-      })
+    // Calculate new bounding box dimensions after rotation
+    const rad = (newRotation * Math.PI) / 180;
+    const sin = Math.abs(Math.sin(rad));
+    const cos = Math.abs(Math.cos(rad));
+    const newBbWidth = originalDimensions.height * cos + originalDimensions.width * sin;
+    const newBbHeight = originalDimensions.height * sin + originalDimensions.width * cos;
 
-      const rad = (newRotation * Math.PI) / 180
-      const sin = Math.abs(Math.sin(rad))
-      const cos = Math.abs(Math.cos(rad))
-      const rotatedWidth = oldHeight * cos + oldWidth * sin
-      const rotatedHeight = oldHeight * sin + oldWidth * cos
+    setRotatedBoundingBox({
+      width: newBbWidth,
+      height: newBbHeight,
+    });
 
-      if (aspect) {
-        const newRatio = rotatedWidth / rotatedHeight
-        if (newRatio > aspect) {
-          const cropHeight = rotatedWidth / aspect
-          const cropY = (rotatedHeight - cropHeight) / 2
-          setCropArea({
-            x: 0,
-            y: Math.max(0, cropY),
-            width: rotatedWidth,
-            height: Math.min(cropHeight, rotatedHeight),
-          })
-        } else {
-          const cropWidth = rotatedHeight * aspect
-          const cropX = (rotatedWidth - cropWidth) / 2
-          setCropArea({
-            x: Math.max(0, cropX),
-            y: 0,
-            width: Math.min(cropWidth, rotatedWidth),
-            height: rotatedHeight,
-          })
-        }
+    // Adjust crop area to fit within the new bounds and maintain aspect ratio if set
+    if (aspect) {
+      // Calculate potential crop dimensions based on aspect ratio
+      let newCropWidth, newCropHeight;
+      if (newBbWidth / newBbHeight > aspect) {
+        // Fit height, calculate width
+        newCropHeight = newBbHeight;
+        newCropWidth = newBbHeight * aspect;
       } else {
-        setCropArea({
-          x: 0,
-          y: 0,
-          width: rotatedWidth,
-          height: rotatedHeight,
-        })
+        // Fit width, calculate height
+        newCropWidth = newBbWidth;
+        newCropHeight = newBbWidth / aspect;
       }
+      
+      setCropArea({
+        x: (newBbWidth - newCropWidth) / 2,
+        y: (newBbHeight - newCropHeight) / 2,
+        width: newCropWidth,
+        height: newCropHeight,
+      });
     } else {
+      // Free-form crop: fill the new bounding box
       setCropArea({
         x: 0,
         y: 0,
-        width: imageDimensions.width,
-        height: imageDimensions.height,
-      })
+        width: newBbWidth,
+        height: newBbHeight,
+      });
+    }
+  } else {
+    // Rotation is 0 or 180 degrees, dimensions are back to original orientation
+    setImageDimensions({
+      width: originalDimensions.width,
+      height: originalDimensions.height,
+    });
+
+    // Calculate bounding box for 0/180 deg rotation
+    const rad = (newRotation * Math.PI) / 180;
+    const sin = Math.abs(Math.sin(rad));
+    const cos = Math.abs(Math.cos(rad));
+    const newBbWidth = originalDimensions.width * cos + originalDimensions.height * sin;
+    const newBbHeight = originalDimensions.width * sin + originalDimensions.height * cos;
+
+    setRotatedBoundingBox({
+      width: newBbWidth,
+      height: newBbHeight,
+    });
+
+    if (aspect) {
+      // Calculate potential crop dimensions based on aspect ratio
+      let newCropWidth, newCropHeight;
+      if (newBbWidth / newBbHeight > aspect) {
+        // Fit height, calculate width
+        newCropHeight = newBbHeight;
+        newCropWidth = newBbHeight * aspect;
+      } else {
+        // Fit width, calculate height
+        newCropWidth = newBbWidth;
+        newCropHeight = newBbWidth / aspect;
+      }
+      
+      setCropArea({
+        x: (newBbWidth - newCropWidth) / 2,
+        y: (newBbHeight - newCropHeight) / 2,
+        width: newCropWidth,
+        height: newCropHeight,
+      });
+    } else {
+      // Free-form crop: fill the bounding box
+      setCropArea({
+        x: 0,
+        y: 0,
+        width: newBbWidth,
+        height: newBbHeight,
+      });
     }
   }
+};
 
   // =============== AUTO-STRAIGHTEN ===============
   const autoStraighten = () => {
