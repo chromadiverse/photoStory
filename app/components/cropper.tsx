@@ -41,7 +41,7 @@ const printRatios = [
   { label: "1:1", value: 1 },
 ]
 
-const Cropper: React.FC<CropperProps> => {
+const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 })
   const [originalDimensions, setOriginalDimensions] = useState({ width: 0, height: 0 })
   const [rotatedBoundingBox, setRotatedBoundingBox] = useState({ width: 0, height: 0 })
@@ -197,39 +197,39 @@ const Cropper: React.FC<CropperProps> => {
           case "nw":
             const newWidthNw = dragState.initialCrop.width - imageDeltaX;
             const newHeightNw = newWidthNw / effectiveAspect;
-
+            
             newCrop.x = dragState.initialCropStart.x + imageDeltaX;
             newCrop.y = dragState.initialCropStart.y + (dragState.initialCrop.height - newHeightNw);
             newCrop.width = newWidthNw;
             newCrop.height = newHeightNw;
             break;
-
+            
           case "ne":
             const newWidthNe = dragState.initialCrop.width + imageDeltaX;
             const newHeightNe = newWidthNe / effectiveAspect;
-
+            
             newCrop.y = dragState.initialCropStart.y + (dragState.initialCrop.height - newHeightNe);
             newCrop.width = newWidthNe;
             newCrop.height = newHeightNe;
             break;
-
+            
           case "sw":
             const newWidthSw = dragState.initialCrop.width - imageDeltaX;
             const newHeightSw = newWidthSw / effectiveAspect;
-
+            
             newCrop.x = dragState.initialCropStart.x + imageDeltaX;
             newCrop.width = newWidthSw;
             newCrop.height = newHeightSw;
             break;
-
+            
           case "se":
             const newWidthSe = dragState.initialCrop.width + imageDeltaX;
             const newHeightSe = newWidthSe / effectiveAspect;
-
+            
             newCrop.width = newWidthSe;
             newCrop.height = newHeightSe;
             break;
-
+            
           default:
             return
         }
@@ -317,6 +317,59 @@ const Cropper: React.FC<CropperProps> => {
   const rotateImage = () => {
     const newRotation = (rotation + 90) % 360
     setRotation(newRotation)
+
+    if (newRotation % 180 !== 0) {
+      const oldWidth = imageDimensions.width
+      const oldHeight = imageDimensions.height
+
+      setImageDimensions({
+        width: oldHeight,
+        height: oldWidth,
+      })
+
+      const rad = (newRotation * Math.PI) / 180
+      const sin = Math.abs(Math.sin(rad))
+      const cos = Math.abs(Math.cos(rad))
+      const rotatedWidth = oldHeight * cos + oldWidth * sin
+      const rotatedHeight = oldHeight * sin + oldWidth * cos
+
+      if (aspect) {
+        const newRatio = rotatedWidth / rotatedHeight
+        if (newRatio > aspect) {
+          const cropHeight = rotatedWidth / aspect
+          const cropY = (rotatedHeight - cropHeight) / 2
+          setCropArea({
+            x: 0,
+            y: Math.max(0, cropY),
+            width: rotatedWidth,
+            height: Math.min(cropHeight, rotatedHeight),
+          })
+        } else {
+          const cropWidth = rotatedHeight * aspect
+          const cropX = (rotatedWidth - cropWidth) / 2
+          setCropArea({
+            x: Math.max(0, cropX),
+            y: 0,
+            width: Math.min(cropWidth, rotatedWidth),
+            height: rotatedHeight,
+          })
+        }
+      } else {
+        setCropArea({
+          x: 0,
+          y: 0,
+          width: rotatedWidth,
+          height: rotatedHeight,
+        })
+      }
+    } else {
+      setCropArea({
+        x: 0,
+        y: 0,
+        width: imageDimensions.width,
+        height: imageDimensions.height,
+      })
+    }
   }
 
   const autoStraighten = () => {
@@ -328,7 +381,7 @@ const Cropper: React.FC<CropperProps> => {
     const tempImg = new Image()
     tempImg.src = imgSrc
 
-    tempImg.onload = async () => {
+    tempImg.onload = () => {
       const canvas = document.createElement("canvas")
       const ctx = canvas.getContext("2d")
       if (!ctx) return
@@ -336,11 +389,9 @@ const Cropper: React.FC<CropperProps> => {
       const rad = (rotation * Math.PI) / 180
       const sin = Math.abs(Math.sin(rad))
       const cos = Math.abs(Math.cos(rad))
-      const originalWidth = tempImg.width
-      const originalHeight = tempImg.height
 
-      const rotatedWidth = originalWidth * cos + originalHeight * sin
-      const rotatedHeight = originalWidth * sin + originalHeight * cos
+      const rotatedWidth = tempImg.width * cos + tempImg.height * sin
+      const rotatedHeight = tempImg.width * sin + tempImg.height * cos
 
       canvas.width = rotatedWidth
       canvas.height = rotatedHeight
@@ -348,78 +399,28 @@ const Cropper: React.FC<CropperProps> => {
       ctx.save()
       ctx.translate(rotatedWidth / 2, rotatedHeight / 2)
       ctx.rotate(rad)
-      ctx.imageSmoothingEnabled = true
-      ctx.imageSmoothingQuality = 'high'
-      ctx.drawImage(tempImg, -originalWidth / 2, -originalHeight / 2)
+      ctx.drawImage(tempImg, -tempImg.width / 2, -tempImg.height / 2)
       ctx.restore()
-
-      const origCrop = { ...cropArea }
-
-      const corners = [
-        { x: origCrop.x, y: origCrop.y },
-        { x: origCrop.x + origCrop.width, y: origCrop.y },
-        { x: origCrop.x + origCrop.width, y: origCrop.y + origCrop.height },
-        { x: origCrop.x, y: origCrop.y + origCrop.height }
-      ]
-
-      const cosR = Math.cos(rad)
-      const sinR = Math.sin(rad)
-      const centerX = originalWidth / 2
-      const centerY = originalHeight / 2
-
-      const rotatedCorners = corners.map(corner => {
-        const x1 = corner.x - centerX
-        const y1 = corner.y - centerY
-        const x2 = x1 * cosR - y1 * sinR
-        const y2 = x1 * sinR + y1 * cosR
-        const rotatedCenterX = rotatedWidth / 2
-        const rotatedCenterY = rotatedHeight / 2
-        return {
-          x: rotatedCenterX + x2,
-          y: rotatedCenterY + y2
-        }
-      })
-
-      const minX = Math.min(...rotatedCorners.map(p => p.x))
-      const maxX = Math.max(...rotatedCorners.map(p => p.x))
-      const minY = Math.min(...rotatedCorners.map(p => p.y))
-      const maxY = Math.max(...rotatedCorners.map(p => p.y))
-
-      const cropX = minX
-      const cropY = minY
-      const cropW = maxX - minX
-      const cropH = maxY - minY
-
-      const safeCropX = Math.max(0, Math.min(rotatedWidth - cropW, cropX))
-      const safeCropY = Math.max(0, Math.min(rotatedHeight - cropH, cropY))
-      const safeCropW = Math.min(cropW, rotatedWidth - safeCropX)
-      const safeCropH = Math.min(cropH, rotatedHeight - safeCropY)
-
-      if (safeCropW <= 0 || safeCropH <= 0) {
-        console.error("Invalid crop area after rotation")
-        return
-      }
 
       const cropCanvas = document.createElement("canvas")
       const cropCtx = cropCanvas.getContext("2d")
       if (!cropCtx) return
 
-      cropCanvas.width = safeCropW
-      cropCanvas.height = safeCropH
+      cropCanvas.width = cropArea.width
+      cropCanvas.height = cropArea.height
 
       cropCtx.drawImage(
         canvas,
-        safeCropX,
-        safeCropY,
-        safeCropW,
-        safeCropH,
+        cropArea.x,
+        cropArea.y,
+        cropArea.width,
+        cropArea.height,
         0,
         0,
-        safeCropW,
-        safeCropH,
+        cropArea.width,
+        cropArea.height,
       )
 
-      const quality = 0.92
       cropCanvas.toBlob(
         (blob) => {
           if (blob) {
@@ -429,17 +430,11 @@ const Cropper: React.FC<CropperProps> => {
               croppedBlob: blob,
               rotation: 0,
             })
-          } else {
-            console.error("Failed to create blob from cropped canvas.")
           }
         },
         "image/jpeg",
-        quality
+        0.92,
       )
-    }
-
-    tempImg.onerror = () => {
-      console.error("Failed to load image for saving:", imgSrc)
     }
   }
 
@@ -622,7 +617,47 @@ const Cropper: React.FC<CropperProps> => {
               max="45"
               step="0.5"
               value={rotation}
-              onChange={(e) => setRotation(Number(e.target.value))}
+              onChange={(e) => {
+                const newRotation = Number(e.target.value);
+                setRotation(newRotation);
+
+                const rad = (newRotation * Math.PI) / 180;
+                const sin = Math.abs(Math.sin(rad));
+                const cos = Math.abs(Math.cos(rad));
+                const rotatedWidth = originalDimensions.width * cos + originalDimensions.height * sin;
+                const rotatedHeight = originalDimensions.width * sin + originalDimensions.height * cos;
+
+                setRotatedBoundingBox({ width: rotatedWidth, height: rotatedHeight });
+
+                if (aspect) {
+                  if (rotatedWidth / rotatedHeight > aspect) {
+                    const cropHeight = rotatedWidth / aspect;
+                    const cropY = (rotatedHeight - cropHeight) / 2;
+                    setCropArea({
+                      x: 0,
+                      y: Math.max(0, cropY),
+                      width: rotatedWidth,
+                      height: Math.min(cropHeight, rotatedHeight),
+                    });
+                  } else {
+                    const cropWidth = rotatedHeight * aspect;
+                    const cropX = (rotatedWidth - cropWidth) / 2;
+                    setCropArea({
+                      x: Math.max(0, cropX),
+                      y: 0,
+                      width: Math.min(cropWidth, rotatedWidth),
+                      height: rotatedHeight,
+                    });
+                  }
+                } else {
+                  setCropArea({
+                    x: 0,
+                    y: 0,
+                    width: rotatedWidth,
+                    height: rotatedHeight,
+                  });
+                }
+              }}
               className="w-full h-2.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500 touch-manipulation"
             />
           </div>
