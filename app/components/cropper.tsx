@@ -7,7 +7,7 @@ import { ArrowLeft, RotateCw, ArrowRight } from "lucide-react"
 
 interface CapturedImage {
   src: string
-  timestamp: number
+  timestamp?: number
 }
 
 interface CroppedImageData {
