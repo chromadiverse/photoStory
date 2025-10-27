@@ -655,123 +655,114 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   }, [isDetectionReady, hasCamera, bestShape, deviceType, performanceTier, isAutoDetectionEnabled]);
 
   const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], bestShape: DetectedShape | null) => {
-    const overlayCtx = overlayCanvas.getContext('2d');
-    if (!overlayCtx) return;
+  const overlayCtx = overlayCanvas.getContext('2d');
+  if (!overlayCtx) return;
 
-    overlayCanvas.width = canvasRef.current?.width || 0;
-    overlayCanvas.height = canvasRef.current?.height || 0;
-    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  overlayCanvas.width = canvasRef.current?.width || 0;
+  overlayCanvas.height = canvasRef.current?.height || 0;
+  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
 
-    if (!bestShape) {
-      const centerX = overlayCanvas.width / 2;
-      const centerY = overlayCanvas.height / 2;
-      
-      overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-      overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-      
-      const guideWidth = Math.min(overlayCanvas.width * 0.9, 600);
-      const guideHeight = Math.min(overlayCanvas.height * 0.7, 400);
-      const guideX = (overlayCanvas.width - guideWidth) / 2;
-      const guideY = (overlayCanvas.height - guideHeight) / 2;
-      
-      overlayCtx.strokeStyle = '#FFFFFF';
-      overlayCtx.lineWidth = 3;
-      overlayCtx.setLineDash([10, 10]);
-      overlayCtx.strokeRect(guideX, guideY, guideWidth, guideHeight);
-      overlayCtx.setLineDash([]);
-      
-      overlayCtx.fillStyle = '#FFFFFF';
-      overlayCtx.font = 'bold 24px Arial';
-      overlayCtx.textAlign = 'center';
-      overlayCtx.textBaseline = 'middle';
-      overlayCtx.fillText(
-        'Position document in frame',
-        centerX,
-        guideY - 40
-      );
-      overlayCtx.font = '18px Arial';
-      overlayCtx.fillText(
-        'Works with monitors, papers, books, photos',
-        centerX,
-        guideY + guideHeight + 40
-      );
-      return;
-    }
+  if (!bestShape) {
+    const centerX = overlayCanvas.width / 2;
+    const centerY = overlayCanvas.height / 2;
+    
+    overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    
+    const guideWidth = Math.min(overlayCanvas.width * 0.9, 600);
+    const guideHeight = Math.min(overlayCanvas.height * 0.7, 400);
+    const guideX = (overlayCanvas.width - guideWidth) / 2;
+    const guideY = (overlayCanvas.height - guideHeight) / 2;
+    
+    overlayCtx.strokeStyle = '#FFFFFF';
+    overlayCtx.lineWidth = 3;
+    overlayCtx.setLineDash([10, 10]);
+    overlayCtx.strokeRect(guideX, guideY, guideWidth, guideHeight);
+    overlayCtx.setLineDash([]);
+    
+    overlayCtx.fillStyle = '#FFFFFF';
+    overlayCtx.font = 'bold 24px Arial';
+    overlayCtx.textAlign = 'center';
+    overlayCtx.textBaseline = 'middle';
+    overlayCtx.fillText(
+      'Position document in frame',
+      centerX,
+      guideY - 40
+    );
+    overlayCtx.font = '18px Arial';
+    overlayCtx.fillText(
+      'Works with monitors, papers, books, photos',
+      centerX,
+      guideY + guideHeight + 40
+    );
+    return;
+  }
 
-    // Draw all detected shapes as potential candidates
-    shapes.forEach(shape => {
-      if (shape.confidence < 30) return;
-      
-      const corners = shape.corners;
-      overlayCtx.strokeStyle = 'rgba(100, 200, 255, 0.4)';
-      overlayCtx.lineWidth = 1;
-      overlayCtx.setLineDash([5, 5]);
-      overlayCtx.beginPath();
-      overlayCtx.moveTo(corners[0].x, corners[0].y);
-      corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y));
-      overlayCtx.closePath();
-      overlayCtx.stroke();
-    });
-
-    const corners = bestShape.corners;
-    const isStable = isShapeStable;
-
-    // Only draw the border — no black overlay, no hole
-    overlayCtx.strokeStyle = isStable ? '#00FF00' : '#00AAFF';
-    overlayCtx.lineWidth = isStable ? 3 : 2;
-    overlayCtx.setLineDash(isStable ? [] : [20, 15]);
-    overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-    overlayCtx.shadowBlur = 4;
+  // Draw all detected shapes as potential candidates
+  shapes.forEach(shape => {
+    if (shape.confidence < 30) return;
+    
+    const corners = shape.corners;
+    overlayCtx.strokeStyle = 'rgba(100, 200, 255, 0.4)';
+    overlayCtx.lineWidth = 1;
+    overlayCtx.setLineDash([5, 5]);
     overlayCtx.beginPath();
     overlayCtx.moveTo(corners[0].x, corners[0].y);
     corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y));
     overlayCtx.closePath();
     overlayCtx.stroke();
-    overlayCtx.setLineDash([]);
-    overlayCtx.shadowBlur = 0;
+  });
 
-    // Draw corner dots
-    corners.forEach((corner) => {
-      overlayCtx.fillStyle = isStable ? '#00FF00' : '#00AAFF';
-      overlayCtx.beginPath();
-      overlayCtx.arc(corner.x, corner.y, 8, 0, 2 * Math.PI);
-      overlayCtx.fill();
-      
-      overlayCtx.fillStyle = '#FFFFFF';
-      overlayCtx.beginPath();
-      overlayCtx.arc(corner.x, corner.y, 4, 0, 2 * Math.PI);
-      overlayCtx.fill();
-    });
-    
-    // Draw label (centered on shape)
-    const centerX = corners.reduce((sum, c) => sum + c.x, 0) / corners.length;
-    const centerY = corners.reduce((sum, c) => sum + c.y, 0) / corners.length;
-    
-    overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    overlayCtx.fillRect(centerX - 150, centerY - 60, 300, 120);
+  const corners = bestShape.corners;
+  const isStable = isShapeStable;
+  
+  overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  
+  overlayCtx.globalCompositeOperation = 'destination-out';
+  overlayCtx.beginPath();
+  overlayCtx.moveTo(corners[0].x, corners[0].y);
+  corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y));
+  overlayCtx.closePath();
+  overlayCtx.fill();
+  
+  overlayCtx.globalCompositeOperation = 'source-over';
+  overlayCtx.strokeStyle = isStable ? '#00FF00' : '#00AAFF';
+  overlayCtx.lineWidth = isStable ? 3 : 2;
+  overlayCtx.setLineDash(isStable ? [] : [20, 15]);
+  overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+  overlayCtx.shadowBlur = 4;
+  overlayCtx.beginPath();
+  overlayCtx.moveTo(corners[0].x, corners[0].y);
+  corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y));
+  overlayCtx.closePath();
+  overlayCtx.stroke();
+  overlayCtx.setLineDash([]);
+  overlayCtx.shadowBlur = 0;
+
+  corners.forEach((corner) => {
+    overlayCtx.fillStyle = isStable ? '#00FF00' : '#00AAFF';
+    overlayCtx.beginPath();
+    overlayCtx.arc(corner.x, corner.y, 8, 0, 2 * Math.PI);
+    overlayCtx.fill();
     
     overlayCtx.fillStyle = '#FFFFFF';
-    overlayCtx.font = 'bold 22px Arial';
-    overlayCtx.textAlign = 'center';
-    overlayCtx.fillText(
-      `${bestShape.type.charAt(0).toUpperCase() + bestShape.type.slice(1)} Found`,
-      centerX,
-      centerY - 25
-    );
-    overlayCtx.font = '18px Arial';
-    overlayCtx.fillText(
-      isStable ? '✓ Ready to capture!' : 'Hold steady...',
-      centerX,
-      centerY + 5
-    );
-    overlayCtx.font = '16px Arial';
-    overlayCtx.fillText(
-      `Confidence: ${Math.round(bestShape.confidence)}%`,
-      centerX,
-      centerY + 35
-    );
-  };
+    overlayCtx.beginPath();
+    overlayCtx.arc(corner.x, corner.y, 4, 0, 2 * Math.PI);
+    overlayCtx.fill();
+  });
+  
+  if (isStable) {
+    const centerX = corners.reduce((sum, c) => sum + c.x, 0) / corners.length;
+    const centerY = corners.reduce((sum, c) => sum + c.y, 0) / corners.length;
 
+    overlayCtx.fillStyle = '#00FF00';
+    overlayCtx.font = 'bold 24px Arial';
+    overlayCtx.textAlign = 'center';
+    overlayCtx.textBaseline = 'middle';
+    overlayCtx.fillText('Ready to capture!', centerX, centerY);
+  }
+};
   const orderCornersForDocument = (corners: Point[]): Point[] => {
     const centerX = corners.reduce((sum, p) => sum + p.x, 0) / corners.length;
     const centerY = corners.reduce((sum, p) => sum + p.y, 0) / corners.length;
