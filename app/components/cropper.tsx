@@ -41,12 +41,12 @@ const printRatios = [
   { label: "1:1", value: 1 },
 ]
 
-const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
+const Cropper: React.FC<CropperProps> => {
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 })
   const [originalDimensions, setOriginalDimensions] = useState({ width: 0, height: 0 })
   const [rotatedBoundingBox, setRotatedBoundingBox] = useState({ width: 0, height: 0 })
   const [cropArea, setCropArea] = useState<CropArea>({ x: 0, y: 0, width: 0, height: 0 })
-  const [rotation, setRotation] = useState(0) // Continuous rotation in degrees
+  const [rotation, setRotation] = useState(0)
   const [zoom, setZoom] = useState(0.5)
   const [aspect, setAspect] = useState<number | null>(null)
   const [selectedRatio, setSelectedRatio] = useState<string | null>(null)
@@ -65,14 +65,11 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const imageRef = useRef<HTMLDivElement>(null)
 
-  // Calculate effective aspect ratio based on rotation
   const effectiveAspect = useMemo(() => {
     if (aspect === null) return null;
-    // When rotated 90° or 270°, the aspect ratio effectively inverts
     return (rotation % 180 === 0) ? aspect : 1 / aspect;
   }, [aspect, rotation]);
 
-  // Initialize image
   useEffect(() => {
     const img = new Image()
     img.onload = () => {
@@ -155,7 +152,6 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     resizeImageToRatio(ratioOption.value)
   }
 
-  // Handle drag start
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent, dragType: DragState["dragType"]) => {
     e.preventDefault()
     e.stopPropagation()
@@ -197,50 +193,47 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
       const newCrop = { ...dragState.initialCrop }
 
       if (effectiveAspect && dragState.dragType !== "move") {
-        // Handle aspect ratio constraint
         switch (dragState.dragType) {
           case "nw":
-            // Calculate new dimensions maintaining aspect ratio
             const newWidthNw = dragState.initialCrop.width - imageDeltaX;
             const newHeightNw = newWidthNw / effectiveAspect;
-            
+
             newCrop.x = dragState.initialCropStart.x + imageDeltaX;
             newCrop.y = dragState.initialCropStart.y + (dragState.initialCrop.height - newHeightNw);
             newCrop.width = newWidthNw;
             newCrop.height = newHeightNw;
             break;
-            
+
           case "ne":
             const newWidthNe = dragState.initialCrop.width + imageDeltaX;
             const newHeightNe = newWidthNe / effectiveAspect;
-            
+
             newCrop.y = dragState.initialCropStart.y + (dragState.initialCrop.height - newHeightNe);
             newCrop.width = newWidthNe;
             newCrop.height = newHeightNe;
             break;
-            
+
           case "sw":
             const newWidthSw = dragState.initialCrop.width - imageDeltaX;
             const newHeightSw = newWidthSw / effectiveAspect;
-            
+
             newCrop.x = dragState.initialCropStart.x + imageDeltaX;
             newCrop.width = newWidthSw;
             newCrop.height = newHeightSw;
             break;
-            
+
           case "se":
             const newWidthSe = dragState.initialCrop.width + imageDeltaX;
             const newHeightSe = newWidthSe / effectiveAspect;
-            
+
             newCrop.width = newWidthSe;
             newCrop.height = newHeightSe;
             break;
-            
+
           default:
             return
         }
       } else {
-        // Free-form cropping (no aspect ratio lock)
         switch (dragState.dragType) {
           case "nw":
             newCrop.x = dragState.initialCropStart.x + imageDeltaX
@@ -321,122 +314,21 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
     setRotatedBoundingBox({ width: rotatedWidth, height: rotatedHeight })
   }, [rotation, imageDimensions])
 
-  // =============== ROTATION: 90° BUTTON ===============
-const rotateImage = () => {
-  const newRotation = (rotation + 90) % 360;
-  setRotation(newRotation);
-
-  // Swap dimensions only on 90/270 degree rotations
-  if (newRotation % 180 !== 0) {
-    // Update imageDimensions to swapped values
-    setImageDimensions(prev => ({
-      width: prev.height,
-      height: prev.width,
-    }));
-
-    // Calculate new bounding box dimensions after rotation
-    const rad = (newRotation * Math.PI) / 180;
-    const sin = Math.abs(Math.sin(rad));
-    const cos = Math.abs(Math.cos(rad));
-    const newBbWidth = originalDimensions.height * cos + originalDimensions.width * sin;
-    const newBbHeight = originalDimensions.height * sin + originalDimensions.width * cos;
-
-    setRotatedBoundingBox({
-      width: newBbWidth,
-      height: newBbHeight,
-    });
-
-    // Adjust crop area to fit within the new bounds and maintain aspect ratio if set
-    if (aspect) {
-      // Calculate potential crop dimensions based on aspect ratio
-      let newCropWidth, newCropHeight;
-      if (newBbWidth / newBbHeight > aspect) {
-        // Fit height, calculate width
-        newCropHeight = newBbHeight;
-        newCropWidth = newBbHeight * aspect;
-      } else {
-        // Fit width, calculate height
-        newCropWidth = newBbWidth;
-        newCropHeight = newBbWidth / aspect;
-      }
-      
-      setCropArea({
-        x: (newBbWidth - newCropWidth) / 2,
-        y: (newBbHeight - newCropHeight) / 2,
-        width: newCropWidth,
-        height: newCropHeight,
-      });
-    } else {
-      // Free-form crop: fill the new bounding box
-      setCropArea({
-        x: 0,
-        y: 0,
-        width: newBbWidth,
-        height: newBbHeight,
-      });
-    }
-  } else {
-    // Rotation is 0 or 180 degrees, dimensions are back to original orientation
-    setImageDimensions({
-      width: originalDimensions.width,
-      height: originalDimensions.height,
-    });
-
-    // Calculate bounding box for 0/180 deg rotation
-    const rad = (newRotation * Math.PI) / 180;
-    const sin = Math.abs(Math.sin(rad));
-    const cos = Math.abs(Math.cos(rad));
-    const newBbWidth = originalDimensions.width * cos + originalDimensions.height * sin;
-    const newBbHeight = originalDimensions.width * sin + originalDimensions.height * cos;
-
-    setRotatedBoundingBox({
-      width: newBbWidth,
-      height: newBbHeight,
-    });
-
-    if (aspect) {
-      // Calculate potential crop dimensions based on aspect ratio
-      let newCropWidth, newCropHeight;
-      if (newBbWidth / newBbHeight > aspect) {
-        // Fit height, calculate width
-        newCropHeight = newBbHeight;
-        newCropWidth = newBbHeight * aspect;
-      } else {
-        // Fit width, calculate height
-        newCropWidth = newBbWidth;
-        newCropHeight = newBbWidth / aspect;
-      }
-      
-      setCropArea({
-        x: (newBbWidth - newCropWidth) / 2,
-        y: (newBbHeight - newCropHeight) / 2,
-        width: newCropWidth,
-        height: newCropHeight,
-      });
-    } else {
-      // Free-form crop: fill the bounding box
-      setCropArea({
-        x: 0,
-        y: 0,
-        width: newBbWidth,
-        height: newBbHeight,
-      });
-    }
+  const rotateImage = () => {
+    const newRotation = (rotation + 90) % 360
+    setRotation(newRotation)
   }
-};
 
-  // =============== AUTO-STRAIGHTEN ===============
   const autoStraighten = () => {
     setRotation(0)
   }
 
-  // =============== SAVE ===============
   const handleSave = async () => {
     const imgSrc = processedImage || image.src
     const tempImg = new Image()
     tempImg.src = imgSrc
 
-    tempImg.onload = () => {
+    tempImg.onload = async () => {
       const canvas = document.createElement("canvas")
       const ctx = canvas.getContext("2d")
       if (!ctx) return
@@ -444,9 +336,11 @@ const rotateImage = () => {
       const rad = (rotation * Math.PI) / 180
       const sin = Math.abs(Math.sin(rad))
       const cos = Math.abs(Math.cos(rad))
+      const originalWidth = tempImg.width
+      const originalHeight = tempImg.height
 
-      const rotatedWidth = tempImg.width * cos + tempImg.height * sin
-      const rotatedHeight = tempImg.width * sin + tempImg.height * cos
+      const rotatedWidth = originalWidth * cos + originalHeight * sin
+      const rotatedHeight = originalWidth * sin + originalHeight * cos
 
       canvas.width = rotatedWidth
       canvas.height = rotatedHeight
@@ -454,28 +348,78 @@ const rotateImage = () => {
       ctx.save()
       ctx.translate(rotatedWidth / 2, rotatedHeight / 2)
       ctx.rotate(rad)
-      ctx.drawImage(tempImg, -tempImg.width / 2, -tempImg.height / 2)
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(tempImg, -originalWidth / 2, -originalHeight / 2)
       ctx.restore()
+
+      const origCrop = { ...cropArea }
+
+      const corners = [
+        { x: origCrop.x, y: origCrop.y },
+        { x: origCrop.x + origCrop.width, y: origCrop.y },
+        { x: origCrop.x + origCrop.width, y: origCrop.y + origCrop.height },
+        { x: origCrop.x, y: origCrop.y + origCrop.height }
+      ]
+
+      const cosR = Math.cos(rad)
+      const sinR = Math.sin(rad)
+      const centerX = originalWidth / 2
+      const centerY = originalHeight / 2
+
+      const rotatedCorners = corners.map(corner => {
+        const x1 = corner.x - centerX
+        const y1 = corner.y - centerY
+        const x2 = x1 * cosR - y1 * sinR
+        const y2 = x1 * sinR + y1 * cosR
+        const rotatedCenterX = rotatedWidth / 2
+        const rotatedCenterY = rotatedHeight / 2
+        return {
+          x: rotatedCenterX + x2,
+          y: rotatedCenterY + y2
+        }
+      })
+
+      const minX = Math.min(...rotatedCorners.map(p => p.x))
+      const maxX = Math.max(...rotatedCorners.map(p => p.x))
+      const minY = Math.min(...rotatedCorners.map(p => p.y))
+      const maxY = Math.max(...rotatedCorners.map(p => p.y))
+
+      const cropX = minX
+      const cropY = minY
+      const cropW = maxX - minX
+      const cropH = maxY - minY
+
+      const safeCropX = Math.max(0, Math.min(rotatedWidth - cropW, cropX))
+      const safeCropY = Math.max(0, Math.min(rotatedHeight - cropH, cropY))
+      const safeCropW = Math.min(cropW, rotatedWidth - safeCropX)
+      const safeCropH = Math.min(cropH, rotatedHeight - safeCropY)
+
+      if (safeCropW <= 0 || safeCropH <= 0) {
+        console.error("Invalid crop area after rotation")
+        return
+      }
 
       const cropCanvas = document.createElement("canvas")
       const cropCtx = cropCanvas.getContext("2d")
       if (!cropCtx) return
 
-      cropCanvas.width = cropArea.width
-      cropCanvas.height = cropArea.height
+      cropCanvas.width = safeCropW
+      cropCanvas.height = safeCropH
 
       cropCtx.drawImage(
         canvas,
-        cropArea.x,
-        cropArea.y,
-        cropArea.width,
-        cropArea.height,
+        safeCropX,
+        safeCropY,
+        safeCropW,
+        safeCropH,
         0,
         0,
-        cropArea.width,
-        cropArea.height,
+        safeCropW,
+        safeCropH,
       )
 
+      const quality = 0.92
       cropCanvas.toBlob(
         (blob) => {
           if (blob) {
@@ -485,11 +429,17 @@ const rotateImage = () => {
               croppedBlob: blob,
               rotation: 0,
             })
+          } else {
+            console.error("Failed to create blob from cropped canvas.")
           }
         },
         "image/jpeg",
-        0.92,
+        quality
       )
+    }
+
+    tempImg.onerror = () => {
+      console.error("Failed to load image for saving:", imgSrc)
     }
   }
 
@@ -519,7 +469,6 @@ const rotateImage = () => {
 
   return (
     <div className="h-full flex flex-col bg-black text-white">
-      {/* Header */}
       <div className="px-4 py-3 flex items-center justify-between bg-black/80">
         <button onClick={onBack} className="flex items-center gap-2 text-white hover:text-blue-300">
           <ArrowLeft className="w-5 h-5" />
@@ -531,7 +480,6 @@ const rotateImage = () => {
         </button>
       </div>
 
-      {/* Crop Area */}
       <div
         ref={containerRef}
         className="relative flex-1 min-h-0 bg-black overflow-hidden"
@@ -616,9 +564,7 @@ const rotateImage = () => {
         </div>
       </div>
 
-      {/* Controls */}
       <div className="bg-black/80 p-4 space-y-5">
-        {/* ROTATE BUTTON - ABOVE RATIOS */}
         <div className="flex justify-center">
           <button
             onClick={rotateImage}
@@ -632,7 +578,6 @@ const rotateImage = () => {
           </button>
         </div>
 
-        {/* Aspect Ratios */}
         <div className="flex justify-center gap-2 flex-wrap">
           {printRatios.map((ratio) => (
             <button
@@ -649,9 +594,7 @@ const rotateImage = () => {
           ))}
         </div>
 
-        {/* SLIDERS - BELOW RATIOS */}
         <div className="space-y-4">
-          {/* Zoom Slider */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <span className="text-sm font-medium">Zoom</span>
@@ -668,7 +611,6 @@ const rotateImage = () => {
             />
           </div>
 
-          {/* Rotation Slider */}
           <div>
             <div className="flex justify-between items-center mb-1">
               <span className="text-sm font-medium">Rotation</span>
@@ -685,7 +627,6 @@ const rotateImage = () => {
             />
           </div>
 
-          {/* Auto-Straighten (optional but helpful) */}
           <div className="flex justify-center">
             <button
               onClick={autoStraighten}

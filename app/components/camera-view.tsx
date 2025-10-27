@@ -1078,10 +1078,11 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           : 'bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-300 ring-opacity-50'
       }`}
       title={
-        !hasCamera ? 'Select photo' :
-        !bestShape ? 'Point camera at document' :
-        isShapeStable ? 'Capture now!' : 'Hold steady to capture'
-      }
+    !hasCamera ? 'Select photo' :
+    isAutoDetectionEnabled ? 
+      (!bestShape ? 'Point camera at document' : isShapeStable ? 'Capture now!' : 'Hold steady to capture') :
+      'Capture photo' // Title when auto-detection is off
+  }
     >
       {isCapturing ? (
         <div className="w-8 h-8 border-4 border-white rounded-full animate-spin border-t-transparent"></div>
