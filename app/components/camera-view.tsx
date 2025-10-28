@@ -1065,31 +1065,33 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     </button>
 
     {/* Main capture button - stays green when document is found */}
-    <button
-      onClick={hasCamera ? handleCapture : openNativeCamera}
-      disabled={isCapturing || (hasCamera && isAutoDetectionEnabled && !bestShape)}
-      className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
-        isShapeStable && bestShape
-          ? 'bg-green-500 hover:bg-green-400 ring-6 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50' 
-          : bestShape && hasCamera
+   <button
+  onClick={hasCamera ? handleCapture : openNativeCamera}
+  disabled={isCapturing || (hasCamera && isAutoDetectionEnabled && !bestShape)}
+  className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
+    !isAutoDetectionEnabled && hasCamera && !isCapturing
+      ? 'bg-green-500 hover:bg-green-400 ring-6 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50'
+      : isShapeStable && bestShape
+        ? 'bg-green-500 hover:bg-green-400 ring-6 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50'
+        : bestShape && hasCamera
           ? 'bg-blue-500 hover:bg-blue-400 ring-4 ring-blue-300 ring-opacity-50 scale-105 shadow-blue-500/50'
           : hasCamera
-          ? 'bg-gray-600 cursor-not-allowed opacity-50'
-          : 'bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-300 ring-opacity-50'
-      }`}
-      title={
+            ? 'bg-gray-600 cursor-not-allowed opacity-50'
+            : 'bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-300 ring-opacity-50'
+  }`}
+  title={
     !hasCamera ? 'Select photo' :
     isAutoDetectionEnabled ? 
       (!bestShape ? 'Point camera at document' : isShapeStable ? 'Capture now!' : 'Hold steady to capture') :
-      'Capture photo' // Title when auto-detection is off
+      'Capture photo'
   }
-    >
-      {isCapturing ? (
-        <div className="w-8 h-8 border-4 border-white rounded-full animate-spin border-t-transparent"></div>
-      ) : (
-        <div className="w-12 h-12 rounded-full bg-white shadow-inner"></div>
-      )}
-    </button>
+>
+  {isCapturing ? (
+    <div className="w-8 h-8 border-4 border-white rounded-full animate-spin border-t-transparent"></div>
+  ) : (
+    <div className="w-12 h-12 rounded-full bg-white shadow-inner"></div>
+  )}
+</button>
 
     {/* Native camera button (on the right) */}
     <button
