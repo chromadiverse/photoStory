@@ -8,8 +8,9 @@ import Cropper from "./components/cropper"
 import FilterPanel from "./components/filter-panel"
 import Preview from "./components/preview"
 import WelcomeModal from "./components/welcome-modal"
-import { Camera, Sliders, Search, ArrowLeft,Crop } from "lucide-react"
+import { Camera, Sliders, Search, ArrowLeft, Crop } from "lucide-react"
 import type { FilterSettings } from "./utils/filters"
+import { fetchDancerIdByUserId } from "./service/profileService" 
 
 type ViewType = "camera" | "crop" | "filter" | "preview"
 
@@ -34,6 +35,7 @@ export default function Home() {
   const [filteredImageData, setFilteredImageData] = useState<CroppedImageData | null>(null)
   const [showWelcomeModal, setShowWelcomeModal] = useState(true)
   const [user, setUser] = useState<any>(null)
+  const [dancerId, setDancerId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
   const supabase = createClient()
@@ -42,36 +44,71 @@ export default function Home() {
     brightness: 100,
     contrast: 100,
     saturation: 100,
-    
   })
 
   useEffect(() => {
+    console.log("🚀 useEffect running")
+    let mounted = true
+    
     const checkUser = async () => {
       try {
+        console.log("🔍 Checking user...")
         const {
           data: { user },
           error,
         } = await supabase.auth.getUser()
 
-        console.log("Client - User check:", user?.email || "NOT LOGGED IN")
+        console.log("👤 User result:", user?.email || "NOT LOGGED IN", "Error:", error)
+
+        if (!mounted) {
+          console.log("⚠️ Component unmounted, aborting")
+          return
+        }
 
         if (error) {
-          console.error("Auth error:", error)
+          console.error("❌ Auth error:", error)
+          setLoading(false)
           router.push("/login")
           return
         }
 
         if (!user) {
-          console.log("No user found, redirecting...")
+          console.log("❌ No user found, redirecting...")
+          setLoading(false)
           router.push("/login")
           return
         }
 
+        console.log("✅ User authenticated:", user.id)
         setUser(user)
+        
+        // Fetch dancer ID after user is set
+        console.log("🔍 Fetching dancer ID for user:", user.id)
+        const result = await fetchDancerIdByUserId(supabase, user.id)
+        console.log("📊 Dancer fetch result:", result)
+        
+        if (!mounted) {
+          console.log("⚠️ Component unmounted after dancer fetch, aborting")
+          return
+        }
+        
+        if (result.error) {
+          console.error("❌ Error fetching dancer ID:", result.error)
+        } else if (result.data) {
+          console.log("✅ Dancer ID found:", result.data)
+          setDancerId(result.data)
+        } else {
+          console.warn("⚠️ No dancer found for user")
+        }
+        
+        console.log("✅ Setting loading to false")
         setLoading(false)
       } catch (err) {
-        console.error("Error checking user:", err)
-        router.push("/login")
+        console.error("💥 Unexpected error in checkUser:", err)
+        if (mounted) {
+          setLoading(false)
+          router.push("/login")
+        }
       }
     }
 
@@ -79,17 +116,39 @@ export default function Home() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      console.log("Auth state changed:", session?.user?.email || "NO SESSION")
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      console.log("🔄 Auth state changed:", session?.user?.email || "NO SESSION")
+      if (!mounted) return
+      
       if (!session) {
         router.push("/login")
       } else {
         setUser(session.user)
+        
+        // Fetch dancer ID when auth state changes
+        const result = await fetchDancerIdByUserId(supabase, session.user.id)
+        
+        if (!mounted) return
+        
+        if (result.error) {
+          console.error("Error fetching dancer ID:", result.error)
+        } else if (result.data) {
+          console.log("Dancer ID found:", result.data)
+          setDancerId(result.data)
+        } else {
+          console.warn("No dancer found for user")
+          setDancerId(null)
+        }
       }
     })
 
-    return () => subscription.unsubscribe()
-  }, [router, supabase])
+    return () => {
+      console.log("🧹 Cleanup: unmounting")
+      mounted = false
+      subscription.unsubscribe()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -121,7 +180,6 @@ export default function Home() {
       brightness: 100,
       contrast: 100,
       saturation: 100,
-      
     })
     setCurrentView("camera")
   }
@@ -129,15 +187,8 @@ export default function Home() {
   const handleCloseModal = () => {
     setShowWelcomeModal(false)
   }
-  const handleGoToProfile = () => {
-  if (user?.id) {
-    router.push(`https://curtainconnect.com/profiles/${user.id}/gallery`);;
-  } else {
-   
-    console.error('User ID not available');
 
-  }
-};
+  console.log("🎨 Render - loading:", loading, "user:", user?.id, "dancerId:", dancerId)
 
   if (loading) {
     return (
@@ -223,8 +274,7 @@ export default function Home() {
             imageData={filteredImageData}
             onStartOver={handleStartOver}
             onBack={() => setCurrentView("filter")}
-         userId={user?.id}
-          onGoToProfile={handleGoToProfile}
+            userId={dancerId || undefined}
           />
         )}
       </div>
