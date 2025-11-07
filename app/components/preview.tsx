@@ -21,12 +21,15 @@ interface PreviewProps {
   imageData: CroppedImageData
   onStartOver: () => void
   onBack: () => void
+  userId?: string
 }
 
 const Preview: React.FC<PreviewProps> = ({
   imageData,
   onStartOver,
-  onBack
+  onBack,
+    userId
+
 }) => {
   const [isProcessing, setIsProcessing] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -234,9 +237,13 @@ const Preview: React.FC<PreviewProps> = ({
   }
 
   const handleGoToProfile = () => {
-    console.log('Navigate to profile - to be implemented')
-    toast.info('Profile navigation will be implemented soon!')
-  }
+    if (userId) {
+      window.location.href = `https://curtainconnect.com/profiles/${userId}/gallery`;
+    
+    } else {
+      console.error('User ID not available');
+    }
+  };
 
   // Cleanup object URLs
   useEffect(() => {

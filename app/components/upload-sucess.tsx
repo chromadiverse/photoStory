@@ -1,4 +1,4 @@
-import { Download, Camera, User } from 'lucide-react'
+import { Download, Camera, Image } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
@@ -6,6 +6,7 @@ interface UploadSuccessProps {
   imageUrl: string
   onTakeAnother: () => void
   onGoToProfile: () => void
+  
 }
 
 const UploadSuccess: React.FC<UploadSuccessProps> = ({
@@ -19,7 +20,6 @@ const UploadSuccess: React.FC<UploadSuccessProps> = ({
     setIsDownloading(true)
     
     try {
-      // Since imageUrl is a blob URL from Preview, we can use it directly
       const response = await fetch(imageUrl)
       const blob = await response.blob()
       
@@ -57,9 +57,7 @@ const UploadSuccess: React.FC<UploadSuccessProps> = ({
 
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-100">
-      {/* Success Content */}
       <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
-        {/* Success Text - BIG AND BOLD */}
         <div className="text-center mb-6 space-y-3">
           <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 drop-shadow-lg animate-pulse">
             SUCCESS!
@@ -74,7 +72,6 @@ const UploadSuccess: React.FC<UploadSuccessProps> = ({
           </div>
         </div>
 
-        {/* Preview Image - LARGE */}
         <div className="mb-8 rounded-2xl overflow-hidden shadow-2xl max-w-lg w-full border-4 border-white">
           <img
             src={imageUrl}
@@ -84,9 +81,7 @@ const UploadSuccess: React.FC<UploadSuccessProps> = ({
         </div>
       </div>
 
-      {/* Action Buttons - Fixed at bottom */}
       <div className="bg-white/95 backdrop-blur-sm shadow-2xl p-6 space-y-4 border-t border-gray-200">
-        {/* Primary Action - Take Another Photo */}
         <button
           onClick={onTakeAnother}
           className="w-full flex items-center justify-center gap-3 p-5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl transition-all shadow-lg hover:shadow-xl transform hover:scale-[1.02] font-semibold text-lg"
@@ -95,7 +90,6 @@ const UploadSuccess: React.FC<UploadSuccessProps> = ({
           <span>Take Another Photo</span>
         </button>
 
-        {/* Secondary Actions Grid */}
         <div className="grid grid-cols-2 gap-4">
           <button
             onClick={handleSaveToDevice}
@@ -112,8 +106,8 @@ const UploadSuccess: React.FC<UploadSuccessProps> = ({
             onClick={onGoToProfile}
             className="flex flex-col items-center justify-center gap-2 p-5 bg-gradient-to-br from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-xl transition-all shadow-md hover:shadow-lg transform hover:scale-[1.02]"
           >
-            <User className="w-6 h-6" />
-            <span className="text-sm font-semibold">View Profile</span>
+            <Image className="w-6 h-6" />
+            <span className="text-sm font-semibold">Go to your Gallery</span>
           </button>
         </div>
       </div>
