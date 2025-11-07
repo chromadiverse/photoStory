@@ -1,4 +1,4 @@
-import { CheckCircle, Download, Camera, User } from 'lucide-react'
+import { Download, Camera, User } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
@@ -14,17 +14,15 @@ const UploadSuccess: React.FC<UploadSuccessProps> = ({
   onGoToProfile
 }) => {
   const [isDownloading, setIsDownloading] = useState(false)
-  const [imageError, setImageError] = useState(false)
 
   const handleSaveToDevice = async () => {
     setIsDownloading(true)
     
     try {
-      // Fetch the image from the URL
+      // Since imageUrl is a blob URL from Preview, we can use it directly
       const response = await fetch(imageUrl)
       const blob = await response.blob()
       
-      // Check if the Web Share API is available (iOS 12.2+)
       if (navigator.share && blob.size > 0) {
         const file = new File([blob], 'curtainconnect-photo.jpg', { 
           type: 'image/jpeg' 
@@ -38,7 +36,6 @@ const UploadSuccess: React.FC<UploadSuccessProps> = ({
         
         toast.success('Image saved to photos!')
       } else {
-        // Fallback: download directly
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
@@ -62,54 +59,29 @@ const UploadSuccess: React.FC<UploadSuccessProps> = ({
     <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-100">
       {/* Success Content */}
       <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
-        {/* Success Icon with Stunning Animation */}
-        <div className="mb-8 relative">
-          {/* Outer glow rings */}
-          <div className="absolute inset-0 bg-green-400/30 rounded-full animate-ping" style={{ animationDuration: '2s' }}></div>
-          <div className="absolute inset-0 bg-green-400/20 rounded-full animate-pulse" style={{ animationDuration: '3s' }}></div>
-          
-          {/* Main icon container */}
-          <div className="relative bg-gradient-to-br from-green-400 to-green-600 rounded-full p-6 shadow-2xl">
-            <CheckCircle className="w-20 h-20 text-white" strokeWidth={3} />
+        {/* Success Text - BIG AND BOLD */}
+        <div className="text-center mb-6 space-y-3">
+          <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 drop-shadow-lg animate-pulse">
+            SUCCESS!
+          </h1>
+          <div className="space-y-1">
+            <p className="text-xl font-bold text-gray-800">
+              Your photo is now in your gallery
+            </p>
+            <p className="text-lg text-gray-600">
+              on <span className="font-bold text-indigo-600">CurtainConnect</span>
+            </p>
           </div>
-          
-          {/* Sparkle effects */}
-          <div className="absolute -top-2 -right-2 w-4 h-4 bg-yellow-400 rounded-full animate-bounce" style={{ animationDelay: '0.5s' }}></div>
-          <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '1s' }}></div>
         </div>
 
-        {/* Success Message */}
-        <div className="text-center mb-8 space-y-2">
-          <h2 className="text-3xl font-bold text-gray-900 mb-3">
-            Success! 🎉
-          </h2>
-          <p className="text-xl text-gray-700 font-medium">
-            Your photo is now in your gallery
-          </p>
-          <p className="text-sm text-gray-500 max-w-sm">
-            on <span className="font-semibold text-indigo-600">CurtainConnect</span>
-          </p>
+        {/* Preview Image - LARGE */}
+        <div className="mb-8 rounded-2xl overflow-hidden shadow-2xl max-w-lg w-full border-4 border-white">
+          <img
+            src={imageUrl}
+            alt="Uploaded Photo"
+            className="w-full h-auto object-contain"
+          />
         </div>
-
-        {/* Preview Image */}
-        {!imageError ? (
-          <div className="mb-8 rounded-2xl overflow-hidden shadow-2xl max-w-sm w-full border-4 border-white">
-            <img
-              src={imageUrl}
-              alt="Uploaded Photo"
-              className="w-full h-auto object-cover"
-              onError={() => {
-                console.error('Image failed to load:', imageUrl)
-                setImageError(true)
-              }}
-              crossOrigin="anonymous"
-            />
-          </div>
-        ) : (
-          <div className="mb-8 rounded-2xl overflow-hidden shadow-2xl max-w-sm w-full border-4 border-white bg-gray-100 aspect-square flex items-center justify-center">
-            <p className="text-gray-400">Image preview unavailable</p>
-          </div>
-        )}
       </div>
 
       {/* Action Buttons - Fixed at bottom */}

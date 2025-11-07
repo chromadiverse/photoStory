@@ -29,7 +29,6 @@ const Preview: React.FC<PreviewProps> = ({
   onBack
 }) => {
   const [isProcessing, setIsProcessing] = useState(false)
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [pendingMetadata, setPendingMetadata] = useState<GalleryMetadata | null>(null)
@@ -56,8 +55,6 @@ const Preview: React.FC<PreviewProps> = ({
         return
       }
 
-      // The imageData.croppedBlob already has filters applied from filter-panel
-      // No need to reprocess - just use it directly
       console.log('Preview - Using pre-processed image blob with filters')
       
       // Store metadata and blob, trigger upload
@@ -120,12 +117,12 @@ const Preview: React.FC<PreviewProps> = ({
 
       // Save metadata to database
       const result = await saveGalleryMetadata(
-        uploadedFile.path,    // imagePath
-        imageUrl,             // imageUrl
-        pendingMetadata,      // metadata
-        user.id,              // userId
-        uploadedFile.name,    // fileName
-        uploadedFile.type     // fileType
+        uploadedFile.path,
+        imageUrl,
+        pendingMetadata,
+        user.id,
+        uploadedFile.name,
+        uploadedFile.type
       )
 
       console.log('🔍 [handleUploadComplete] saveGalleryMetadata result:', result)
@@ -133,22 +130,19 @@ const Preview: React.FC<PreviewProps> = ({
       if (result.success) {
         console.log('✅ [handleUploadComplete] SUCCESS - Gallery entry saved')
         
-        // NEW: Show success screen instead of toast
-        setUploadedImageUrl(imageUrl)
+        // Show success screen with the cropped image (not the uploaded URL)
+        setUploadedImageUrl(imageData.croppedImage)
         setShowSuccess(true)
         setIsModalOpen(false)
-        setSaveStatus('success')
         setPendingMetadata(null)
         setFinalImageBlob(null)
       } else {
         console.error('❌ [handleUploadComplete] saveGalleryMetadata failed:', result.error)
         toast.error(`Failed to save: ${result.error}`)
-        setSaveStatus('error')
       }
     } catch (error) {
       console.error('💥 [handleUploadComplete] UNEXPECTED ERROR:', error)
       toast.error('Failed to save image to gallery')
-      setSaveStatus('error')
     } finally {
       setIsUploading(false)
     }
@@ -158,17 +152,13 @@ const Preview: React.FC<PreviewProps> = ({
     console.error('Upload error:', error)
     toast.error('Failed to upload image')
     setIsUploading(false)
-    setSaveStatus('error')
   }
 
   const handleSaveToPhotos = async () => {
     setIsProcessing(true)
-    setSaveStatus('idle')
     
     try {
-      // Check if the Web Share API is available (iOS 12.2+)
       if (navigator.share && imageData.croppedBlob.size > 0) {
-        // Create a file object for sharing
         const file = new File([imageData.croppedBlob], 'edited-photo.jpg', { 
           type: 'image/jpeg' 
         })
@@ -179,10 +169,8 @@ const Preview: React.FC<PreviewProps> = ({
           text: 'Save this image to your photo library'
         })
         
-        setSaveStatus('success')
         toast.success('Image saved to photos!')
       } else {
-        // Fallback: try to save directly (works on some browsers)
         const url = URL.createObjectURL(imageData.croppedBlob)
         const a = document.createElement('a')
         a.href = url
@@ -192,12 +180,10 @@ const Preview: React.FC<PreviewProps> = ({
         document.body.removeChild(a)
         URL.revokeObjectURL(url)
         
-        setSaveStatus('success')
         toast.success('Image saved to downloads')
       }
     } catch (error) {
       console.error('Error saving to photos:', error)
-      setSaveStatus('error')
       toast.error('Failed to save image')
     } finally {
       setIsProcessing(false)
@@ -213,7 +199,6 @@ const Preview: React.FC<PreviewProps> = ({
     setIsProcessing(true)
     
     try {
-      // Use the pre-processed blob that already has filters applied
       const file = new File([imageData.croppedBlob], 'edited-photo.jpg', { type: 'image/jpeg' })
       
       await navigator.share({
@@ -221,13 +206,8 @@ const Preview: React.FC<PreviewProps> = ({
         title: 'Edited Photo',
         text: 'Check out my edited photo!'
       })
-      
-      setSaveStatus('success')
     } catch (error) {
       console.error('Error sharing:', error)
-      if (error instanceof Error && error.name !== 'AbortError') {
-        setSaveStatus('error')
-      }
     } finally {
       setIsProcessing(false)
     }
@@ -242,25 +222,20 @@ const Preview: React.FC<PreviewProps> = ({
     setIsProcessing(true)
     
     try {
-      // Use the pre-processed blob that already has filters applied
       const item = new ClipboardItem({ 'image/jpeg': imageData.croppedBlob })
       await navigator.clipboard.write([item])
       toast.success('Image copied to clipboard!')
-      setSaveStatus('success')
     } catch (error) {
       console.error('Error copying to clipboard:', error)
       toast.error('Failed to copy to clipboard')
-      setSaveStatus('error')
     } finally {
       setIsProcessing(false)
     }
   }
 
-  // NEW: Handle going to profile (placeholder)
   const handleGoToProfile = () => {
     console.log('Navigate to profile - to be implemented')
     toast.info('Profile navigation will be implemented soon!')
-    // TODO: Implement navigation to user profile
   }
 
   // Cleanup object URLs
@@ -272,7 +247,7 @@ const Preview: React.FC<PreviewProps> = ({
     }
   }, [imageData.croppedImage])
 
-  // NEW: Show success screen if upload was successful
+  // Show success screen after upload
   if (showSuccess && uploadedImageUrl) {
     return (
       <UploadSuccess
@@ -306,23 +281,6 @@ const Preview: React.FC<PreviewProps> = ({
           )}
         </div>
       </div>
-
-      {/* Status Messages */}
-      {saveStatus !== 'idle' && !showSuccess && (
-        <div className="px-4 pb-2">
-          <div
-            className={`p-3 rounded-lg text-center transition-all duration-300 font-medium ${
-              saveStatus === 'success'
-                ? 'bg-green-600 text-white'
-                : 'bg-red-600 text-white'
-            }`}
-          >
-            {saveStatus === 'success'
-              ? 'Action completed successfully!'
-              : 'Action failed. Please try again.'}
-          </div>
-        </div>
-      )}
 
       {/* Action Buttons */}
       <div className="bg-white/90 backdrop-blur-sm shadow-sm p-4 space-y-4">
