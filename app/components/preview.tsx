@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { ArrowLeft, Download, Share2, RotateCcw, Copy, Save } from 'lucide-react'
 import MetadataModal from './metadata-modal'
 import ImageUploader from './image-uploader'
+import UploadSuccess from './upload-sucess' 
 import { GalleryMetadata } from '../lib/gallery-schema'
 import { saveGalleryMetadata, getImageUrl } from '../lib/upload-service'
 import { toast } from 'sonner'
@@ -33,6 +34,10 @@ const Preview: React.FC<PreviewProps> = ({
   const [isUploading, setIsUploading] = useState(false)
   const [pendingMetadata, setPendingMetadata] = useState<GalleryMetadata | null>(null)
   const [finalImageBlob, setFinalImageBlob] = useState<Blob | null>(null)
+  
+  // NEW: State for showing success screen
+  const [showSuccess, setShowSuccess] = useState(false)
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string>('')
 
   // Get bucket name from env
   const BUCKET_NAME = process.env.NEXT_PUBLIC_IMAGE_GALLERY_BUCKET || 'gallery'
@@ -113,7 +118,7 @@ const Preview: React.FC<PreviewProps> = ({
         metadata: pendingMetadata
       })
 
-      // Save metadata to database - FIXED: Now passing all 6 required arguments
+      // Save metadata to database
       const result = await saveGalleryMetadata(
         uploadedFile.path,    // imagePath
         imageUrl,             // imageUrl
@@ -127,7 +132,10 @@ const Preview: React.FC<PreviewProps> = ({
 
       if (result.success) {
         console.log('✅ [handleUploadComplete] SUCCESS - Gallery entry saved')
-        toast.success('Image saved to gallery successfully!')
+        
+        // NEW: Show success screen instead of toast
+        setUploadedImageUrl(imageUrl)
+        setShowSuccess(true)
         setIsModalOpen(false)
         setSaveStatus('success')
         setPendingMetadata(null)
@@ -163,43 +171,43 @@ const Preview: React.FC<PreviewProps> = ({
         // Create a file object for sharing
         const file = new File([imageData.croppedBlob], 'edited-photo.jpg', { 
           type: 'image/jpeg' 
-        });
+        })
         
         await navigator.share({
           files: [file],
           title: 'Save to Photos',
           text: 'Save this image to your photo library'
-        });
+        })
         
-        setSaveStatus('success');
-        toast.success('Image saved to photos!');
+        setSaveStatus('success')
+        toast.success('Image saved to photos!')
       } else {
         // Fallback: try to save directly (works on some browsers)
-        const url = URL.createObjectURL(imageData.croppedBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `edited-photo-${Date.now()}.jpg`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        const url = URL.createObjectURL(imageData.croppedBlob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `edited-photo-${Date.now()}.jpg`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
         
-        setSaveStatus('success');
-        toast.success('Image saved to downloads');
+        setSaveStatus('success')
+        toast.success('Image saved to downloads')
       }
     } catch (error) {
-      console.error('Error saving to photos:', error);
-      setSaveStatus('error');
-      toast.error('Failed to save image');
+      console.error('Error saving to photos:', error)
+      setSaveStatus('error')
+      toast.error('Failed to save image')
     } finally {
-      setIsProcessing(false);
+      setIsProcessing(false)
     }
-  };
+  }
 
   const handleShare = async () => {
     if (!navigator.share) {
-      handleCopyToClipboard();
-      return;
+      handleCopyToClipboard()
+      return
     }
 
     setIsProcessing(true)
@@ -227,25 +235,32 @@ const Preview: React.FC<PreviewProps> = ({
 
   const handleCopyToClipboard = async () => {
     if (!navigator.clipboard) {
-      alert('Clipboard not supported on this device');
-      return;
+      alert('Clipboard not supported on this device')
+      return
     }
 
     setIsProcessing(true)
     
     try {
       // Use the pre-processed blob that already has filters applied
-      const item = new ClipboardItem({ 'image/jpeg': imageData.croppedBlob });
-      await navigator.clipboard.write([item]);
-      toast.success('Image copied to clipboard!');
-      setSaveStatus('success');
+      const item = new ClipboardItem({ 'image/jpeg': imageData.croppedBlob })
+      await navigator.clipboard.write([item])
+      toast.success('Image copied to clipboard!')
+      setSaveStatus('success')
     } catch (error) {
-      console.error('Error copying to clipboard:', error);
-      toast.error('Failed to copy to clipboard');
-      setSaveStatus('error');
+      console.error('Error copying to clipboard:', error)
+      toast.error('Failed to copy to clipboard')
+      setSaveStatus('error')
     } finally {
-      setIsProcessing(false);
+      setIsProcessing(false)
     }
+  }
+
+  // NEW: Handle going to profile (placeholder)
+  const handleGoToProfile = () => {
+    console.log('Navigate to profile - to be implemented')
+    toast.info('Profile navigation will be implemented soon!')
+    // TODO: Implement navigation to user profile
   }
 
   // Cleanup object URLs
@@ -257,6 +272,17 @@ const Preview: React.FC<PreviewProps> = ({
     }
   }, [imageData.croppedImage])
 
+  // NEW: Show success screen if upload was successful
+  if (showSuccess && uploadedImageUrl) {
+    return (
+      <UploadSuccess
+        imageUrl={uploadedImageUrl}
+        onTakeAnother={onStartOver}
+        onGoToProfile={handleGoToProfile}
+      />
+    )
+  }
+
   return (
     <>
      <div className="h-full flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -264,7 +290,7 @@ const Preview: React.FC<PreviewProps> = ({
       <div className="flex-1 flex items-center justify-center p-4">
         <div className="relative">
           <img
-            src={imageData.croppedImage} // This now contains the filtered image
+            src={imageData.croppedImage}
             alt="Final Preview"
             className="max-w-full max-h-full object-contain shadow-lg rounded-lg"
           />
@@ -275,117 +301,117 @@ const Preview: React.FC<PreviewProps> = ({
                 <span className="text-white text-sm font-medium">
                   {isUploading ? 'Uploading...' : 'Processing...'}
                 </span>
-                </div>
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* Status Messages */}
-        {saveStatus !== 'idle' && (
-          <div className="px-4 pb-2">
-            <div
-              className={`p-3 rounded-lg text-center transition-all duration-300 font-medium ${
-                saveStatus === 'success'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-red-600 text-white'
-              }`}
-            >
-              {saveStatus === 'success'
-                ? 'Action completed successfully!'
-                : 'Action failed. Please try again.'}
             </div>
-          </div>
-        )}
-
-        {/* Action Buttons */}
-        <div className="bg-white/90 backdrop-blur-sm shadow-sm p-4 space-y-4">
-          {/* Primary Actions Grid */}
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => setIsModalOpen(true)}
-              disabled={isProcessing || isUploading}
-              className="flex flex-col items-center gap-2 p-4 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
-            >
-              <Save className="w-6 h-6" />
-              <span className="text-sm font-medium">Save to Gallery</span>
-            </button>
-
-            <button
-              onClick={handleSaveToPhotos}
-              disabled={isProcessing || isUploading}
-              className="flex flex-col items-center gap-2 p-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
-            >
-              <Download className="w-6 h-6" />
-              <span className="text-sm font-medium">Save to Photos</span>
-            </button>
-          </div>
-
-          {/* Secondary Actions */}
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={handleShare}
-              disabled={isProcessing || isUploading}
-              className="flex items-center justify-center gap-2 p-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
-            >
-              <Share2 className="w-5 h-5" />
-              <span className="text-sm font-medium">Share</span>
-            </button>
-
-            <button
-              onClick={handleCopyToClipboard}
-              disabled={isProcessing || isUploading}
-              className="flex items-center justify-center gap-2 p-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
-            >
-              <Copy className="w-5 h-5" />
-              <span className="text-sm font-medium">Copy</span>
-            </button>
-          </div>
-
-          {/* Navigation Buttons */}
-          <div className="flex justify-between pt-4 border-t border-gray-200">
-            <button 
-              onClick={onBack} 
-              disabled={isUploading}
-              className="flex items-center gap-2 bg-white/60 hover:bg-white/80 border border-gray-200 text-gray-700 px-4 py-2 rounded-lg transition-colors font-medium disabled:opacity-50"
-            >
-              <ArrowLeft className="w-5 h-5" />
-              <span>Back to Filters</span>
-            </button>
-            <button 
-              onClick={onStartOver}
-              disabled={isUploading}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium disabled:opacity-50"
-            >
-              <RotateCcw className="w-5 h-5" />
-              <span>Start Over</span>
-            </button>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Metadata Modal */}
-      <MetadataModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false)
-          setPendingMetadata(null)
-          setFinalImageBlob(null)
-        }}
-        onSubmit={handleMetadataSubmit}
-        isUploading={isUploading}
-      />
-
-      {/* Hidden Uppy Uploader - triggers when blob is ready */}
-      {finalImageBlob && pendingMetadata && (
-        <ImageUploader
-          imageBlob={finalImageBlob}
-          bucketName={BUCKET_NAME}
-          folderName=""
-          onUploadComplete={handleUploadComplete}
-          onUploadError={handleUploadError}
-        />
+      {/* Status Messages */}
+      {saveStatus !== 'idle' && !showSuccess && (
+        <div className="px-4 pb-2">
+          <div
+            className={`p-3 rounded-lg text-center transition-all duration-300 font-medium ${
+              saveStatus === 'success'
+                ? 'bg-green-600 text-white'
+                : 'bg-red-600 text-white'
+            }`}
+          >
+            {saveStatus === 'success'
+              ? 'Action completed successfully!'
+              : 'Action failed. Please try again.'}
+          </div>
+        </div>
       )}
+
+      {/* Action Buttons */}
+      <div className="bg-white/90 backdrop-blur-sm shadow-sm p-4 space-y-4">
+        {/* Primary Actions Grid */}
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => setIsModalOpen(true)}
+            disabled={isProcessing || isUploading}
+            className="flex flex-col items-center gap-2 p-4 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
+          >
+            <Save className="w-6 h-6" />
+            <span className="text-sm font-medium">Save to Gallery</span>
+          </button>
+
+          <button
+            onClick={handleSaveToPhotos}
+            disabled={isProcessing || isUploading}
+            className="flex flex-col items-center gap-2 p-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
+          >
+            <Download className="w-6 h-6" />
+            <span className="text-sm font-medium">Save to Photos</span>
+          </button>
+        </div>
+
+        {/* Secondary Actions */}
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={handleShare}
+            disabled={isProcessing || isUploading}
+            className="flex items-center justify-center gap-2 p-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
+          >
+            <Share2 className="w-5 h-5" />
+            <span className="text-sm font-medium">Share</span>
+          </button>
+
+          <button
+            onClick={handleCopyToClipboard}
+            disabled={isProcessing || isUploading}
+            className="flex items-center justify-center gap-2 p-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
+          >
+            <Copy className="w-5 h-5" />
+            <span className="text-sm font-medium">Copy</span>
+          </button>
+        </div>
+
+        {/* Navigation Buttons */}
+        <div className="flex justify-between pt-4 border-t border-gray-200">
+          <button 
+            onClick={onBack} 
+            disabled={isUploading}
+            className="flex items-center gap-2 bg-white/60 hover:bg-white/80 border border-gray-200 text-gray-700 px-4 py-2 rounded-lg transition-colors font-medium disabled:opacity-50"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span>Back to Filters</span>
+          </button>
+          <button 
+            onClick={onStartOver}
+            disabled={isUploading}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors font-medium disabled:opacity-50"
+          >
+            <RotateCcw className="w-5 h-5" />
+            <span>Start Over</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    {/* Metadata Modal */}
+    <MetadataModal
+      isOpen={isModalOpen}
+      onClose={() => {
+        setIsModalOpen(false)
+        setPendingMetadata(null)
+        setFinalImageBlob(null)
+      }}
+      onSubmit={handleMetadataSubmit}
+      isUploading={isUploading}
+    />
+
+    {/* Hidden Uppy Uploader - triggers when blob is ready */}
+    {finalImageBlob && pendingMetadata && (
+      <ImageUploader
+        imageBlob={finalImageBlob}
+        bucketName={BUCKET_NAME}
+        folderName=""
+        onUploadComplete={handleUploadComplete}
+        onUploadError={handleUploadError}
+      />
+    )}
     </>
   )
 }
