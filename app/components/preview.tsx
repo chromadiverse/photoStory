@@ -22,6 +22,7 @@ interface PreviewProps {
   onStartOver: () => void
   onBack: () => void
   userId?: string
+  onGoToProfile: () => void;
 }
 
 const Preview: React.FC<PreviewProps> = ({

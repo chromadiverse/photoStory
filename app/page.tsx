@@ -131,7 +131,7 @@ export default function Home() {
   }
   const handleGoToProfile = () => {
   if (user?.id) {
-    router.push(`https://curtainconnect.com/profiles/${user.id}/gallery`);
+    router.push(`https://curtainconnect.com/profiles/${user.id}/gallery`);;
   } else {
    
     console.error('User ID not available');
@@ -224,6 +224,7 @@ export default function Home() {
             onStartOver={handleStartOver}
             onBack={() => setCurrentView("filter")}
          userId={user?.id}
+          onGoToProfile={handleGoToProfile}
           />
         )}
       </div>
