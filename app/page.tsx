@@ -241,9 +241,9 @@ export default function Home() {
 
       <button
         onClick={() => setShowWelcomeModal(true)}
-        className="text-xs font-medium text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50 transition-colors whitespace-nowrap"
+        className="text-xs font-semibold text-white bg-blue-600 px-3 py-2 rounded-lg shadow-md active:scale-95 active:bg-blue-700 transition-transform whitespace-nowrap"
       >
-        Welcome Tips
+        Tips
       </button>
 
       <div className="relative w-16 h-16 flex items-center justify-center">
@@ -257,9 +257,9 @@ export default function Home() {
 
       <button
         onClick={handleGoToGallery}
-        className="text-xs font-medium text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50 transition-colors whitespace-nowrap"
+        className="text-xs font-semibold text-white bg-blue-600 px-3 py-2 rounded-lg shadow-md active:scale-95 active:bg-blue-700 transition-transform whitespace-nowrap"
       >
-        Back to Gallery
+        Gallery
       </button>
 
       <div className="w-2"></div>
