@@ -188,13 +188,7 @@ export default function Home() {
     setShowWelcomeModal(false)
   }
 
-  const handleGoToGallery = () => {
-    if (dancerId) {
-      window.location.href = `https://curtainconnect.com/profiles/${dancerId}/gallery`
-    } else {
-      console.error('Dancer ID not available')
-    }
-  }
+
 
   if (loading) {
     return (
@@ -223,7 +217,7 @@ export default function Home() {
   }
 
   const renderNavigation = () => (
-    <div className="flex justify-between items-center p-3 bg-white/90 backdrop-blur-sm shadow-sm">
+    <div className="flex justify-between items-center p-4 bg-white/90 backdrop-blur-sm shadow-sm">
       <button
         onClick={() => {
           if (currentView === "camera") return
@@ -239,13 +233,6 @@ export default function Home() {
         <ArrowLeft className="w-5 h-5" />
       </button>
 
-      <button
-        onClick={() => setShowWelcomeModal(true)}
-        className="text-xs font-medium text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50 transition-colors whitespace-nowrap"
-      >
-        Welcome Tips
-      </button>
-
       <div className="relative w-16 h-16 flex items-center justify-center">
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center animate-pulse">
@@ -255,14 +242,7 @@ export default function Home() {
         </div>
       </div>
 
-      <button
-        onClick={handleGoToGallery}
-        className="text-xs font-medium text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50 transition-colors whitespace-nowrap"
-      >
-        Back to Gallery
-      </button>
-
-      <div className="w-2"></div>
+      <div className="w-10"></div>
     </div>
   )
 
