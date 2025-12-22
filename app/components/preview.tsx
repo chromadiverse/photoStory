@@ -299,7 +299,7 @@ const Preview: React.FC<PreviewProps> = ({
             className="flex flex-col items-center gap-2 p-4 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
           >
             <Save className="w-6 h-6" />
-            <span className="text-sm font-medium">Save to Gallery</span>
+            <span className="text-sm font-medium">Save to Profile</span>
           </button>
 
           <button
@@ -308,7 +308,7 @@ const Preview: React.FC<PreviewProps> = ({
             className="flex flex-col items-center gap-2 p-4 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg transition-colors shadow-sm"
           >
             <Download className="w-6 h-6" />
-            <span className="text-sm font-medium">Save to Photos</span>
+            <span className="text-sm font-medium">Save to this device</span>
           </button>
         </div>
 
