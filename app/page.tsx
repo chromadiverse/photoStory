@@ -243,7 +243,7 @@ export default function Home() {
         onClick={() => setShowWelcomeModal(true)}
         className="text-xs font-semibold text-white bg-blue-600 px-3 py-2 rounded-lg shadow-md active:scale-95 active:bg-blue-700 transition-transform whitespace-nowrap"
       >
-       Helpfull Tips
+       Helpful Tips
       </button>
 
       <div className="relative w-16 h-16 flex items-center justify-center">
