@@ -201,25 +201,8 @@ export default function Home() {
   }
 
   const handleGoToGallery = () => {
-    // Debug logging
-    console.log("🔍 Exit check:", {
-      capturedImage: !!capturedImage,
-      croppedImageData: !!croppedImageData,
-      filteredImageData: !!filteredImageData,
-      currentView
-    })
-    
-    // Check if there are any captured/processed images OR if not on camera view
-    const hasScansInProgress = capturedImage !== null || croppedImageData !== null || filteredImageData !== null || currentView !== "camera"
-    
-    if (hasScansInProgress) {
-      console.log("✅ Showing exit confirmation")
-      setShowExitConfirm(true)
-    } else {
-      console.log("⏭️ No scans, exiting directly")
-      // No scans in progress, exit directly
-      confirmExit()
-    }
+    // ALWAYS show the exit confirmation modal
+    setShowExitConfirm(true)
   }
 
   const confirmExit = () => {
