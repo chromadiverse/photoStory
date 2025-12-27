@@ -8,6 +8,7 @@ import Cropper from "./components/cropper"
 import FilterPanel from "./components/filter-panel"
 import Preview from "./components/preview"
 import WelcomeModal from "./components/welcome-modal"
+import ExitConfirmModal from "./components/exit-confirmation-modal" 
 import { Camera, Sliders, Search, ArrowLeft, Crop } from "lucide-react"
 import type { FilterSettings } from "./utils/filters"
 import { fetchDancerIdByUserId } from "./service/profileService" 
@@ -33,7 +34,8 @@ export default function Home() {
   const [capturedImage, setCapturedImage] = useState<CapturedImage | null>(null)
   const [croppedImageData, setCroppedImageData] = useState<CroppedImageData | null>(null)
   const [filteredImageData, setFilteredImageData] = useState<CroppedImageData | null>(null)
-  const [showWelcomeModal, setShowWelcomeModal] = useState(true)
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false)
+  const [showExitConfirm, setShowExitConfirm] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [dancerId, setDancerId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -45,6 +47,14 @@ export default function Home() {
     contrast: 100,
     saturation: 100,
   })
+
+  // Check if user has seen welcome modal before
+  useEffect(() => {
+    const hasSeenWelcome = localStorage.getItem('hasSeenWelcomeModal')
+    if (!hasSeenWelcome) {
+      setShowWelcomeModal(true)
+    }
+  }, [])
 
   useEffect(() => {
     console.log("🚀 useEffect running")
@@ -184,11 +194,23 @@ export default function Home() {
     setCurrentView("camera")
   }
 
-  const handleCloseModal = () => {
+  const handleCloseWelcomeModal = () => {
     setShowWelcomeModal(false)
+    // Mark as seen in localStorage
+    localStorage.setItem('hasSeenWelcomeModal', 'true')
   }
 
   const handleGoToGallery = () => {
+    // Check if there are any captured/processed images
+    if (capturedImage || croppedImageData || filteredImageData) {
+      setShowExitConfirm(true)
+    } else {
+      // No scans in progress, exit directly
+      confirmExit()
+    }
+  }
+
+  const confirmExit = () => {
     if (dancerId) {
       window.location.href = `https://curtainconnect.com/profiles/${dancerId}/gallery`
     } else {
@@ -268,7 +290,12 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <WelcomeModal isVisible={showWelcomeModal} onClose={handleCloseModal} />
+      <WelcomeModal isVisible={showWelcomeModal} onClose={handleCloseWelcomeModal} />
+      <ExitConfirmModal 
+        isVisible={showExitConfirm} 
+        onConfirm={confirmExit}
+        onCancel={() => setShowExitConfirm(false)}
+      />
 
       {renderNavigation()}
 
