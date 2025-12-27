@@ -8,7 +8,7 @@ import Cropper from "./components/cropper"
 import FilterPanel from "./components/filter-panel"
 import Preview from "./components/preview"
 import WelcomeModal from "./components/welcome-modal"
-import ExitConfirmModal from "./components/exit-confirmation-modal" 
+import ExitConfirmModal from "./components/exit-confirm-modal"
 import { Camera, Sliders, Search, ArrowLeft, Crop } from "lucide-react"
 import type { FilterSettings } from "./utils/filters"
 import { fetchDancerIdByUserId } from "./service/profileService" 
@@ -201,10 +201,22 @@ export default function Home() {
   }
 
   const handleGoToGallery = () => {
-    // Check if there are any captured/processed images
-    if (capturedImage || croppedImageData || filteredImageData) {
+    // Debug logging
+    console.log("🔍 Exit check:", {
+      capturedImage: !!capturedImage,
+      croppedImageData: !!croppedImageData,
+      filteredImageData: !!filteredImageData,
+      currentView
+    })
+    
+    // Check if there are any captured/processed images OR if not on camera view
+    const hasScansInProgress = capturedImage !== null || croppedImageData !== null || filteredImageData !== null || currentView !== "camera"
+    
+    if (hasScansInProgress) {
+      console.log("✅ Showing exit confirmation")
       setShowExitConfirm(true)
     } else {
+      console.log("⏭️ No scans, exiting directly")
       // No scans in progress, exit directly
       confirmExit()
     }
