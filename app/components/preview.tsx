@@ -372,7 +372,7 @@ const Preview: React.FC<PreviewProps> = ({
       <ImageUploader
         imageBlob={finalImageBlob}
         bucketName={BUCKET_NAME}
-        folderName=""
+        folderName="im-g"
         onUploadComplete={handleUploadComplete}
         onUploadError={handleUploadError}
       />
