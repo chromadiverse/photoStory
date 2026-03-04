@@ -96,7 +96,7 @@ export async function saveGalleryMetadata(
 
 // Helper function to construct the full image URL
 export function getImageUrl(imagePath: string, bucketName: string): string {
-  // Adjust this based on your S3/CloudFlare setup
-  const endpoint = process.env.NEXT_PUBLIC_S3_ENDPOINT || process.env.S3_ENDPOINT
-  return `${endpoint}/${bucketName}/${imagePath}`
+  const r2PublicUrl = process.env.NEXT_PUBLIC_R2_PUBLIC_URL
+  if (!r2PublicUrl) throw new Error('NEXT_PUBLIC_R2_PUBLIC_URL is not defined')
+  return `${r2PublicUrl}/${bucketName}/${imagePath}`
 }
