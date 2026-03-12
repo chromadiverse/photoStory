@@ -1,81 +1,76 @@
 // File: app/api/upload-to-s3-via-api/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-
-// FIX: Initialize S3 client directly here instead of making an internal fetch
-// to /api/aws. The internal fetch was fragile — NEXT_PUBLIC_BASE_URL is often
-// undefined on Vercel, causing the signed URL request to silently fail or hang,
-// which left isUploading stuck as true on the frontend.
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION || "us-east-1",
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
-  // If you're using a custom S3-compatible endpoint (e.g. Supabase Storage, Cloudflare R2, Backblaze):
-  // endpoint: process.env.AWS_S3_ENDPOINT,
-  // forcePathStyle: true, // needed for some S3-compatible services
-});
-
-const BUCKET_NAME = process.env.AWS_S3_BUCKET_NAME || process.env.NEXT_PUBLIC_IMAGE_GALLERY_BUCKET || "gallery";
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
-    const folderName = (formData.get("folderName") as string | null) || "im-g";
+    const bucketName = formData.get("bucketName") as string | null;
+    const folderName = formData.get("folderName") as string | null;
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
-
-    // Validate file size (10MB limit)
-    const MAX_FILE_SIZE = 10 * 1024 * 1024;
-    if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: "File too large. Maximum size is 10MB." }, { status: 400 });
+    if (!bucketName) {
+      return NextResponse.json({ error: "No bucket name provided" }, { status: 400 });
     }
 
-    // Read the file content
     const fileBuffer = await file.arrayBuffer();
     const fileBufferTyped = new Uint8Array(fileBuffer);
 
-    // Generate a unique filename (mirrors what /api/aws was doing)
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substring(2, 8);
-    const extension = file.type === "image/png" ? "png" : "jpg";
-    const uniqueFileName = `${folderName}/${timestamp}-${randomSuffix}.${extension}`;
+    // FIX: VERCEL_URL is always set automatically by Vercel on every deployment.
+    // NEXT_PUBLIC_BASE_URL is checked first (your custom override), then VERCEL_URL
+    // (auto-set by Vercel, needs https:// prepended), then localhost as a final fallback.
+    // The old code only checked NEXT_PUBLIC_BASE_URL which was often undefined on Vercel,
+    // causing the internal fetch to silently hang and leave isUploading stuck.
+    const baseUrl =
+      process.env.NEXT_PUBLIC_BASE_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null) ||
+      `http://localhost:${process.env.PORT || 3000}`;
 
-    console.log(`[upload-to-s3] Uploading file: ${uniqueFileName}, size: ${file.size}, type: ${file.type}`);
+    const awsApiUrl = `${baseUrl}/api/aws`;
 
-    // FIX: Upload directly to S3 using the SDK — no internal fetch needed
-    const command = new PutObjectCommand({
-      Bucket: BUCKET_NAME,
-      Key: uniqueFileName,
-      Body: fileBufferTyped,
-      ContentType: file.type,
+    const signedUrlResponse = await fetch(awsApiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        bucketName,
+        folderName,
+        fileType: file.type,
+      }),
     });
 
-    await s3Client.send(command);
-
-    console.log(`[upload-to-s3] Upload successful: ${uniqueFileName}`);
-
-    // Return the path — consistent with what the frontend expects
-    return NextResponse.json({ path: uniqueFileName });
-
-  } catch (error: any) {
-    console.error("[upload-to-s3] Error:", error);
-
-    // Surface a clearer error for AWS credential/config issues
-    if (error?.name === "CredentialsProviderError" || error?.Code === "InvalidAccessKeyId") {
-      return NextResponse.json(
-        { error: "AWS credentials not configured correctly" },
-        { status: 500 }
-      );
+    if (!signedUrlResponse.ok) {
+      const errorText = await signedUrlResponse.text();
+      console.error("Error calling /api/aws:", errorText);
+      return NextResponse.json({ error: `Failed to get signed URL: ${errorText}` }, { status: 500 });
     }
 
-    return NextResponse.json(
-      { error: error?.message || "Internal Server Error" },
-      { status: 500 }
-    );
+    const { signedUrl, uniqueFileName } = await signedUrlResponse.json();
+
+    if (!signedUrl || !uniqueFileName) {
+      return NextResponse.json({ error: "Missing signed URL or uniqueFileName from /api/aws" }, { status: 500 });
+    }
+
+    const uploadResponse = await fetch(signedUrl, {
+      method: "PUT",
+      body: fileBufferTyped,
+      headers: {
+        "Content-Type": file.type,
+      },
+    });
+
+    if (!uploadResponse.ok) {
+      console.error(`S3-compatible upload failed: ${uploadResponse.status} - ${uploadResponse.statusText}`);
+      return NextResponse.json({ error: `S3 upload failed: ${uploadResponse.statusText}` }, { status: uploadResponse.status });
+    }
+
+    return NextResponse.json({ path: uniqueFileName });
+
+  } catch (error) {
+    console.error("API Route Error (PWA):", error);
+    return NextResponse.json({ error: "Internal Server Error (PWA)" }, { status: 500 });
   }
 }
