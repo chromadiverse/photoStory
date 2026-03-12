@@ -43,20 +43,20 @@ function AuthLoginContent() {
       return;
     }
 
-    console.log('🚀 Auth login initialized with token');
+
     handleAuthLogin(token);
   }, [token]);
 
   const handleAuthLogin = async (token: string) => {
     try {
-      console.log('🔍 Starting auth login with token');
+  
       
       const envInfo = {
         NEXT_PUBLIC_ALUMNI_API_URL: process.env.NEXT_PUBLIC_ALUMNI_API_URL,
         NODE_ENV: process.env.NODE_ENV,
         timestamp: new Date().toISOString()
       };
-      console.log('🌍 Environment info:', envInfo);
+    
       setDebugInfo(prev => ({ ...prev, environment: envInfo }));
       
       const supabase = createClient();
@@ -68,7 +68,7 @@ function AuthLoginContent() {
       }
 
       const apiUrl = `${baseUrl}/api/validate-auth-link-token`;
-      console.log('🌐 API URL:', apiUrl);
+
       
       setDebugInfo(prev => ({ 
         ...prev, 
@@ -93,7 +93,7 @@ function AuthLoginContent() {
         throw new Error(`Network request failed: ${fetchError.message}`);
       }
 
-      console.log('📡 API Response status:', response.status);
+   
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -110,18 +110,18 @@ function AuthLoginContent() {
       }
 
       const responseData = await response.json();
-      console.log('✅ API Response received');
+
 
       // Set session with tokens from response
       if (responseData.session && responseData.session.access_token) {
-        console.log('🔐 Setting session with tokens...');
+
 
         const { data: authData, error: authError } = await supabase.auth.setSession({
           access_token: responseData.session.access_token,
           refresh_token: responseData.session.refresh_token
         });
 
-        console.log('📊 Auth result:', { success: !authError });
+
         setDebugInfo(prev => ({ 
           ...prev, 
           authResult: { success: !authError, error: authError }
@@ -134,7 +134,7 @@ function AuthLoginContent() {
 
         // Verify session was set
         const { data: { session: currentSession } } = await supabase.auth.getSession();
-        console.log('🔍 Session verified:', !!currentSession);
+     
         setDebugInfo(prev => ({ ...prev, sessionVerified: !!currentSession }));
 
         if (!currentSession) {
@@ -147,11 +147,11 @@ function AuthLoginContent() {
 
       setStatus('success');
       setMessage('Login successful! Redirecting to your app...');
-      console.log('✅ Auth login completed successfully');
+ 
 
       // Redirect to home page after success
       setTimeout(() => {
-        console.log('🔄 Redirecting to home...');
+   
         router.push('/');
       }, 1500);
 

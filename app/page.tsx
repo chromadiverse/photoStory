@@ -57,21 +57,21 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    console.log("🚀 useEffect running")
+
     let mounted = true
     
     const checkUser = async () => {
       try {
-        console.log("🔍 Checking user...")
+       
         const {
           data: { user },
           error,
         } = await supabase.auth.getUser()
 
-        console.log("👤 User result:", user?.email || "NOT LOGGED IN", "Error:", error)
+      
 
         if (!mounted) {
-          console.log("⚠️ Component unmounted, aborting")
+      
           return
         }
 
@@ -83,35 +83,35 @@ export default function Home() {
         }
 
         if (!user) {
-          console.log("❌ No user found, redirecting...")
+         
           setLoading(false)
           router.push("/login")
           return
         }
 
-        console.log("✅ User authenticated:", user.id)
+      
         setUser(user)
         
         // Fetch dancer ID after user is set
-        console.log("🔍 Fetching dancer ID for user:", user.id)
+    
         const result = await fetchDancerIdByUserId(supabase, user.id)
-        console.log("📊 Dancer fetch result:", result)
+ 
         
         if (!mounted) {
-          console.log("⚠️ Component unmounted after dancer fetch, aborting")
+  
           return
         }
         
         if (result.error) {
           console.error("❌ Error fetching dancer ID:", result.error)
         } else if (result.data) {
-          console.log("✅ Dancer ID found:", result.data)
+        
           setDancerId(result.data)
         } else {
           console.warn("⚠️ No dancer found for user")
         }
         
-        console.log("✅ Setting loading to false")
+        
         setLoading(false)
       } catch (err) {
         console.error("💥 Unexpected error in checkUser:", err)
@@ -127,7 +127,7 @@ export default function Home() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      console.log("🔄 Auth state changed:", session?.user?.email || "NO SESSION")
+
       if (!mounted) return
       
       if (!session) {
@@ -143,7 +143,7 @@ export default function Home() {
         if (result.error) {
           console.error("Error fetching dancer ID:", result.error)
         } else if (result.data) {
-          console.log("Dancer ID found:", result.data)
+    
           setDancerId(result.data)
         } else {
           console.warn("No dancer found for user")
@@ -153,7 +153,7 @@ export default function Home() {
     })
 
     return () => {
-      console.log("🧹 Cleanup: unmounting")
+
       mounted = false
       subscription.unsubscribe()
     }

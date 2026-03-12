@@ -30,12 +30,11 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user }, error } = await supabase.auth.getUser()
 
-  console.log('Middleware - Path:', request.nextUrl.pathname)
-  console.log('Middleware - User:', user?.email || 'NOT LOGGED IN')
+
 
 
   if (!user && request.nextUrl.pathname !== '/login') {
-    console.log('Redirecting to login...')
+
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
@@ -43,7 +42,7 @@ export async function middleware(request: NextRequest) {
 
 
   if (user && request.nextUrl.pathname === '/login') {
-    console.log('User logged in, redirecting to home...')
+
     const url = request.nextUrl.clone()
     url.pathname = '/'
     return NextResponse.redirect(url)

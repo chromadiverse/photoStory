@@ -75,10 +75,7 @@ export function ServerDebugConsole() {
         }
       };
 
-      console.log = (message: any, ...args: any[]) => {
-        originalLog(message, ...args);
-        addLog('log', message, ...args);
-      };
+  
 
       console.error = (message: any, ...args: any[]) => {
         originalError(message, ...args);

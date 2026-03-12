@@ -113,7 +113,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
 
         const { brightness, contrast, saturation } = filterSettings
 
-        console.log("[v0] Applying filters:", { brightness, contrast, saturation })
+
 
         // Apply filters pixel by pixel for cross-browser compatibility
         for (let i = 0; i < data.length; i += 4) {
@@ -150,13 +150,13 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
 
         ctx.putImageData(pixelData, 0, 0)
 
-        console.log("[v0] Filters applied via pixel manipulation")
+   
 
         canvas.toBlob(
           (blob) => {
             if (blob) {
               const url = URL.createObjectURL(blob)
-              console.log("[v0] Filter processing complete, blob size:", blob.size)
+        
               resolve({
                 croppedImage: url,
                 croppedBlob: blob,

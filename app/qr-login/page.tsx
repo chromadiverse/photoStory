@@ -69,13 +69,13 @@ function QRLoginContent() {
       return;
     }
 
-    console.log('🚀 QR Login initialized with token:', token);
+
     handleQRLogin(token);
   }, [token]);
 
   const handleQRLogin = async (token: string) => {
     try {
-      console.log('🔍 Starting QR login with token:', token);
+  
       
       // Log environment info
       const envInfo = {
@@ -85,7 +85,7 @@ function QRLoginContent() {
         currentUrl: window.location.href,
         timestamp: new Date().toISOString()
       };
-      console.log('🌍 Environment info:', envInfo);
+  
       setDebugInfo(prev => ({ ...prev, environment: envInfo }));
       
       const supabase = createClient();
@@ -100,7 +100,7 @@ function QRLoginContent() {
       }
 
       const apiUrl = `${baseUrl}/api/validate-qr-token`;
-      console.log('🌐 API URL constructed:', apiUrl);
+   
       
       // Log request details
       const requestDetails = {
@@ -112,7 +112,7 @@ function QRLoginContent() {
         },
         body: { token }
       };
-      console.log('📤 Making API request:', requestDetails);
+ 
       setDebugInfo(prev => ({ ...prev, request: requestDetails }));
       
       // Make the actual API request with better error handling
@@ -150,7 +150,7 @@ function QRLoginContent() {
         headers: Object.fromEntries(response.headers.entries()),
         ok: response.ok
       };
-      console.log('📡 API Response info:', responseInfo);
+ 
       setDebugInfo(prev => ({ ...prev, response: responseInfo }));
 
       if (!response.ok) {
@@ -160,7 +160,7 @@ function QRLoginContent() {
         let errorData;
         try {
           errorData = JSON.parse(errorText);
-          console.log('📄 Parsed error data:', errorData);
+  
         } catch (parseError) {
           console.error('❌ Failed to parse error response:', parseError);
           errorData = { error: errorText || 'Failed to validate QR code', rawError: errorText };
@@ -171,12 +171,12 @@ function QRLoginContent() {
       }
 
       const responseData = await response.json();
-      console.log('✅ API Response data:', responseData);
+
       setDebugInfo(prev => ({ ...prev, successResponse: responseData }));
 
       // Check for new response format with session tokens
       if (responseData.session && responseData.session.access_token) {
-        console.log('🔐 Setting session with tokens from response...');
+    
 
         // Use the session tokens directly from the API response
         const { data: authData, error: authError } = await supabase.auth.setSession({
@@ -184,7 +184,7 @@ function QRLoginContent() {
           refresh_token: responseData.session.refresh_token
         });
 
-        console.log('📊 Auth result:', { authData, authError });
+  
         setDebugInfo(prev => ({ ...prev, authResult: { authData, authError } }));
 
         if (authError) {
@@ -194,7 +194,7 @@ function QRLoginContent() {
 
         // Verify the session was set correctly
         const { data: { session: currentSession } } = await supabase.auth.getSession();
-        console.log('🔍 Current session after auth:', currentSession);
+
         setDebugInfo(prev => ({ ...prev, verifiedSession: !!currentSession }));
 
         if (!currentSession) {
@@ -205,8 +205,7 @@ function QRLoginContent() {
         }
 
       } else if (responseData.auth_method === 'client_side_required' && responseData.user) {
-        console.log('🔄 Using client-side authentication fallback...');
-        
+
         // Fallback: Use OTP-less signin with the user's email
         const { data: authData, error: authError } = await supabase.auth.signInWithOtp({
           email: responseData.user.email,
@@ -222,7 +221,7 @@ function QRLoginContent() {
         if (authError) {
           console.error('❌ Client-side auth error:', authError);
           // Try alternative approach: sign in anonymously then link account
-          console.log('🔄 Trying alternative client-side approach...');
+  
           
           try {
             // Alternative: Create a temporary session and redirect to complete auth
@@ -243,7 +242,7 @@ function QRLoginContent() {
           }
         }
 
-        console.log('📊 Client-side auth result:', { authData, authError });
+
         setDebugInfo(prev => ({ ...prev, authResult: { authData, authError } }));
 
         // For OTP signin, we don't get an immediate session, so we handle it differently
@@ -262,11 +261,11 @@ function QRLoginContent() {
 
       setStatus('success');
       setMessage('Login successful! Redirecting...');
-      console.log('✅ QR login completed successfully');
+ 
 
       // Redirect after a short delay to show success message
       setTimeout(() => {
-        console.log('🔄 Redirecting to dashboard...');
+     
         router.push('/');
       }, 2000);
 

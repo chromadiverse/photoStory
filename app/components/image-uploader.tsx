@@ -60,12 +60,12 @@ export default function ImageUploader({
           try {
              // If xhr.response is already parsed JSON, use it directly
              if (xhr.response && typeof xhr.response === 'object') {
-                 console.log("XHRUpload Response Data (PWA) - xhr.response:", xhr.response);
+            
                  return xhr.response; // Return the parsed object
              }
              // Fallback: parse responseText if xhr.response is not an object
              const data = JSON.parse(xhr.responseText);
-             console.log("XHRUpload Response Data (PWA) - xhr.responseText:", data);
+       
              return data;
           } catch (e: any) { // Explicitly type the catch parameter
             console.error("Could not parse response as JSON (PWA):", xhr.responseText, e);
@@ -97,22 +97,20 @@ export default function ImageUploader({
         // }
       } as any); // Use type assertion as a temporary workaround if needed, but try the above first
 
-      uppyRef.current.on("upload", () => {
-        console.log("PWA Upload started");
-      });
+    
 
       uppyRef.current.on("progress", (progress: number) => { // 'progress' is a number (percentage)
-        console.log(`PWA Upload progress: ${progress}%`); // Access the number directly
+
       });
 
       uppyRef.current.on("complete", (result) => {
-        console.log("PWA Upload complete:", result);
+
 
         if (result.successful && result.successful.length > 0) {
           const file = result.successful[0];
           // The response data from getResponseData should now be available in file.response.body
           const response = file.response?.body || {};
-          console.log("Parsed response body (PWA):", response);
+  
 
           if (response.path) { // Assuming your new API returns the path
             onUploadComplete({
@@ -151,7 +149,7 @@ export default function ImageUploader({
             // or failed, perhaps due to validation or other issues.
             // The result might have other info, but typically one of the above arrays will have entries.
             // You might want to log more details from 'result' here for debugging.
-            console.log("PWA Upload completed, but no successful or failed files reported. Result:", result);
+   
             const error = new Error("Upload process completed but no status reported (PWA).");
             console.error("PWA Upload completion error (no status):", error);
             onUploadError?.(error);
@@ -251,7 +249,7 @@ export default function ImageUploader({
           // Pass necessary data as meta for your API route
           meta: { bucketName, folderName },
         });
-        console.log("File added to Uppy (PWA):", file.name);
+
       } catch (error) {
         console.error("Error adding file to Uppy (PWA):", error);
         onUploadError?.(error as Error);

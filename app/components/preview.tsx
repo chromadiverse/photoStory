@@ -85,7 +85,7 @@ const Preview: React.FC<PreviewProps> = ({
         return
       }
 
-      console.log('Preview - Using pre-processed image blob with filters')
+  
       setPendingMetadata(metadata)
       setFinalImageBlob(imageData.croppedBlob)
 
@@ -101,10 +101,7 @@ const Preview: React.FC<PreviewProps> = ({
     path: string
     type: string
   }) => {
-    console.log('🔍 [handleUploadComplete] Upload completed, starting database save:', {
-      uploadedFile,
-      hasPendingMetadata: !!pendingMetadata
-    })
+   
 
     if (!pendingMetadata) {
       console.error('❌ [handleUploadComplete] No pending metadata found')
@@ -125,7 +122,7 @@ const Preview: React.FC<PreviewProps> = ({
       }
 
       const imageUrl = getImageUrl(uploadedFile.path, BUCKET_NAME)
-      console.log('🔍 [handleUploadComplete] Image URL constructed:', imageUrl)
+
 
       const result = await saveGalleryMetadata(
         uploadedFile.path,
@@ -136,10 +133,9 @@ const Preview: React.FC<PreviewProps> = ({
         uploadedFile.type
       )
 
-      console.log('🔍 [handleUploadComplete] saveGalleryMetadata result:', result)
 
       if (result.success) {
-        console.log('✅ [handleUploadComplete] SUCCESS - Gallery entry saved')
+    
         // FIX: Clear timeout FIRST before updating state on success
         if (uploadTimeoutRef.current) {
           clearTimeout(uploadTimeoutRef.current)

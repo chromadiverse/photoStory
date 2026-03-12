@@ -142,7 +142,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         await new Promise<void>((resolve) => {
           const checkOpenCV = () => {
             if (window.cv && window.cv.Mat && typeof window.cv.imread === 'function') {
-              console.log('OpenCV.js loaded successfully');
+           
               setIsDetectionReady(true);
               resolve();
             } else {
@@ -919,7 +919,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   try {
     const video = webcamRef.current.video!;
     
-    console.log('Camera actual resolution:', video.videoWidth, 'x', video.videoHeight);
+
     
     const captureCanvas = document.createElement('canvas');
     captureCanvas.width = video.videoWidth;
