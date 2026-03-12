@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { createClient } from "./lib/supabase/client"
 import { useRouter } from "next/navigation"
 import CameraView from "./components/camera-view"
@@ -8,10 +8,10 @@ import Cropper from "./components/cropper"
 import FilterPanel from "./components/filter-panel"
 import Preview from "./components/preview"
 import WelcomeModal from "./components/welcome-modal"
-import ExitConfirmModal from "./components/exit-confirmation-modal" 
+import ExitConfirmModal from "./components/exit-confirmation-modal"
 import { Camera, Sliders, Search, ArrowLeft, Crop } from "lucide-react"
 import type { FilterSettings } from "./utils/filters"
-import { fetchDancerIdByUserId } from "./service/profileService" 
+import { fetchDancerIdByUserId } from "./service/profileService"
 
 type ViewType = "camera" | "crop" | "filter" | "preview"
 
@@ -40,120 +40,105 @@ export default function Home() {
   const [dancerId, setDancerId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
-  const supabase = createClient()
 
-  const [filterSettings, setFilterSettings] = useState<FilterSettings>({
-    brightness: 100,
-    contrast: 100,
-    saturation: 100,
-  })
+  // FIX 1: Stable supabase client — never recreated on re-render
+  const supabaseRef = useRef(createClient())
+  const supabase = supabaseRef.current
 
-  // Check if user has seen welcome modal before
+  // FIX 2: Track whether setLoading(false) has already been called so the
+  // checkUser + onAuthStateChange race can never both try to resolve loading
+  const loadingResolvedRef = useRef(false)
+  const resolveLoading = () => {
+    if (!loadingResolvedRef.current) {
+      loadingResolvedRef.current = true
+      setLoading(false)
+    }
+  }
+
+  // FIX 3: Safety net — if loading is still true after 8 seconds, force it off.
+  // This catches any edge case where both paths fail silently on reload.
   useEffect(() => {
-    const hasSeenWelcome = localStorage.getItem('hasSeenWelcomeModal')
+    const timeout = setTimeout(() => {
+      if (!loadingResolvedRef.current) {
+        console.warn("Loading timeout hit — forcing loading to false")
+        resolveLoading()
+      }
+    }, 8000)
+    return () => clearTimeout(timeout)
+  }, [])
+
+  useEffect(() => {
+    const hasSeenWelcome = localStorage.getItem("hasSeenWelcomeModal")
     if (!hasSeenWelcome) {
       setShowWelcomeModal(true)
     }
   }, [])
 
   useEffect(() => {
-
     let mounted = true
-    
+
+    const fetchDancer = async (userId: string) => {
+      const result = await fetchDancerIdByUserId(supabase, userId)
+      if (!mounted) return
+      if (result.error) {
+        console.error("Error fetching dancer ID:", result.error)
+      } else if (result.data) {
+        setDancerId(result.data)
+      } else {
+        console.warn("No dancer found for user")
+        setDancerId(null)
+      }
+    }
+
     const checkUser = async () => {
       try {
-       
-        const {
-          data: { user },
-          error,
-        } = await supabase.auth.getUser()
+        const { data: { user }, error } = await supabase.auth.getUser()
 
-      
+        if (!mounted) return
 
-        if (!mounted) {
-      
-          return
-        }
-
-        if (error) {
-          console.error("❌ Auth error:", error)
-          setLoading(false)
+        if (error || !user) {
+          resolveLoading()
           router.push("/login")
           return
         }
 
-        if (!user) {
-         
-          setLoading(false)
-          router.push("/login")
-          return
-        }
-
-      
         setUser(user)
-        
-        // Fetch dancer ID after user is set
-    
-        const result = await fetchDancerIdByUserId(supabase, user.id)
- 
-        
-        if (!mounted) {
-  
-          return
-        }
-        
-        if (result.error) {
-          console.error("❌ Error fetching dancer ID:", result.error)
-        } else if (result.data) {
-        
-          setDancerId(result.data)
-        } else {
-          console.warn("⚠️ No dancer found for user")
-        }
-        
-        
-        setLoading(false)
+        await fetchDancer(user.id)
+
+        if (!mounted) return
+        resolveLoading()
       } catch (err) {
-        console.error("💥 Unexpected error in checkUser:", err)
+        console.error("Unexpected error in checkUser:", err)
         if (mounted) {
-          setLoading(false)
+          resolveLoading()
           router.push("/login")
         }
       }
     }
 
-    checkUser()
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-
+    // FIX 4: Subscribe BEFORE calling checkUser so we never miss an event,
+    // but guard against the INITIAL_SESSION event double-resolving loading
+    // by using the loadingResolvedRef check inside resolveLoading().
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
-      
+
+      // INITIAL_SESSION fires on every page load — let checkUser() handle the
+      // first resolution so we don't race. Only act on subsequent changes.
+      if (event === "INITIAL_SESSION") return
+
       if (!session) {
+        resolveLoading()
         router.push("/login")
       } else {
         setUser(session.user)
-        
-        // Fetch dancer ID when auth state changes
-        const result = await fetchDancerIdByUserId(supabase, session.user.id)
-        
-        if (!mounted) return
-        
-        if (result.error) {
-          console.error("Error fetching dancer ID:", result.error)
-        } else if (result.data) {
-    
-          setDancerId(result.data)
-        } else {
-          console.warn("No dancer found for user")
-          setDancerId(null)
-        }
+        await fetchDancer(session.user.id)
+        resolveLoading()
       }
     })
 
-    return () => {
+    checkUser()
 
+    return () => {
       mounted = false
       subscription.unsubscribe()
     }
@@ -194,14 +179,18 @@ export default function Home() {
     setCurrentView("camera")
   }
 
+  const [filterSettings, setFilterSettings] = useState<FilterSettings>({
+    brightness: 100,
+    contrast: 100,
+    saturation: 100,
+  })
+
   const handleCloseWelcomeModal = () => {
     setShowWelcomeModal(false)
-    // Mark as seen in localStorage
-    localStorage.setItem('hasSeenWelcomeModal', 'true')
+    localStorage.setItem("hasSeenWelcomeModal", "true")
   }
 
   const handleGoToGallery = () => {
-    // ALWAYS show the exit confirmation modal
     setShowExitConfirm(true)
   }
 
@@ -209,7 +198,7 @@ export default function Home() {
     if (dancerId) {
       window.location.href = `https://curtainconnect.com/profiles/${dancerId}/gallery`
     } else {
-      console.error('Dancer ID not available')
+      console.error("Dancer ID not available")
     }
   }
 
@@ -226,16 +215,11 @@ export default function Home() {
 
   const getIconForView = () => {
     switch (currentView) {
-      case "camera":
-        return <Camera className="w-8 h-8" />
-      case "crop":
-        return <Crop className="w-8 h-8" />
-      case "filter":
-        return <Sliders className="w-8 h-8" />
-      case "preview":
-        return <Search className="w-8 h-8" />
-      default:
-        return <Camera className="w-8 h-8" />
+      case "camera": return <Camera className="w-8 h-8" />
+      case "crop": return <Crop className="w-8 h-8" />
+      case "filter": return <Sliders className="w-8 h-8" />
+      case "preview": return <Search className="w-8 h-8" />
+      default: return <Camera className="w-8 h-8" />
     }
   }
 
@@ -260,7 +244,7 @@ export default function Home() {
         onClick={() => setShowWelcomeModal(true)}
         className="text-xs font-semibold text-white bg-blue-600 px-3 py-2 rounded-lg shadow-md active:scale-95 active:bg-blue-700 transition-transform whitespace-nowrap"
       >
-       Helpful Tips
+        Helpful Tips
       </button>
 
       <div className="relative w-16 h-16 flex items-center justify-center">
@@ -276,7 +260,7 @@ export default function Home() {
         onClick={handleGoToGallery}
         className="text-xs font-semibold text-white bg-blue-600 px-3 py-2 rounded-lg shadow-md active:scale-95 active:bg-blue-700 transition-transform whitespace-nowrap"
       >
-       Go back to Profile
+        Go back to Profile
       </button>
 
       <div className="w-2"></div>
@@ -286,8 +270,8 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <WelcomeModal isVisible={showWelcomeModal} onClose={handleCloseWelcomeModal} />
-      <ExitConfirmModal 
-        isVisible={showExitConfirm} 
+      <ExitConfirmModal
+        isVisible={showExitConfirm}
         onConfirm={confirmExit}
         onCancel={() => setShowExitConfirm(false)}
       />
