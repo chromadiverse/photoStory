@@ -2,7 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react'
 import Webcam from 'react-webcam'
-import { Camera, RotateCcw, Square, Eye, EyeOff, Scan, Phone } from 'lucide-react'
+import { Camera, Phone, Scan, ScanLine } from 'lucide-react'
 
 interface CapturedImage {
   src: string
@@ -44,962 +44,682 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
   const [hasCamera, setHasCamera] = useState(true)
   const [isDetectionReady, setIsDetectionReady] = useState(false)
   const animationFrameRef = useRef<number>(0)
-  
-  const [detectedShapes, setDetectedShapes] = useState<DetectedShape[]>([])
+
+  // Use refs for values read inside the rAF loop to avoid stale closure bugs.
+  // Mirror them to state only for React re-renders (UI).
   const [bestShape, setBestShape] = useState<DetectedShape | null>(null)
   const [isShapeStable, setIsShapeStable] = useState(false)
-  
+  const bestShapeRef    = useRef<DetectedShape | null>(null)
+  const isShapeStableRef = useRef(false)
+
   const stableFrameCount = useRef(0)
   const detectionHistory = useRef<DetectedShape[]>([])
-  
+  const lastFrameTime = useRef<number>(0)
+
   // Device detection
   const [deviceType, setDeviceType] = useState<'ios' | 'android' | 'other'>('other');
   const [performanceTier, setPerformanceTier] = useState<'high' | 'medium' | 'low'>('medium');
-  const [isAutoDetectionEnabled, setIsAutoDetectionEnabled] = useState(true)
 
-  // Performance parameters
+  // ✅ Auto-detection OFF by default
+  const [isAutoDetectionEnabled, setIsAutoDetectionEnabled] = useState(false)
+
   const getParams = () => {
     const baseParams = {
       ios: {
-        high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 200 },
-        medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 180 },
-        low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 18, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 150 }
+        high:   { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 10, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 220 },
+        medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 190 },
+        low:    { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 160 }
       },
       android: {
-        high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 200 },
-        medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 180 },
-        low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 18, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 150 }
+        high:   { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 10, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 220 },
+        medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 190 },
+        low:    { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 160 }
       },
       other: {
-        high: { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 200 },
-        medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 180 },
-        low: { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 18, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 150 }
+        high:   { DETECTION_WIDTH: 640, CONFIDENCE_THRESHOLD: 10, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 220 },
+        medium: { DETECTION_WIDTH: 480, CONFIDENCE_THRESHOLD: 12, MIN_STABLE_FRAMES: 2, STABILITY_THRESHOLD: 190 },
+        low:    { DETECTION_WIDTH: 320, CONFIDENCE_THRESHOLD: 15, MIN_STABLE_FRAMES: 1, STABILITY_THRESHOLD: 160 }
       }
     };
-
     return baseParams[deviceType][performanceTier];
   };
 
-  // Detect device type and performance
   useEffect(() => {
-    // Detect device type
-    const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
-    
-    if (/android/i.test(userAgent)) {
-      setDeviceType('android');
-    } else if (/iPad|iPhone|iPod/.test(userAgent)) {
-      setDeviceType('ios');
-    } else {
-      setDeviceType('other');
-    }
-    
-    // Detect performance tier
-    const isHighEnd = navigator.hardwareConcurrency && navigator.hardwareConcurrency >= 6;
-    const isLowEnd = navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2;
-    
-    if (isHighEnd) {
-      setPerformanceTier('high');
-    } else if (isLowEnd) {
-      setPerformanceTier('low');
-    } else {
-      setPerformanceTier('medium');
-    }
+    const ua = navigator.userAgent || navigator.vendor || (window as any).opera;
+    if (/android/i.test(ua)) setDeviceType('android');
+    else if (/iPad|iPhone|iPod/.test(ua)) setDeviceType('ios');
+    else setDeviceType('other');
+
+    const cores = navigator.hardwareConcurrency;
+    if (cores >= 6) setPerformanceTier('high');
+    else if (cores <= 2) setPerformanceTier('low');
+    else setPerformanceTier('medium');
   }, []);
 
-  // Disable auto detection on low-end devices
+  // Safety guard: if user enables auto-detect on a low-end device, force it back off
   useEffect(() => {
-    if (performanceTier === 'low') {
-      setIsAutoDetectionEnabled(false)
+    if (performanceTier === 'low' && isAutoDetectionEnabled) {
+      setIsAutoDetectionEnabled(false);
     }
-  }, [performanceTier]);
+  }, [performanceTier, isAutoDetectionEnabled]);
 
   const videoConstraints = {
-    width: { ideal: deviceType === 'ios' ? 1920 : 1280 },
+    width:  { ideal: deviceType === 'ios' ? 1920 : 1280 },
     height: { ideal: deviceType === 'ios' ? 1080 : 720 },
     facingMode: 'environment',
     frameRate: { ideal: 24, max: 30 },
-    aspectRatio: 16/9,
-    // Ensure maximum brightness and exposure
-    brightness: { ideal: 1.0 },
-    contrast: { ideal: 1.0 },
-    saturation: { ideal: 1.0 }
+    aspectRatio: 16 / 9,
+    brightness:  { ideal: 1.0 },
+    contrast:    { ideal: 1.0 },
+    saturation:  { ideal: 1.0 },
   }
 
   useEffect(() => {
     const loadOpenCV = async () => {
       try {
-        if (window.cv && window.cv.Mat) {
-          setIsDetectionReady(true);
-          return;
-        }
-
+        if (window.cv?.Mat) { setIsDetectionReady(true); return; }
         const script = document.createElement('script');
         script.src = 'https://docs.opencv.org/4.8.0/opencv.js';
         script.async = true;
-        
         document.head.appendChild(script);
-
         await new Promise<void>((resolve) => {
-          const checkOpenCV = () => {
-            if (window.cv && window.cv.Mat && typeof window.cv.imread === 'function') {
-           
+          const check = () => {
+            if (window.cv?.Mat && typeof window.cv.imread === 'function') {
               setIsDetectionReady(true);
               resolve();
             } else {
-              setTimeout(checkOpenCV, 100);
+              setTimeout(check, 100);
             }
           };
-          checkOpenCV();
+          check();
         });
-      } catch (error) {
-        console.error('Failed to load OpenCV.js:', error);
+      } catch (e) {
+        console.error('OpenCV load failed:', e);
         setIsDetectionReady(false);
       }
     };
-
     loadOpenCV();
-
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
+    return () => { if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current); };
   }, []);
 
-  const distance = (a: Point, b: Point): number => {
-    return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
-  };
+  // ─── Shape detection helpers ─────────────────────────────────────────────
 
-  const isRectangularContour = (corners: Point[], angleTolerance: number = 45): boolean => {
+  const dist = (a: Point, b: Point) => Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+
+  const isRectangularContour = (corners: Point[], tolerance = 40): boolean => {
     if (corners.length !== 4) return false;
-    
     for (let i = 0; i < 4; i++) {
       const p1 = corners[(i - 1 + 4) % 4];
       const p2 = corners[i];
       const p3 = corners[(i + 1) % 4];
-      
-      const v1x = p1.x - p2.x;
-      const v1y = p1.y - p2.y;
-      const v2x = p3.x - p2.x;
-      const v2y = p3.y - p2.y;
-      
-      const dot = v1x * v2x + v1y * v2y;
-      const cross = v1x * v2y - v1y * v2x;
+      const v1 = { x: p1.x - p2.x, y: p1.y - p2.y };
+      const v2 = { x: p3.x - p2.x, y: p3.y - p2.y };
+      const dot   = v1.x * v2.x + v1.y * v2.y;
+      const cross = v1.x * v2.y - v1.y * v2.x;
       const angle = Math.abs(Math.atan2(cross, dot) * 180 / Math.PI);
-      
-      if (Math.abs(angle - 90) > angleTolerance) return false;
+      if (Math.abs(angle - 90) > tolerance) return false;
     }
-    
     return true;
   };
 
   const detectDocumentShapes = (canvas: HTMLCanvasElement): DetectedShape[] => {
-    const { DETECTION_WIDTH, CONFIDENCE_THRESHOLD } = getParams();
-    
+    const { CONFIDENCE_THRESHOLD } = getParams();
     if (!window.cv || !canvas) return [];
 
     try {
-      const src = window.cv.imread(canvas);
-      const gray = new window.cv.Mat();
-      const blurred = new window.cv.Mat();
-      const edges = new window.cv.Mat();
-      
+      const src      = window.cv.imread(canvas);
+      const gray     = new window.cv.Mat();
+      const blurred  = new window.cv.Mat();
+      const edges    = new window.cv.Mat();
+
       window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY);
-      
-      // Apply bilateral filter for noise reduction
-      window.cv.bilateralFilter(gray, blurred, 9, 75, 75);
-      
-      // Edge detection with performance-appropriate thresholds
-      const mean = window.cv.mean(blurred);
-      const avgBrightness = mean[0];
-      const isLightBackground = avgBrightness > 127;
 
-      // Lower thresholds for light backgrounds, higher for dark
-      const lowThreshold = isLightBackground ? 25 : 40;
-      const highThreshold = isLightBackground ? 80 : 120;
+      // Stronger denoising for cleaner edges
+      window.cv.GaussianBlur(gray, blurred, new window.cv.Size(5, 5), 0);
 
-      window.cv.Canny(blurred, edges, lowThreshold, highThreshold, 3, true);
-      
-      // Morphological operations
-      const kernel = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(3, 3));
-      window.cv.morphologyEx(edges, edges, window.cv.MORPH_CLOSE, kernel);
-      
-      const contours = new window.cv.MatVector();
+      // Adaptive thresholds based on scene brightness
+      const mean = window.cv.mean(blurred)[0];
+      const lo = mean > 127 ? 20 : 35;
+      const hi = mean > 127 ? 75 : 110;
+      window.cv.Canny(blurred, edges, lo, hi, 3, true);
+
+      // Close small gaps in edges
+      const kernel = window.cv.getStructuringElement(window.cv.MORPH_RECT, new window.cv.Size(4, 4));
+      window.cv.dilate(edges, edges, kernel);
+      window.cv.erode(edges, edges, kernel);
+
+      const contours  = new window.cv.MatVector();
       const hierarchy = new window.cv.Mat();
-      window.cv.findContours(edges, contours, hierarchy, window.cv.RETR_LIST, window.cv.CHAIN_APPROX_SIMPLE);
-      
-      const imgArea = canvas.width * canvas.height;
-      const minArea = imgArea * 0.02;
-      const maxArea = imgArea * 0.98;
-      
-      const detectedShapes: DetectedShape[] = [];
-      const candidatesByArea: { contour: any, area: number, index: number }[] = [];
-      
-      // Collect valid contours
+      window.cv.findContours(edges, contours, hierarchy, window.cv.RETR_EXTERNAL, window.cv.CHAIN_APPROX_SIMPLE);
+
+      const imgArea  = canvas.width * canvas.height;
+      const minArea  = imgArea * 0.03;
+      const maxArea  = imgArea * 0.96;
+
+      const candidates: { contour: any; area: number }[] = [];
       for (let i = 0; i < contours.size(); i++) {
-        const contour = contours.get(i);
-        const area = window.cv.contourArea(contour);
-        
-        if (area >= minArea && area <= maxArea) {
-          candidatesByArea.push({ contour, area, index: i });
-        } else {
-          contour.delete();
-        }
+        const c    = contours.get(i);
+        const area = window.cv.contourArea(c);
+        if (area >= minArea && area <= maxArea) candidates.push({ contour: c, area });
+        else c.delete();
       }
-      
-      // Sort by area
-      candidatesByArea.sort((a, b) => b.area - a.area);
-      
-      // Process top candidates
-      const maxCandidates = performanceTier === 'high' ? 8 : performanceTier === 'medium' ? 6 : 4;
-      
-      for (let i = 0; i < Math.min(maxCandidates, candidatesByArea.length); i++) {
-        const { contour, area } = candidatesByArea[i];
+
+      candidates.sort((a, b) => b.area - a.area);
+
+      const maxCandidates = performanceTier === 'high' ? 10 : performanceTier === 'medium' ? 7 : 5;
+      const detected: DetectedShape[] = [];
+
+      for (let i = 0; i < Math.min(maxCandidates, candidates.length); i++) {
+        const { contour, area } = candidates[i];
         const perimeter = window.cv.arcLength(contour, true);
-        
-        if (perimeter < (performanceTier === 'high' ? 80 : performanceTier === 'medium' ? 100 : 120)) {
-          contour.delete();
-          continue;
-        }
-        
-        // Approximate contour
-        const approx = new window.cv.Mat();
-        const epsilon = (performanceTier === 'high' ? 0.03 : performanceTier === 'medium' ? 0.04 : 0.05) * perimeter;
+        if (perimeter < 80) { contour.delete(); continue; }
+
+        const approx   = new window.cv.Mat();
+        const epsilon  = 0.03 * perimeter;
         window.cv.approxPolyDP(contour, approx, epsilon, true);
-        
+
         if (approx.rows >= 4 && approx.rows <= 8) {
           const corners: Point[] = [];
           for (let j = 0; j < approx.rows; j++) {
-            corners.push({
-              x: approx.data32S[j * 2],
-              y: approx.data32S[j * 2 + 1]
-            });
+            corners.push({ x: approx.data32S[j * 2], y: approx.data32S[j * 2 + 1] });
           }
-          
-          let finalCorners = corners;
-          if (corners.length > 4) {
-            finalCorners = findBestQuadrilateral(corners);
-          }
-          
-          if (finalCorners.length === 4 && 
-              isValidQuadrilateral(finalCorners) && 
-              isRectangularContour(finalCorners, performanceTier === 'high' ? 50 : 45)) {
-                
-            const sortedCorners = sortCorners(finalCorners);
-            const aspectRatio = calculateAspectRatio(sortedCorners);
-            const confidence = calculateImprovedConfidence(
-              sortedCorners, area, canvas.width, canvas.height, perimeter
-            );
-            
+
+          let final = corners.length > 4 ? findBestQuad(corners) : corners;
+
+          if (
+            final.length === 4 &&
+            isValidQuad(final) &&
+            isRectangularContour(final, 50)
+          ) {
+            const sorted      = sortCorners(final);
+            const aspectRatio = calcAspectRatio(sorted);
+            const confidence  = calcConfidence(sorted, area, canvas.width, canvas.height, perimeter);
+
             if (confidence >= CONFIDENCE_THRESHOLD) {
-              detectedShapes.push({
-                corners: sortedCorners,
-                area: area,
-                aspectRatio: aspectRatio,
-                confidence: confidence,
-                type: classifyShape(sortedCorners, aspectRatio)
+              detected.push({
+                corners: sorted,
+                area,
+                aspectRatio,
+                confidence,
+                type: classifyShape(aspectRatio),
               });
             }
           }
         }
-        
+
         approx.delete();
         contour.delete();
       }
-      
-      src.delete();
-      gray.delete();
-      blurred.delete();
-      edges.delete();
-      kernel.delete();
-      contours.delete();
-      hierarchy.delete();
-      
-      return detectedShapes.sort((a, b) => b.confidence - a.confidence);
-    } catch (error) {
-      console.error('Error in shape detection:', error);
+
+      src.delete(); gray.delete(); blurred.delete();
+      edges.delete(); kernel.delete(); contours.delete(); hierarchy.delete();
+
+      return detected.sort((a, b) => b.confidence - a.confidence);
+    } catch (e) {
+      console.error('Shape detection error:', e);
       return [];
     }
   };
 
-  const findBestQuadrilateral = (points: Point[]): Point[] => {
-    if (points.length <= 4) return points;
-    
-    const hull = findConvexHull(points);
-    if (hull.length === 4) return hull;
-    
-    return reduceToQuadrilateral(hull);
+  // ─── Geometry helpers ────────────────────────────────────────────────────
+
+  const findBestQuad = (points: Point[]): Point[] => {
+    const hull = convexHull(points);
+    return hull.length === 4 ? hull : reduceToQuad(hull);
   };
 
-  const findConvexHull = (points: Point[]): Point[] => {
-    if (points.length < 3) return points;
-    
-    let leftmost = 0;
-    for (let i = 1; i < points.length; i++) {
-      if (points[i].x < points[leftmost].x || 
-          (points[i].x === points[leftmost].x && points[i].y < points[leftmost].y)) {
-        leftmost = i;
-      }
-    }
-    
+  const convexHull = (pts: Point[]): Point[] => {
+    if (pts.length < 3) return pts;
+    let lm = 0;
+    for (let i = 1; i < pts.length; i++)
+      if (pts[i].x < pts[lm].x || (pts[i].x === pts[lm].x && pts[i].y < pts[lm].y)) lm = i;
     const hull: Point[] = [];
-    let current = leftmost;
-    
+    let cur = lm;
     do {
-      hull.push(points[current]);
-      let next = (current + 1) % points.length;
-      
-      for (let i = 0; i < points.length; i++) {
-        const cross = crossProduct(points[current], points[i], points[next]);
-        if (cross > 0 || (cross === 0 && 
-            distance(points[current], points[i]) > distance(points[current], points[next]))) {
-          next = i;
-        }
+      hull.push(pts[cur]);
+      let nxt = (cur + 1) % pts.length;
+      for (let i = 0; i < pts.length; i++) {
+        const cross = (pts[cur].x - pts[nxt].x) * (pts[i].y - pts[nxt].y) -
+                      (pts[cur].y - pts[nxt].y) * (pts[i].x - pts[nxt].x);
+        if (cross > 0 || (cross === 0 && dist(pts[cur], pts[i]) > dist(pts[cur], pts[nxt]))) nxt = i;
       }
-      
-      current = next;
-    } while (current !== leftmost && hull.length < points.length);
-    
+      cur = nxt;
+    } while (cur !== lm && hull.length < pts.length);
     return hull;
   };
 
-  const crossProduct = (a: Point, b: Point, c: Point): number => {
-    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+  const reduceToQuad = (pts: Point[]): Point[] => {
+    if (pts.length <= 4) return pts;
+    const curvatures = pts.map((curr, i) => {
+      const prev = pts[(i - 1 + pts.length) % pts.length];
+      const next = pts[(i + 1) % pts.length];
+      const v1 = { x: prev.x - curr.x, y: prev.y - curr.y };
+      const v2 = { x: next.x - curr.x, y: next.y - curr.y };
+      const dot  = v1.x * v2.x + v1.y * v2.y;
+      const mag1 = Math.hypot(v1.x, v1.y);
+      const mag2 = Math.hypot(v2.x, v2.y);
+      if (!mag1 || !mag2) return { index: i, c: 0 };
+      return { index: i, c: Math.abs(Math.PI - Math.acos(Math.max(-1, Math.min(1, dot / (mag1 * mag2))))) };
+    });
+    return curvatures.sort((a, b) => b.c - a.c).slice(0, 4).sort((a, b) => a.index - b.index).map(x => pts[x.index]);
   };
 
-  const reduceToQuadrilateral = (points: Point[]): Point[] => {
-    if (points.length <= 4) return points;
-    
-    const curvatures: { index: number; curvature: number }[] = [];
-    
-    for (let i = 0; i < points.length; i++) {
-      const prev = points[(i - 1 + points.length) % points.length];
-      const curr = points[i];
-      const next = points[(i + 1) % points.length];
-      
-      const curvature = calculateCurvature(prev, curr, next);
-      curvatures.push({ index: i, curvature });
-    }
-    
-    curvatures.sort((a, b) => b.curvature - a.curvature);
-    const selectedIndices = curvatures.slice(0, 4).map(c => c.index).sort((a, b) => a - b);
-    
-    return selectedIndices.map(i => points[i]);
-  };
-
-  const calculateCurvature = (prev: Point, curr: Point, next: Point): number => {
-    const v1 = { x: prev.x - curr.x, y: prev.y - curr.y };
-    const v2 = { x: next.x - curr.x, y: next.y - curr.y };
-    
-    const dot = v1.x * v2.x + v1.y * v2.y;
-    
-    const mag1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
-    const mag2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
-    
-    if (mag1 === 0 || mag2 === 0) return 0;
-    
-    const cosAngle = dot / (mag1 * mag2);
-    const angle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
-    
-    return Math.abs(Math.PI - angle);
-  };
-
-  const isValidQuadrilateral = (corners: Point[]): boolean => {
+  const isValidQuad = (corners: Point[]): boolean => {
     if (corners.length !== 4) return false;
-    
-    const area = calculatePolygonArea(corners);
+    const area = Math.abs(corners.reduce((s, p, i) => {
+      const q = corners[(i + 1) % 4];
+      return s + p.x * q.y - q.x * p.y;
+    }, 0)) / 2;
     if (area < 500) return false;
-    
     for (let i = 0; i < 4; i++) {
-      const p1 = corners[i];
-      const p2 = corners[(i + 1) % 4];
-      const p3 = corners[(i + 2) % 4];
-      
-      const cross = (p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x);
-      if (Math.abs(cross) < 50) return false;
+      const p1 = corners[i], p2 = corners[(i + 1) % 4], p3 = corners[(i + 2) % 4];
+      if (Math.abs((p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x)) < 50) return false;
     }
-    
     return true;
   };
 
-  const calculatePolygonArea = (corners: Point[]): number => {
-    let area = 0;
-    for (let i = 0; i < corners.length; i++) {
-      const j = (i + 1) % corners.length;
-      area += corners[i].x * corners[j].y - corners[j].x * corners[i].y;
-    }
-    return Math.abs(area) / 2;
+  const calcAspectRatio = (corners: Point[]): number => {
+    const w = (dist(corners[0], corners[1]) + dist(corners[2], corners[3])) / 2;
+    const h = (dist(corners[1], corners[2]) + dist(corners[3], corners[0])) / 2;
+    return Math.max(w / h, h / w);
   };
 
-  const calculateImprovedConfidence = (corners: Point[], area: number, canvasWidth: number, canvasHeight: number, perimeter: number): number => {
-    let confidence = 20;
-    
-    const areaRatio = area / (canvasWidth * canvasHeight);
-    if (areaRatio > 0.05 && areaRatio < 0.9) confidence += 30;
-    else if (areaRatio > 0.02) confidence += 20;
-    else confidence += 10;
-    
-    const aspectRatio = calculateAspectRatio(corners);
-    if (aspectRatio > 0.3 && aspectRatio < 3.0) confidence += 25;
-    else confidence += 10;
-    
-    const edgeLengths = [];
-    for (let i = 0; i < 4; i++) {
-      const curr = corners[i];
-      const next = corners[(i + 1) % 4];
-      edgeLengths.push(distance(curr, next));
-    }
-    
-    const edgeVariation = Math.max(...edgeLengths) / Math.min(...edgeLengths);
-    
-    if (edgeVariation < 5) confidence += 20;
-    else if (edgeVariation < 10) confidence += 10;
-    
-    const expectedPerimeter = 2 * Math.sqrt(area * aspectRatio + area / aspectRatio);
-    const perimeterRatio = Math.min(perimeter / expectedPerimeter, expectedPerimeter / perimeter);
-    if (perimeterRatio > 0.7) confidence += 15;
-    else if (perimeterRatio > 0.5) confidence += 10;
-    
-    const centerX = corners.reduce((sum, c) => sum + c.x, 0) / 4;
-    const centerY = corners.reduce((sum, c) => sum + c.y, 0) / 4;
-    const frameCenterX = canvasWidth / 2;
-    const frameCenterY = canvasHeight / 2;
-    
-    const distanceFromCenter = Math.sqrt(
-      Math.pow(centerX - frameCenterX, 2) + Math.pow(centerY - frameCenterY, 2)
-    );
-    const maxDistance = Math.sqrt(Math.pow(frameCenterX, 2) + Math.pow(frameCenterY, 2));
-    const centerScore = (1 - distanceFromCenter / maxDistance) * 10;
-    confidence += centerScore;
-    
-    return Math.min(confidence, 100);
-  };
+  const classifyShape = (ar: number): 'square' | 'rectangle' | 'document' =>
+    ar <= 1.3 ? 'square' : ar <= 2.0 ? 'rectangle' : 'document';
 
-  const calculateAspectRatio = (corners: Point[]): number => {
-    const widths = [
-      distance(corners[0], corners[1]),
-      distance(corners[2], corners[3])
-    ];
-    const heights = [
-      distance(corners[1], corners[2]),
-      distance(corners[3], corners[0])
-    ];
-    
-    const avgWidth = (widths[0] + widths[1]) / 2;
-    const avgHeight = (heights[0] + heights[1]) / 2;
-    
-    return Math.max(avgWidth / avgHeight, avgHeight / avgWidth);
-  };
+  const calcConfidence = (corners: Point[], area: number, cw: number, ch: number, perim: number): number => {
+    let score = 20;
+    const ar   = area / (cw * ch);
+    score += ar > 0.05 && ar < 0.9 ? 30 : ar > 0.02 ? 20 : 10;
 
-  const classifyShape = (corners: Point[], aspectRatio: number): 'square' | 'rectangle' | 'document' => {
-    if (aspectRatio <= 1.3) {
-      return 'square';
-    } else if (aspectRatio <= 2.0) {
-      return 'rectangle';  
-    } else {
-      return 'document';
-    }
+    const ratio = calcAspectRatio(corners);
+    score += ratio > 0.3 && ratio < 3.0 ? 25 : 10;
+
+    const edges = corners.map((c, i) => dist(c, corners[(i + 1) % 4]));
+    const maxEdge = Math.max(...edges), minEdge = Math.min(...edges);
+    score += (maxEdge / minEdge) < 5 ? 20 : (maxEdge / minEdge) < 10 ? 10 : 0;
+
+    const expectedPerim = 2 * Math.sqrt(area * ratio + area / ratio);
+    const pr = Math.min(perim / expectedPerim, expectedPerim / perim);
+    score += pr > 0.7 ? 15 : pr > 0.5 ? 10 : 0;
+
+    const cx = corners.reduce((s, c) => s + c.x, 0) / 4;
+    const cy = corners.reduce((s, c) => s + c.y, 0) / 4;
+    const maxD = Math.hypot(cw / 2, ch / 2);
+    const dCenter = Math.hypot(cx - cw / 2, cy - ch / 2);
+    score += (1 - dCenter / maxD) * 10;
+
+    return Math.min(score, 100);
   };
 
   const sortCorners = (corners: Point[]): Point[] => {
-    const centerX = corners.reduce((sum, p) => sum + p.x, 0) / corners.length;
-    const centerY = corners.reduce((sum, p) => sum + p.y, 0) / corners.length;
-    
-    const sortedByAngle = corners.map(corner => ({
-      point: corner,
-      angle: Math.atan2(corner.y - centerY, corner.x - centerX)
-    })).sort((a, b) => a.angle - b.angle);
-    
-    const topLeftCandidate = sortedByAngle.reduce((min, curr) => 
-      (curr.point.x + curr.point.y < min.point.x + min.point.y) ? curr : min
-    );
-    
-    const startIndex = sortedByAngle.indexOf(topLeftCandidate);
-    const reordered = [
-      ...sortedByAngle.slice(startIndex),
-      ...sortedByAngle.slice(0, startIndex)
-    ];
-    
-    return reordered.map(item => item.point);
+    const cx = corners.reduce((s, p) => s + p.x, 0) / corners.length;
+    const cy = corners.reduce((s, p) => s + p.y, 0) / corners.length;
+    const byAngle = corners.map(p => ({ p, a: Math.atan2(p.y - cy, p.x - cx) })).sort((a, b) => a.a - b.a);
+    const tlIdx = byAngle.reduce((mi, x, i) => (x.p.x + x.p.y < byAngle[mi].p.x + byAngle[mi].p.y ? i : mi), 0);
+    return [...byAngle.slice(tlIdx), ...byAngle.slice(0, tlIdx)].map(x => x.p);
   };
 
-  const smoothShapeWithHistory = (currentCorners: Point[]): Point[] => {
-    const currentShape: DetectedShape = {
-      corners: currentCorners,
-      area: 0,
-      aspectRatio: 0,
-      confidence: 0,
-      type: 'rectangle'
-    };
-    
-    detectionHistory.current.push(currentShape);
-    if (detectionHistory.current.length > (performanceTier === 'high' ? 10 : performanceTier === 'medium' ? 8 : 6)) {
-      detectionHistory.current.shift();
-    }
-    
-    if (detectionHistory.current.length < 3) {
-      return currentCorners;
-    }
-    
-    const recentDetections = detectionHistory.current.slice(-5);
-    const smoothedCorners: Point[] = [];
-    
-    for (let i = 0; i < 4; i++) {
-      let avgX = 0, avgY = 0;
-      let totalWeight = 0;
-      
-      recentDetections.forEach((detection, index) => {
-        const weight = index + 1;
-        avgX += detection.corners[i].x * weight;
-        avgY += detection.corners[i].y * weight;
-        totalWeight += weight;
+  // ─── Smoothing / stability ────────────────────────────────────────────────
+
+  const smoothWithHistory = (corners: Point[]): Point[] => {
+    detectionHistory.current.push({ corners, area: 0, aspectRatio: 0, confidence: 0, type: 'rectangle' });
+    const maxHistory = performanceTier === 'high' ? 10 : 8;
+    if (detectionHistory.current.length > maxHistory) detectionHistory.current.shift();
+    if (detectionHistory.current.length < 3) return corners;
+
+    const recent = detectionHistory.current.slice(-6);
+    return corners.map((_, i) => {
+      let wx = 0, wy = 0, tw = 0;
+      recent.forEach((d, idx) => {
+        const w = idx + 1;
+        wx += d.corners[i].x * w;
+        wy += d.corners[i].y * w;
+        tw += w;
       });
-      
-      smoothedCorners.push({
-        x: avgX / totalWeight,
-        y: avgY / totalWeight
-      });
-    }
-    
-    return smoothedCorners;
+      return { x: wx / tw, y: wy / tw };
+    });
   };
 
-  const areShapesSimilar = (shape1: DetectedShape | null, shape2: DetectedShape | null): boolean => {
+  const shapesMatch = (a: DetectedShape | null, b: DetectedShape | null): boolean => {
     const { STABILITY_THRESHOLD } = getParams();
-    
-    if (!shape1 || !shape2 || shape1.corners.length !== shape2.corners.length) return false;
-    
-    const totalDistance = shape1.corners.reduce((sum, corner, i) => {
-      const dx = corner.x - shape2.corners[i].x;
-      const dy = corner.y - shape2.corners[i].y;
-      return sum + Math.sqrt(dx * dx + dy * dy);
-    }, 0);
-    
-    const avgDistance = totalDistance / shape1.corners.length;
-    return avgDistance < STABILITY_THRESHOLD;
+    if (!a || !b || a.corners.length !== b.corners.length) return false;
+    const avg = a.corners.reduce((s, c, i) => s + dist(c, b.corners[i]), 0) / a.corners.length;
+    return avg < STABILITY_THRESHOLD;
   };
+
+  // ─── Detection loop ───────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!isDetectionReady || !hasCamera || !isAutoDetectionEnabled) return;
 
-    const detectShapes = () => {
-      const webcam = webcamRef.current;
-      const canvas = canvasRef.current;
-      const overlayCanvas = overlayCanvasRef.current;
-
-      if (!webcam || !canvas || !overlayCanvas) {
-        animationFrameRef.current = requestAnimationFrame(detectShapes);
+    const loop = () => {
+      const now = performance.now();
+      const fps = performanceTier === 'low' ? 15 : performanceTier === 'medium' ? 20 : 30;
+      if (now - lastFrameTime.current < 1000 / fps) {
+        animationFrameRef.current = requestAnimationFrame(loop);
         return;
       }
+      lastFrameTime.current = now;
 
+      const webcam  = webcamRef.current;
+      const canvas  = canvasRef.current;
+      const overlay = overlayCanvasRef.current;
+
+      if (!webcam || !canvas || !overlay) { animationFrameRef.current = requestAnimationFrame(loop); return; }
       const video = webcam.video;
-      if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) {
-        animationFrameRef.current = requestAnimationFrame(detectShapes);
-        return;
-      }
+      if (!video || video.readyState !== video.HAVE_ENOUGH_DATA) { animationFrameRef.current = requestAnimationFrame(loop); return; }
 
       try {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
         const { DETECTION_WIDTH } = getParams();
-        const videoAspect = video.videoWidth / video.videoHeight;
-        const canvasWidth = DETECTION_WIDTH;
-        const canvasHeight = Math.round(canvasWidth / videoAspect);
-        
-        canvas.width = canvasWidth;
-        canvas.height = canvasHeight;
-        ctx.drawImage(video, 0, 0, canvasWidth, canvasHeight);
+        const aspect = video.videoWidth / video.videoHeight;
+        canvas.width  = DETECTION_WIDTH;
+        canvas.height = Math.round(DETECTION_WIDTH / aspect);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
         const shapes = detectDocumentShapes(canvas);
-        setDetectedShapes(shapes);
-        
-        let currentBest = shapes[0] || null;
-        
-        if (currentBest) {
-          const smoothedCorners = smoothShapeWithHistory(currentBest.corners);
-          currentBest = { ...currentBest, corners: smoothedCorners };
-        }
-        
-        const previousBest = bestShape;
-        if (currentBest && previousBest && areShapesSimilar(currentBest, previousBest)) {
-          const { MIN_STABLE_FRAMES } = getParams();
-          stableFrameCount.current = Math.min(stableFrameCount.current + 1, MIN_STABLE_FRAMES * 3);
+
+        const cur = shapes[0] ? { ...shapes[0], corners: smoothWithHistory(shapes[0].corners) } : null;
+
+        // Use ref for comparison — avoids stale closure
+        const { MIN_STABLE_FRAMES } = getParams();
+        if (cur && bestShapeRef.current && shapesMatch(cur, bestShapeRef.current)) {
+          stableFrameCount.current = Math.min(stableFrameCount.current + 1, MIN_STABLE_FRAMES * 4);
         } else {
           stableFrameCount.current = Math.max(stableFrameCount.current - 1, 0);
         }
-        
-        const { MIN_STABLE_FRAMES } = getParams();
-        const newStability = stableFrameCount.current >= MIN_STABLE_FRAMES;
-        if (newStability !== isShapeStable) {
-          setIsShapeStable(newStability);
-        }
-        
-        setBestShape(currentBest);
-        drawOverlay(overlayCanvas, shapes, currentBest);
-        
-      } catch (error) {
-        console.error('Detection error:', error);
+        const stable = stableFrameCount.current >= MIN_STABLE_FRAMES;
+
+        // Keep refs in sync first (used on next frame immediately)
+        bestShapeRef.current     = cur;
+        isShapeStableRef.current = stable;
+
+        // Update React state for re-renders
+        setBestShape(cur);
+        setIsShapeStable(stable);
+
+        drawOverlay(overlay, shapes, cur, stable);
+      } catch (e) {
+        console.error('Detection loop error:', e);
       }
 
-      animationFrameRef.current = requestAnimationFrame(detectShapes);
+      animationFrameRef.current = requestAnimationFrame(loop);
     };
 
-    detectShapes();
+    loop();
+    return () => { if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current); };
+  }, [isDetectionReady, hasCamera, isAutoDetectionEnabled, deviceType, performanceTier]);
 
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
+  // Clear overlay + reset detection state when auto-detect is disabled
+  useEffect(() => {
+    if (!isAutoDetectionEnabled) {
+      const overlay = overlayCanvasRef.current;
+      if (overlay) {
+        const ctx = overlay.getContext('2d');
+        ctx?.clearRect(0, 0, overlay.width, overlay.height);
       }
-    };
-  }, [isDetectionReady, hasCamera, bestShape, deviceType, performanceTier, isAutoDetectionEnabled]);
+      bestShapeRef.current     = null;
+      isShapeStableRef.current = false;
+      setBestShape(null);
+      setIsShapeStable(false);
+      stableFrameCount.current = 0;
+      detectionHistory.current = [];
+    }
+  }, [isAutoDetectionEnabled]);
 
-  const drawOverlay = (overlayCanvas: HTMLCanvasElement, shapes: DetectedShape[], bestShape: DetectedShape | null) => {
-  const overlayCtx = overlayCanvas.getContext('2d');
-  if (!overlayCtx) return;
+  // ─── Overlay drawing ──────────────────────────────────────────────────────
 
-  overlayCanvas.width = canvasRef.current?.width || 0;
-  overlayCanvas.height = canvasRef.current?.height || 0;
-  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  const drawOverlay = (overlay: HTMLCanvasElement, shapes: DetectedShape[], best: DetectedShape | null, stable: boolean) => {
+    const ctx = overlay.getContext('2d');
+    if (!ctx) return;
 
-  if (!bestShape) {
-    const centerX = overlayCanvas.width / 2;
-    const centerY = overlayCanvas.height / 2;
-    
-    overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-    
-    const guideWidth = Math.min(overlayCanvas.width * 0.9, 600);
-    const guideHeight = Math.min(overlayCanvas.height * 0.7, 400);
-    const guideX = (overlayCanvas.width - guideWidth) / 2;
-    const guideY = (overlayCanvas.height - guideHeight) / 2;
-    
-    overlayCtx.strokeStyle = '#FFFFFF';
-    overlayCtx.lineWidth = 3;
-    overlayCtx.setLineDash([10, 10]);
-    overlayCtx.strokeRect(guideX, guideY, guideWidth, guideHeight);
-    overlayCtx.setLineDash([]);
-    
-    overlayCtx.fillStyle = '#FFFFFF';
-    overlayCtx.font = 'bold 24px Arial';
-    overlayCtx.textAlign = 'center';
-    overlayCtx.textBaseline = 'middle';
-    overlayCtx.fillText(
-      'Position document in frame',
-      centerX,
-      guideY - 40
-    );
-    overlayCtx.font = '18px Arial';
-    overlayCtx.fillText(
-      'Works with monitors, papers, books, photos',
-      centerX,
-      guideY + guideHeight + 40
-    );
-    return;
-  }
+    overlay.width  = canvasRef.current?.width  || 0;
+    overlay.height = canvasRef.current?.height || 0;
+    ctx.clearRect(0, 0, overlay.width, overlay.height);
 
-  // Draw all detected shapes as potential candidates
-  shapes.forEach(shape => {
-    if (shape.confidence < 30) return;
-    
-    const corners = shape.corners;
-    overlayCtx.strokeStyle = 'rgba(100, 200, 255, 0.4)';
-    overlayCtx.lineWidth = 1;
-    overlayCtx.setLineDash([5, 5]);
-    overlayCtx.beginPath();
-    overlayCtx.moveTo(corners[0].x, corners[0].y);
-    corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y));
-    overlayCtx.closePath();
-    overlayCtx.stroke();
-  });
+    if (!best) {
+      // Dim the scene and show a clean guide frame
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.fillRect(0, 0, overlay.width, overlay.height);
 
-  const corners = bestShape.corners;
-  const isStable = isShapeStable;
-  
-  overlayCtx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-  overlayCtx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-  
-  overlayCtx.globalCompositeOperation = 'destination-out';
-  overlayCtx.beginPath();
-  overlayCtx.moveTo(corners[0].x, corners[0].y);
-  corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y));
-  overlayCtx.closePath();
-  overlayCtx.fill();
-  
-  overlayCtx.globalCompositeOperation = 'source-over';
-  overlayCtx.strokeStyle = isStable ? '#00FF00' : '#00AAFF';
-  overlayCtx.lineWidth = isStable ? 3 : 2;
-  overlayCtx.setLineDash(isStable ? [] : [20, 15]);
-  overlayCtx.shadowColor = 'rgba(0, 0, 0, 0.5)';
-  overlayCtx.shadowBlur = 4;
-  overlayCtx.beginPath();
-  overlayCtx.moveTo(corners[0].x, corners[0].y);
-  corners.forEach(corner => overlayCtx.lineTo(corner.x, corner.y));
-  overlayCtx.closePath();
-  overlayCtx.stroke();
-  overlayCtx.setLineDash([]);
-  overlayCtx.shadowBlur = 0;
+      const gw = Math.min(overlay.width * 0.85, 560);
+      const gh = Math.min(overlay.height * 0.68, 380);
+      const gx = (overlay.width  - gw) / 2;
+      const gy = (overlay.height - gh) / 2;
+      const cr = 12; // corner radius
 
-  corners.forEach((corner) => {
-    overlayCtx.fillStyle = isStable ? '#00FF00' : '#00AAFF';
-    overlayCtx.beginPath();
-    overlayCtx.arc(corner.x, corner.y, 8, 0, 2 * Math.PI);
-    overlayCtx.fill();
-    
-    overlayCtx.fillStyle = '#FFFFFF';
-    overlayCtx.beginPath();
-    overlayCtx.arc(corner.x, corner.y, 4, 0, 2 * Math.PI);
-    overlayCtx.fill();
-  });
-  
-  if (isStable) {
-    const centerX = corners.reduce((sum, c) => sum + c.x, 0) / corners.length;
-    const centerY = corners.reduce((sum, c) => sum + c.y, 0) / corners.length;
+      // Rounded guide rect
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth   = 2;
+      ctx.setLineDash([12, 8]);
+      ctx.beginPath();
+      ctx.roundRect(gx, gy, gw, gh, cr);
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-    overlayCtx.fillStyle = '#00FF00';
-    overlayCtx.font = 'bold 24px Arial';
-    overlayCtx.textAlign = 'center';
-    overlayCtx.textBaseline = 'middle';
-    overlayCtx.fillText('Ready to capture!', centerX, centerY);
-  }
-};
-  const orderCornersForDocument = (corners: Point[]): Point[] => {
-    const centerX = corners.reduce((sum, p) => sum + p.x, 0) / corners.length;
-    const centerY = corners.reduce((sum, p) => sum + p.y, 0) / corners.length;
+      // Corner accent marks
+      const markLen = 28;
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth   = 3;
+      const corners: [number, number, number, number][] = [
+        [gx,      gy,      1,  1],
+        [gx + gw, gy,     -1,  1],
+        [gx + gw, gy + gh,-1, -1],
+        [gx,      gy + gh, 1, -1],
+      ];
+      corners.forEach(([x, y, dx, dy]) => {
+        ctx.beginPath();
+        ctx.moveTo(x + dx * markLen, y);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x, y + dy * markLen);
+        ctx.stroke();
+      });
 
-    const cornersWithAngles = corners.map(corner => ({
-      point: corner,
-      angle: Math.atan2(corner.y - centerY, corner.x - centerX)
-    }));
+      // Hint text
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.font      = 'bold 15px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('Align document within frame', overlay.width / 2, gy - 28);
 
-    cornersWithAngles.sort((a, b) => a.angle - b.angle);
-
-    let topLeftIndex = 0;
-    let minSum = cornersWithAngles[0].point.x + cornersWithAngles[0].point.y;
-    
-    for (let i = 1; i < cornersWithAngles.length; i++) {
-      const sum = cornersWithAngles[i].point.x + cornersWithAngles[i].point.y;
-      if (sum < minSum) {
-        minSum = sum;
-        topLeftIndex = i;
-      }
+      return;
     }
 
-    const orderedCorners = [];
-    for (let i = 0; i < 4; i++) {
-      orderedCorners.push(cornersWithAngles[(topLeftIndex + i) % 4].point);
-    }
+    const c = best.corners;
 
-    return orderedCorners;
+    // Dim everything outside the detected shape
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(0, 0, overlay.width, overlay.height);
+
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.moveTo(c[0].x, c[0].y);
+    c.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
+    const color  = stable ? '#34D399' : '#60A5FA'; // emerald : sky blue
+
+    // Glow effect
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = stable ? 18 : 10;
+
+    // Border
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = stable ? 3 : 2.5;
+    ctx.setLineDash(stable ? [] : [18, 12]);
+    ctx.beginPath();
+    ctx.moveTo(c[0].x, c[0].y);
+    c.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.shadowBlur = 0;
+
+    // Corner dots — clean two-tone circles
+    c.forEach(p => {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Centre label
+    const cx = c.reduce((s, p) => s + p.x, 0) / 4;
+    const cy = c.reduce((s, p) => s + p.y, 0) / 4;
+
+    if (stable) {
+      // Pill background
+      const label  = 'Ready to capture';
+      ctx.font     = 'bold 14px system-ui, sans-serif';
+      const tw     = ctx.measureText(label).width;
+      const ph = 28, pw = tw + 28;
+
+      ctx.fillStyle = 'rgba(52,211,153,0.92)';
+      ctx.beginPath();
+      ctx.roundRect(cx - pw / 2, cy - ph / 2, pw, ph, ph / 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, cx, cy);
+    }
   };
 
-  const calculateOptimalOutputSize = (corners: Point[], maxWidth: number, maxHeight: number): { width: number, height: number } => {
-    const topEdge = distance(corners[0], corners[1]);
-    const rightEdge = distance(corners[1], corners[2]); 
-    const bottomEdge = distance(corners[2], corners[3]);
-    const leftEdge = distance(corners[3], corners[0]);
+  // ─── Perspective correction ───────────────────────────────────────────────
 
-    const avgWidth = (topEdge + bottomEdge) / 2;
-    const avgHeight = (rightEdge + leftEdge) / 2;
-
-    const minDimension = Math.min(avgWidth, avgHeight);
-    const targetMinSize = 1200;
-    
-    let scaleFactor = 1;
-    if (minDimension < targetMinSize) {
-      scaleFactor = targetMinSize / minDimension;
-    }
-    
-    let outputWidth = Math.round(avgWidth * scaleFactor);
-    let outputHeight = Math.round(avgHeight * scaleFactor);
-    
-    if (outputWidth > maxWidth || outputHeight > maxHeight) {
-      const maxScale = Math.min(maxWidth / avgWidth, maxHeight / avgHeight);
-      outputWidth = Math.round(avgWidth * maxScale);
-      outputHeight = Math.round(avgHeight * maxScale);
-    }
-
-    outputWidth = Math.max(outputWidth, 800);
-    outputHeight = Math.max(outputHeight, 600);
-
-    return { width: outputWidth, height: outputHeight };
+  const orderCorners = (corners: Point[]): Point[] => {
+    const cx = corners.reduce((s, p) => s + p.x, 0) / corners.length;
+    const cy = corners.reduce((s, p) => s + p.y, 0) / corners.length;
+    const byAngle = corners.map(p => ({ p, a: Math.atan2(p.y - cy, p.x - cx) })).sort((a, b) => a.a - b.a);
+    const tlIdx = byAngle.reduce((mi, x, i) => (x.p.x + x.p.y < byAngle[mi].p.x + byAngle[mi].p.y ? i : mi), 0);
+    return [...byAngle.slice(tlIdx), ...byAngle.slice(0, tlIdx)].map(x => x.p);
   };
 
-  const cropAndCorrectPerspective = (imageSrc: string, corners: Point[], detectionCanvas: HTMLCanvasElement): Promise<string> => {
-    return new Promise((resolve) => {
+  const calcOutputSize = (corners: Point[], maxW: number, maxH: number) => {
+    const w = (dist(corners[0], corners[1]) + dist(corners[2], corners[3])) / 2;
+    const h = (dist(corners[1], corners[2]) + dist(corners[3], corners[0])) / 2;
+    let ow = w, oh = h;
+    const minDim = Math.min(w, h);
+    if (minDim < 1200) { const s = 1200 / minDim; ow *= s; oh *= s; }
+    if (ow > maxW || oh > maxH) { const s = Math.min(maxW / ow, maxH / oh); ow *= s; oh *= s; }
+    return { width: Math.max(Math.round(ow), 800), height: Math.max(Math.round(oh), 600) };
+  };
+
+  const perspectiveCorrect = (imgSrc: string, corners: Point[], detCanvas: HTMLCanvasElement): Promise<string> =>
+    new Promise(resolve => {
       const img = new Image();
       img.onload = () => {
         try {
-          if (!window.cv) {
-            console.error('OpenCV not loaded');
-            resolve(imageSrc);
-            return;
-          }
+          if (!window.cv) { resolve(imgSrc); return; }
+          const sx = img.width / detCanvas.width;
+          const sy = img.height / detCanvas.height;
+          const scaled  = corners.map(c => ({ x: c.x * sx, y: c.y * sy }));
+          const ordered = orderCorners(scaled);
+          const { width: ow, height: oh } = calcOutputSize(ordered, img.width, img.height);
 
           const src = window.cv.imread(img);
           const dst = new window.cv.Mat();
+          const srcPts = window.cv.matFromArray(4, 1, window.cv.CV_32FC2,
+            ordered.flatMap(p => [p.x, p.y]));
+          const dstPts = window.cv.matFromArray(4, 1, window.cv.CV_32FC2,
+            [0, 0, ow, 0, ow, oh, 0, oh]);
+          const M = window.cv.getPerspectiveTransform(srcPts, dstPts);
+          window.cv.warpPerspective(src, dst, M, new window.cv.Size(ow, oh),
+            window.cv.INTER_CUBIC, window.cv.BORDER_CONSTANT, new window.cv.Scalar(255, 255, 255, 255));
 
-          const scaleX = img.width / detectionCanvas.width;
-          const scaleY = img.height / detectionCanvas.height;
-          
-          const scaledCorners = corners.map(corner => ({
-            x: corner.x * scaleX,
-            y: corner.y * scaleY
-          }));
-
-          const properlyOrderedCorners = orderCornersForDocument(scaledCorners);
-          const { width: outputWidth, height: outputHeight } = calculateOptimalOutputSize(
-            properlyOrderedCorners, 
-            img.width, 
-            img.height
-          );
-
-          const srcPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
-            properlyOrderedCorners[0].x, properlyOrderedCorners[0].y,
-            properlyOrderedCorners[1].x, properlyOrderedCorners[1].y,
-            properlyOrderedCorners[2].x, properlyOrderedCorners[2].y,
-            properlyOrderedCorners[3].x, properlyOrderedCorners[3].y
-          ]);
-
-          const dstPoints = window.cv.matFromArray(4, 1, window.cv.CV_32FC2, [
-            0, 0,
-            outputWidth, 0,
-            outputWidth, outputHeight,
-            0, outputHeight
-          ]);
-
-          const transformMatrix = window.cv.getPerspectiveTransform(srcPoints, dstPoints);
-
-          window.cv.warpPerspective(
-            src, 
-            dst, 
-            transformMatrix, 
-            new window.cv.Size(outputWidth, outputHeight),
-            window.cv.INTER_CUBIC,
-            window.cv.BORDER_CONSTANT,
-            new window.cv.Scalar(255, 255, 255, 255)
-          );
-
-          const outputCanvas = document.createElement('canvas');
-          outputCanvas.width = outputWidth;
-          outputCanvas.height = outputHeight;
-          window.cv.imshow(outputCanvas, dst);
-
-          outputCanvas.toBlob((blob) => {
-            if (blob) {
-              const reader = new FileReader();
-              reader.onload = (e) => {
-                resolve(e.target?.result as string);
-              };
-              reader.readAsDataURL(blob);
-            } else {
-              resolve(imageSrc);
-            }
+          const out = document.createElement('canvas');
+          out.width = ow; out.height = oh;
+          window.cv.imshow(out, dst);
+          out.toBlob(blob => {
+            if (!blob) { resolve(imgSrc); return; }
+            const fr = new FileReader();
+            fr.onload = e => resolve(e.target?.result as string);
+            fr.readAsDataURL(blob);
           }, 'image/jpeg', 0.98);
 
-          src.delete();
-          dst.delete();
-          srcPoints.delete();
-          dstPoints.delete();
-          transformMatrix.delete();
-
-        } catch (error) {
-          console.error('Error in perspective correction:', error);
-          resolve(imageSrc);
+          src.delete(); dst.delete(); srcPts.delete(); dstPts.delete(); M.delete();
+        } catch (e) {
+          console.error('Perspective correction error:', e);
+          resolve(imgSrc);
         }
       };
-      img.src = imageSrc;
+      img.src = imgSrc;
     });
-  };
 
- const handleCapture = useCallback(async () => {
-  if (!webcamRef.current) return;
-  
-  setIsCapturing(true);
-  try {
-    const video = webcamRef.current.video!;
-    
+  // ─── Capture ──────────────────────────────────────────────────────────────
 
-    
-    const captureCanvas = document.createElement('canvas');
-    captureCanvas.width = video.videoWidth;
-    captureCanvas.height = video.videoHeight;
-    const ctx = captureCanvas.getContext('2d')!;
-    ctx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
-    
-    const imageSrc = captureCanvas.toDataURL('image/jpeg', 0.95);
+  const handleCapture = useCallback(async () => {
+    if (!webcamRef.current) return;
+    setIsCapturing(true);
+    try {
+      const video = webcamRef.current.video!;
+      const cap = document.createElement('canvas');
+      cap.width  = video.videoWidth;
+      cap.height = video.videoHeight;
+      cap.getContext('2d')!.drawImage(video, 0, 0, cap.width, cap.height);
+      const imgSrc = cap.toDataURL('image/jpeg', 0.95);
 
-    if (imageSrc) {
-      let finalImageSrc = imageSrc;
-      let finalBlob: Blob;
-
-      // Only apply perspective correction if auto-detection is enabled AND a shape is found
-      if (isAutoDetectionEnabled && bestShape && canvasRef.current) {
-        finalImageSrc = await cropAndCorrectPerspective(imageSrc, bestShape.corners, canvasRef.current);
+      let finalSrc = imgSrc;
+      if (isAutoDetectionEnabled && bestShapeRef.current && canvasRef.current) {
+        finalSrc = await perspectiveCorrect(imgSrc, bestShapeRef.current.corners, canvasRef.current);
       }
 
-      const response = await fetch(finalImageSrc);
-      finalBlob = await response.blob();
-      
-      const image = new Image();
-      image.onload = () => {
-        onImageCapture({
-          src: finalImageSrc,
-          blob: finalBlob,
-          width: image.width,
-          height: image.height
-        });
-      };
-      image.src = finalImageSrc;
+      const blob = await fetch(finalSrc).then(r => r.blob());
+      const img  = new Image();
+      img.onload = () => onImageCapture({ src: finalSrc, blob, width: img.width, height: img.height });
+      img.src = finalSrc;
+    } catch (e) {
+      console.error('Capture error:', e);
+    } finally {
+      setIsCapturing(false);
     }
-  } catch (error) {
-    console.error('Error capturing image:', error);
-  } finally {
-    setIsCapturing(false);
-  }
-}, [onImageCapture, bestShape, isAutoDetectionEnabled]);
+  }, [onImageCapture, isAutoDetectionEnabled]);
 
-  const handleFileCapture = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const result = e.target?.result as string;
-        
-        const image = new Image();
-        image.onload = () => {
-          onImageCapture({
-            src: result,
-            blob: file,
-            width: image.width,
-            height: image.height
-          });
-        };
-        image.src = result;
-      };
-      reader.readAsDataURL(file);
-    }
+  const handleFileCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const fr = new FileReader();
+    fr.onload = ev => {
+      const src = ev.target?.result as string;
+      const img = new Image();
+      img.onload = () => onImageCapture({ src, blob: file, width: img.width, height: img.height });
+      img.src = src;
+    };
+    fr.readAsDataURL(file);
   };
 
+  // ─── Derived state ────────────────────────────────────────────────────────
 
+  const canCapture = !isCapturing && (
+    !hasCamera ||
+    !isAutoDetectionEnabled ||
+    !!bestShape
+  );
 
-  const toggleAutoDetection = () => {
-    setIsAutoDetectionEnabled(prev => !prev);
-  };
+  const captureColor =
+    !isAutoDetectionEnabled && hasCamera   ? 'bg-emerald-500 hover:bg-emerald-400 ring-4 ring-emerald-300/50 shadow-emerald-500/40' :
+    isShapeStable && bestShape             ? 'bg-emerald-500 hover:bg-emerald-400 ring-4 ring-emerald-300/50 shadow-emerald-500/40 scale-105' :
+    bestShape                              ? 'bg-sky-500 hover:bg-sky-400 ring-4 ring-sky-300/50 shadow-sky-500/40' :
+    hasCamera                              ? 'bg-zinc-600 opacity-50 cursor-not-allowed' :
+                                             'bg-sky-600 hover:bg-sky-500 ring-4 ring-sky-300/50';
 
-  const onUserMediaError = () => {
-    setHasCamera(false);
-  };
-
-  const openNativeCamera = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div className="relative h-full flex flex-col">
-      <div className="relative flex-1 bg-black overflow-hidden">
+    <div className="relative h-full flex flex-col bg-black">
+      {/* Camera viewport */}
+      <div className="relative flex-1 overflow-hidden">
         {hasCamera ? (
           <>
             <Webcam
@@ -1009,7 +729,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
               width="100%"
               videoConstraints={videoConstraints}
               className="w-full h-full object-cover"
-              onUserMediaError={onUserMediaError}
+              onUserMediaError={() => setHasCamera(false)}
               screenshotFormat="image/jpeg"
               screenshotQuality={0.98}
             />
@@ -1018,91 +738,88 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
               ref={overlayCanvasRef}
               className="absolute inset-0 w-full h-full object-cover pointer-events-none"
             />
-            
-            {/* Status indicator - smaller */}
-            <div className="absolute top-4 left-4">
-              <div className="flex items-center space-x-2 bg-black bg-opacity-80 px-3 py-2 rounded-full">
-                <div className={`w-3 h-3 rounded-full ${
-                  !isDetectionReady ? 'bg-yellow-400 animate-pulse' :
-                  bestShape ? (isShapeStable ? 'bg-green-400' : 'bg-blue-400 animate-pulse') : 'bg-gray-400'
+
+            {/* Top-left status pill */}
+            <div className="absolute top-3 left-3">
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm transition-all ${
+                !isAutoDetectionEnabled
+                  ? 'bg-black/60 text-zinc-400'
+                  : !isDetectionReady
+                  ? 'bg-black/60 text-amber-400'
+                  : bestShape
+                  ? isShapeStable
+                    ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                    : 'bg-sky-500/20 border border-sky-500/40 text-sky-300'
+                  : 'bg-black/60 text-zinc-400'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${
+                  !isAutoDetectionEnabled ? 'bg-zinc-500' :
+                  !isDetectionReady ? 'bg-amber-400 animate-pulse' :
+                  bestShape ? (isShapeStable ? 'bg-emerald-400' : 'bg-sky-400 animate-pulse') :
+                  'bg-zinc-500'
                 }`} />
-                <span className="text-white text-sm">
-                  {!isDetectionReady ? 'Loading...' :
-                   bestShape ? (isShapeStable ? 'Ready' : 'Hold steady') : 'Looking...'}
-                </span>
+                {!isAutoDetectionEnabled ? 'Manual mode' :
+                 !isDetectionReady ? 'Loading…' :
+                 bestShape ? (isShapeStable ? 'Locked in' : 'Detecting…') : 'Searching…'}
               </div>
             </div>
           </>
         ) : (
-          <div className="flex flex-col items-center justify-center h-full bg-gray-800">
-            <Camera size={64} className="mb-4 text-gray-400" />
-            <p className="text-gray-400 mb-4 text-lg">Camera not available</p>
+          <div className="flex flex-col items-center justify-center h-full bg-zinc-900 gap-4">
+            <Camera size={52} className="text-zinc-500" />
+            <p className="text-zinc-400 text-sm">Camera unavailable</p>
             <button
-              onClick={openNativeCamera}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg"
+              onClick={() => fileInputRef.current?.click()}
+              className="bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold py-2.5 px-5 rounded-lg transition-colors"
             >
-              Select Photo from Gallery
+              Select from Gallery
             </button>
           </div>
         )}
       </div>
 
-      {/* Smaller control panel */}
-  <div className="bg-black p-4">
-  <div className="flex items-center justify-center space-x-4 max-w-md mx-auto">
-    {/* Auto detection toggle - now with text button */}
-    <button
-      onClick={toggleAutoDetection}
-      className={`px-4 py-3 rounded-lg font-semibold transition-all duration-200 shadow-lg flex flex-col items-center justify-center min-w-[80px] ${
-        isAutoDetectionEnabled 
-          ? 'bg-green-600 hover:bg-green-500 text-white' 
-          : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-      }`}
-      title={isAutoDetectionEnabled ? 'Disable auto detection' : 'Enable auto detection'}
-    >
-      <span className="text-xs leading-tight">Auto</span>
-      <span className="text-xs leading-tight">Detect</span>
-    </button>
+      {/* Control bar */}
+      <div className="bg-zinc-950 border-t border-zinc-800 px-6 py-4">
+        <div className="flex items-center justify-between max-w-sm mx-auto">
 
-    {/* Main capture button - stays green when document is found */}
-   <button
-  onClick={hasCamera ? handleCapture : openNativeCamera}
-  disabled={isCapturing || (hasCamera && isAutoDetectionEnabled && !bestShape)}
-  className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transition-all duration-300 ${
-    !isAutoDetectionEnabled && hasCamera && !isCapturing
-      ? 'bg-green-500 hover:bg-green-400 ring-6 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50'
-      : isShapeStable && bestShape
-        ? 'bg-green-500 hover:bg-green-400 ring-6 ring-green-300 ring-opacity-50 scale-110 shadow-green-500/50'
-        : bestShape && hasCamera
-          ? 'bg-blue-500 hover:bg-blue-400 ring-4 ring-blue-300 ring-opacity-50 scale-105 shadow-blue-500/50'
-          : hasCamera
-            ? 'bg-gray-600 cursor-not-allowed opacity-50'
-            : 'bg-blue-600 hover:bg-blue-500 ring-4 ring-blue-300 ring-opacity-50'
-  }`}
-  title={
-    !hasCamera ? 'Select photo' :
-    isAutoDetectionEnabled ? 
-      (!bestShape ? 'Point camera at document' : isShapeStable ? 'Capture now!' : 'Hold steady to capture') :
-      'Capture photo'
-  }
->
-  {isCapturing ? (
-    <div className="w-8 h-8 border-4 border-white rounded-full animate-spin border-t-transparent"></div>
-  ) : (
-    <div className="w-12 h-12 rounded-full bg-white shadow-inner"></div>
-  )}
-</button>
+          {/* Auto-detect toggle */}
+          <button
+            onClick={() => setIsAutoDetectionEnabled(p => !p)}
+            className={`flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+              isAutoDetectionEnabled
+                ? 'bg-sky-600/30 border border-sky-500/50 text-sky-300'
+                : 'bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-zinc-300'
+            }`}
+            title={isAutoDetectionEnabled ? 'Disable auto-detect' : 'Enable auto-detect'}
+          >
+            <Scan size={18} className={isAutoDetectionEnabled ? 'text-sky-400' : 'text-zinc-500'} />
+            <span>Auto</span>
+          </button>
 
-    {/* Native camera button (on the right) */}
-    <button
-      onClick={openNativeCamera}
-      className="p-3 rounded-full bg-gray-700 hover:bg-gray-600 transition-all duration-200 shadow-lg"
-      title="Use native camera"
-    >
-      <Phone size={24} className="text-white" />
-    </button>
-  </div>
-</div>
+          {/* Shutter */}
+          <button
+            onClick={hasCamera ? handleCapture : () => fileInputRef.current?.click()}
+            disabled={!canCapture}
+            className={`w-18 h-18 w-[72px] h-[72px] rounded-full flex items-center justify-center shadow-xl transition-all duration-200 ${captureColor}`}
+          >
+            {isCapturing
+              ? <div className="w-7 h-7 border-[3px] border-white border-t-transparent rounded-full animate-spin" />
+              : <div className="w-[46px] h-[46px] rounded-full bg-white shadow-inner" />
+            }
+          </button>
+
+          {/* Gallery / native camera */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl text-xs font-semibold bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-zinc-300 transition-all"
+            title="Upload or use native camera"
+          >
+            <Phone size={18} className="text-zinc-500" />
+            <span>Upload</span>
+          </button>
+
+        </div>
+      </div>
 
       <input
         ref={fileInputRef}
@@ -1113,7 +830,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         className="hidden"
       />
     </div>
-  )
+  );
 }
 
 export default CameraView
