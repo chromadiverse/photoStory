@@ -12,14 +12,23 @@ interface ConditionalStepProps {
 }
 
 export const ConditionalStep: React.FC<ConditionalStepProps> = ({ form, onComplete }) => {
-  const handleConditionalComplete = () => {
-    form.trigger(["dateKnowledge", "hasOrganization", "isCreativeWork"]).then((isValid) => {
-      if (isValid) {
-        onComplete();
-      }
-    });
-  };
+ const handleConditionalComplete = () => {
+  const values = form.getValues(["dateKnowledge", "hasOrganization", "isCreativeWork"])
+  
+  form.trigger(["dateKnowledge", "hasOrganization", "isCreativeWork"]).then((isValid) => {
+    const errors = form.formState.errors
+    const errorMsg = Object.entries(errors)
+      .map(([k, v]) => `${k}: ${(v as any)?.message}`)
+      .join(" | ")
 
+    if (!isValid) {
+      alert(`Validation failed.\nValues: ${JSON.stringify(values)}\nErrors: ${errorMsg}`)
+      return
+    }
+
+    onComplete()
+  })
+}
   return (
     <div className="space-y-8">
       <h2 className="text-xl font-semibold">Tell us about this media</h2>
