@@ -5,6 +5,7 @@ import { Organization } from "./orgaization";
 import {
   ROLE_CATEGORIES,
 } from "../constants/role-categories"
+
 const optionalRoleCategorySchema = z
   .union([z.enum(ROLE_CATEGORIES), z.literal("")])
   .optional();
@@ -58,7 +59,6 @@ export const GalleryMetadataSchema = z
             roleCategory: optionalRoleCategorySchema,
             roleCategoryOther: z.string().optional(),
           })
-          // Only require displayTitle if name is filled
           .refine(
             (data) => {
               const hasName = (data.name ?? "").trim().length > 0;
@@ -66,8 +66,7 @@ export const GalleryMetadataSchema = z
               return (data.displayTitle ?? data.role ?? "").trim().length > 0;
             },
             {
-              message:
-                "Role/contribution is required when adding a collaborator",
+              message: "Role/contribution is required when adding a collaborator",
               path: ["displayTitle"],
             },
           ),
@@ -105,8 +104,7 @@ export const GalleryMetadataSchema = z
           return hasName && hasTitle;
         },
         {
-          message:
-            "Both name and role must be provided if either is filled",
+          message: "Both name and role must be provided if either is filled",
         },
       ),
   })
@@ -159,46 +157,49 @@ export const GalleryMetadataSchema = z
       path: ["dateMonth"],
     },
   )
-  .refine(
-    (data) => {
-      if (data.hasOrganization === "yes") {
-        return !!data.organizationId?.trim() || !!data.organizationName?.trim();
-      }
-      return true;
-    },
-    {
-      message: "Organization selection or name is required",
-      path: ["organizationId"],
-    },
-  )
-  .refine(
-    (data) => {
-      if (data.isCreativeWork === "yes") {
-        return data.genres && data.genres.length > 0;
-      }
-      return true;
-    },
-    {
-      message: "At least one genre must be selected for creative works",
-      path: ["genres"],
-    },
-  )
-  .refine(
-    (data) => {
-      if (data.isCreativeWork === "yes" && data.artistsProduction) {
-        return data.artistsProduction.every((artist) => {
-          const hasName = (artist.name ?? "").trim().length > 0;
-          if (!hasName) return true;
-          return (artist.displayTitle ?? artist.role ?? "").trim().length > 0;
-        });
-      }
-      return true;
-    },
-    {
-      message: "When adding a collaborator, a role/contribution is required",
-      path: ["artistsProduction"],
-    },
-  )
+  // COMENTADO - Validación de Organization
+  // .refine(
+  //   (data) => {
+  //     if (data.hasOrganization === "yes") {
+  //       return !!data.organizationId?.trim() || !!data.organizationName?.trim();
+  //     }
+  //     return true;
+  //   },
+  //   {
+  //     message: "Organization selection or name is required",
+  //     path: ["organizationId"],
+  //   },
+  // )
+  // COMENTADO - Validación de Creative Work (genres)
+  // .refine(
+  //   (data) => {
+  //     if (data.isCreativeWork === "yes") {
+  //       return data.genres && data.genres.length > 0;
+  //     }
+  //     return true;
+  //   },
+  //   {
+  //     message: "At least one genre must be selected for creative works",
+  //     path: ["genres"],
+  //   },
+  // )
+  // COMENTADO - Validación de artistsProduction
+  // .refine(
+  //   (data) => {
+  //     if (data.isCreativeWork === "yes" && data.artistsProduction) {
+  //       return data.artistsProduction.every((artist) => {
+  //         const hasName = (artist.name ?? "").trim().length > 0;
+  //         if (!hasName) return true;
+  //         return (artist.displayTitle ?? artist.role ?? "").trim().length > 0;
+  //       });
+  //     }
+  //     return true;
+  //   },
+  //   {
+  //     message: "When adding a collaborator, a role/contribution is required",
+  //     path: ["artistsProduction"],
+  //   },
+  // )
   .refine(
     (data) => {
       if (data.uploadType === "multiple") {
