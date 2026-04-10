@@ -72,18 +72,19 @@ const handleFormSubmit = async (data: GalleryMetadataFormData) => {
   
   try {
     setDebugMessage('PASO 3: Llamando a onSubmit...')
-    // NO cierres el modal aquí
-    await onSubmit(data) // Esto debe esperar a que termine el upload completo
-    setDebugMessage('PASO 4: Éxito!')
+    await onSubmit(data)
+    setDebugMessage('PASO 4: Submit completado, esperando upload...')
     
-    // Solo resetear después de que todo termine
+    // NO cerrar el modal aquí
+    // Solo resetear el estado del step, pero mantener el modal abierto
     form.reset()
     setPeopleDepictedList([])
     setArtistsProductionList([])
     setGenreInput('')
     setShowGenreSuggestions(false)
     setCurrentStep('conditional')
-    onClose()
+    
+    // El modal se cerrará cuando el upload termine y llame a onClose
   } catch (error: any) {
     setDebugMessage('ERROR: ' + (error.message || 'Error desconocido'))
   }
