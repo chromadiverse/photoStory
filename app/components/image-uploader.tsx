@@ -119,15 +119,30 @@ export default function ImageUploader({
       type: "image/jpeg",
     });
 
-    try {
-      uppy.addFile({
-        name: file.name,
-        type: file.type,
-        data: file,
-        meta: { bucketName, folderName },
-      });
-      toast.error("DEBUG: File añadido, upload iniciando...");
-    } catch (error) {
+   try {
+  uppy.addFile({
+    name: file.name,
+    type: file.type,
+    data: file,
+    meta: { bucketName, folderName },
+  });
+  toast.error("DEBUG: File añadido, upload iniciando...");
+
+  // TEMP: bypass Uppy, test API directly
+  const testForm = new FormData()
+  testForm.append("file", imageBlob, "test.jpg")
+  testForm.append("bucketName", bucketName)
+  testForm.append("folderName", folderName)
+  
+  fetch("/api/upload-to-s3-via-api", {
+    method: "POST",
+    body: testForm,
+  })
+    .then(r => r.json())
+    .then(data => toast.error("FETCH TEST: " + JSON.stringify(data)))
+    .catch(err => toast.error("FETCH TEST ERROR: " + err.message))
+
+} catch (error)  {
       toast.error(`DEBUG: Error añadiendo file: ${error}`);
       onUploadErrorRef.current?.(error as Error);
     }
