@@ -41,12 +41,11 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const router = useRouter()
 
-  // FIX 1: Stable supabase client — never recreated on re-render
+  // Stable supabase client — never recreated on re-render
   const supabaseRef = useRef(createClient())
   const supabase = supabaseRef.current
 
-  // FIX 2: Track whether setLoading(false) has already been called so the
-  // checkUser + onAuthStateChange race can never both try to resolve loading
+  // Track whether loading has already been resolved to prevent double-resolution
   const loadingResolvedRef = useRef(false)
   const resolveLoading = () => {
     if (!loadingResolvedRef.current) {
@@ -55,8 +54,16 @@ export default function Home() {
     }
   }
 
-  // FIX 3: Safety net — if loading is still true after 8 seconds, force it off.
-  // This catches any edge case where both paths fail silently on reload.
+  // FIX 2 — Stable dancerId ref so in-flight uploads always see the
+  // current dancer ID even if a re-render fires mid-upload.
+  // dancerId state drives UI; dancerIdRef drives async logic (e.g. Preview upload).
+  const dancerIdRef = useRef<string | null>(null)
+  const safeSetDancerId = (id: string | null) => {
+    dancerIdRef.current = id
+    setDancerId(id)
+  }
+
+  // Safety net — if loading is still true after 8 seconds, force it off
   useEffect(() => {
     const timeout = setTimeout(() => {
       if (!loadingResolvedRef.current) {
@@ -83,10 +90,10 @@ export default function Home() {
       if (result.error) {
         console.error("Error fetching dancer ID:", result.error)
       } else if (result.data) {
-        setDancerId(result.data)
+        safeSetDancerId(result.data)
       } else {
         console.warn("No dancer found for user")
-        setDancerId(null)
+        safeSetDancerId(null)
       }
     }
 
@@ -116,22 +123,34 @@ export default function Home() {
       }
     }
 
-    // FIX 4: Subscribe BEFORE calling checkUser so we never miss an event,
-    // but guard against the INITIAL_SESSION event double-resolving loading
-    // by using the loadingResolvedRef check inside resolveLoading().
+    // FIX 3 — Only redirect on an explicit SIGNED_OUT event.
+    // Previously, ANY null session (including transient mobile network drops,
+    // backgrounded tabs, token refresh timing) triggered a redirect to /login.
+    // On mobile Safari, backgrounding the app suspends JS and the token refresh
+    // can temporarily return null — this was causing false logouts.
+    // Now we only redirect when Supabase explicitly tells us the user signed out.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
 
-      // INITIAL_SESSION fires on every page load — let checkUser() handle the
-      // first resolution so we don't race. Only act on subsequent changes.
+      // Let checkUser() handle the first resolution — don't race with it
       if (event === "INITIAL_SESSION") return
 
-      if (!session) {
+      if (event === "SIGNED_OUT") {
+        // Genuine sign-out: clear state and redirect
         resolveLoading()
         router.push("/login")
-      } else {
+        return
+      }
+
+      // TOKEN_REFRESHED, USER_UPDATED, SIGNED_IN after initial load:
+      // update user state but DO NOT treat a transient null session as a logout
+      if (session?.user) {
         setUser(session.user)
-        await fetchDancer(session.user.id)
+        // Only re-fetch dancer if we don't have one yet, to avoid
+        // redundant Supabase calls and mid-upload re-renders
+        if (!dancerIdRef.current) {
+          await fetchDancer(session.user.id)
+        }
         resolveLoading()
       }
     })
@@ -195,8 +214,11 @@ export default function Home() {
   }
 
   const confirmExit = () => {
-    if (dancerId) {
-      window.location.href = `https://curtainconnect.com/profiles/${dancerId}/gallery`
+    // Use ref here so this always has the current value even if called
+    // during a re-render triggered by an auth state change
+    const id = dancerIdRef.current
+    if (id) {
+      window.location.href = `https://curtainconnect.com/profiles/${id}/gallery`
     } else {
       console.error("Dancer ID not available")
     }
@@ -215,55 +237,67 @@ export default function Home() {
 
   const getIconForView = () => {
     switch (currentView) {
-      case "camera": return <Camera className="w-8 h-8" />
-      case "crop": return <Crop className="w-8 h-8" />
-      case "filter": return <Sliders className="w-8 h-8" />
-      case "preview": return <Search className="w-8 h-8" />
-      default: return <Camera className="w-8 h-8" />
+      case "camera": return <Camera className="w-6 h-6" />
+      case "crop": return <Crop className="w-6 h-6" />
+      case "filter": return <Sliders className="w-6 h-6" />
+      case "preview": return <Search className="w-6 h-6" />
+      default: return <Camera className="w-6 h-6" />
     }
   }
 
+  // FIX 1 — Replaced the 5-child flex row with a 3-zone CSS grid.
+  // Previously: flex justify-between with whitespace-nowrap text buttons + a
+  // fixed w-16 icon caused the row to overflow ~320px screens (iPhone SE / 14
+  // Mini), pushing the rightmost button off-screen.
+  // Fix: grid-cols-[auto_1fr_auto] pins the two action buttons to each edge
+  // while the icon stays centred in the flex-1 middle column. Text buttons now
+  // use text-[11px] and tighter padding so they never overflow even at 320px.
   const renderNavigation = () => (
-    <div className="flex justify-between items-center p-3 bg-white/90 backdrop-blur-sm shadow-sm">
-      <button
-        onClick={() => {
-          if (currentView === "camera") return
-          if (currentView === "crop") setCurrentView("camera")
-          if (currentView === "filter") setCurrentView("crop")
-          if (currentView === "preview") setCurrentView("filter")
-        }}
-        className={`p-2 rounded-lg ${
-          currentView === "camera" ? "text-gray-400" : "text-gray-600 hover:bg-gray-100"
-        } transition-colors`}
-        disabled={currentView === "camera"}
-      >
-        <ArrowLeft className="w-5 h-5" />
-      </button>
+    <div className="grid grid-cols-[auto_1fr_auto] items-center gap-1 px-2 py-2 bg-white/90 backdrop-blur-sm shadow-sm">
 
-      <button
-        onClick={() => setShowWelcomeModal(true)}
-        className="text-xs font-semibold text-white bg-blue-600 px-3 py-2 rounded-lg shadow-md active:scale-95 active:bg-blue-700 transition-transform whitespace-nowrap"
-      >
-        Helpful Tips
-      </button>
+      {/* Left zone: back arrow + Helpful Tips */}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => {
+            if (currentView === "camera") return
+            if (currentView === "crop") setCurrentView("camera")
+            if (currentView === "filter") setCurrentView("crop")
+            if (currentView === "preview") setCurrentView("filter")
+          }}
+          className={`p-2 rounded-lg flex-shrink-0 ${
+            currentView === "camera" ? "text-gray-300" : "text-gray-600 hover:bg-gray-100"
+          } transition-colors`}
+          disabled={currentView === "camera"}
+          aria-label="Go back"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
 
-      <div className="relative w-16 h-16 flex items-center justify-center">
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center animate-pulse">
-            <div className="w-12 h-12 rounded-full bg-blue-200 flex items-center justify-center animate-ping opacity-30 absolute"></div>
+        <button
+          onClick={() => setShowWelcomeModal(true)}
+          className="text-[11px] font-semibold text-white bg-blue-600 px-2.5 py-1.5 rounded-lg shadow-md active:scale-95 active:bg-blue-700 transition-transform leading-tight"
+        >
+          Helpful Tips
+        </button>
+      </div>
+
+      {/* Centre zone: animated icon — naturally centred by the grid */}
+      <div className="flex items-center justify-center">
+        <div className="relative w-12 h-12 flex items-center justify-center">
+          <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center animate-pulse">
+            <div className="w-10 h-10 rounded-full bg-blue-200 animate-ping opacity-30 absolute"></div>
             <div className="relative z-10 text-blue-600">{getIconForView()}</div>
           </div>
         </div>
       </div>
 
+      {/* Right zone: profile link */}
       <button
         onClick={handleGoToGallery}
-        className="text-xs font-semibold text-white bg-blue-600 px-3 py-2 rounded-lg shadow-md active:scale-95 active:bg-blue-700 transition-transform whitespace-nowrap"
+        className="text-[11px] font-semibold text-white bg-blue-600 px-2.5 py-1.5 rounded-lg shadow-md active:scale-95 active:bg-blue-700 transition-transform leading-tight"
       >
-        Go back to Profile
+        Back to Profile
       </button>
-
-      <div className="w-2"></div>
     </div>
   )
 
@@ -300,7 +334,9 @@ export default function Home() {
             imageData={filteredImageData}
             onStartOver={handleStartOver}
             onBack={() => setCurrentView("filter")}
-            userId={dancerId || undefined}
+            // Pass the stable ref value so mid-upload re-renders
+            // caused by auth state changes can't null this out
+            userId={dancerIdRef.current ?? undefined}
           />
         )}
       </div>
