@@ -8,6 +8,24 @@ export async function POST(request: NextRequest) {
     const bucketName = formData.get("bucketName") as string | null;
     const folderName = formData.get("folderName") as string | null;
 
+    // TEMP DEBUG - Check if debug mode is enabled via header or query param
+    const isDebug = request.headers.get("x-debug") === "true" || request.nextUrl.searchParams.get("debug") === "true";
+    
+    if (isDebug) {
+      const allKeys: string[] = []
+      formData.forEach((_, key) => allKeys.push(key))
+      
+      return NextResponse.json({ 
+        debug: true,
+        receivedKeys: allKeys,
+        hasFile: !!file,
+        bucketName,
+        folderName,
+        fileName: file?.name,
+        fileSize: file?.size,
+      })
+    }
+
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
