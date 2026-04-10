@@ -77,35 +77,43 @@ const Preview: React.FC<PreviewProps> = ({
       }
     }
   }, [])
+const handleMetadataSubmit = async (metadata: GalleryMetadataFormData) => {
+  alert('Preview: Recibiendo metadata')
+  alert('Preview: Título: ' + metadata.title)
+  
+  setIsUploading(true)
 
-  const handleMetadataSubmit = async (metadata: GalleryMetadataFormData) => {
-    setIsUploading(true)
+  uploadTimeoutRef.current = setTimeout(() => {
+    alert('TIMEOUT: Upload tardó más de 30 segundos')
+    resetUploadState()
+    toast.error('Upload timed out. Please try again.')
+  }, UPLOAD_TIMEOUT_MS)
 
-    uploadTimeoutRef.current = setTimeout(() => {
-      console.error('Upload timed out after 30 seconds')
+  try {
+    alert('Preview: Obteniendo usuario...')
+    const supabase = createClient()
+    const { data: { user }, error: userError } = await supabase.auth.getUser()
+    
+    if (userError || !user) {
+      alert('ERROR: No hay usuario logueado')
       resetUploadState()
-      toast.error('Upload timed out. Please try again.')
-    }, UPLOAD_TIMEOUT_MS)
-
-    try {
-      const supabase = createClient()
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (userError || !user) {
-        resetUploadState()
-        toast.error('You must be logged in to save to gallery')
-        return
-      }
-
-      setPendingMetadata(metadata)
-      setFinalImageBlob(imageData.croppedBlob)
-
-    } catch (error) {
-      console.error('Error preparing upload:', error)
-      resetUploadState()
-      toast.error('Failed to prepare image for upload')
+      toast.error('You must be logged in to save to gallery')
+      return
     }
+    
+    alert('Preview: Usuario OK: ' + user.id)
+    alert('Preview: Guardando metadata y blob...')
+    
+    setPendingMetadata(metadata)
+    setFinalImageBlob(imageData.croppedBlob)
+    
+    alert('Preview: Todo listo, esperando upload')
+  } catch (error) {
+    alert('Preview ERROR: ' + (error as Error).message)
+    resetUploadState()
+    toast.error('Failed to prepare image for upload')
   }
+}
   
   const handleUploadComplete = async (uploadedFile: {
     name: string

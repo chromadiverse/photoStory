@@ -59,9 +59,21 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
   const handleConditionalComplete = () => {
     setCurrentStep('metadata')
   }
-
-  const handleFormSubmit = async (data: GalleryMetadataFormData) => {
+const handleFormSubmit = async (data: GalleryMetadataFormData) => {
+  alert('PASO 1: Submit iniciado')
+  
+  if (!data.title) {
+    alert('ERROR: Falta el título')
+    return
+  }
+  
+  alert('PASO 2: Título: ' + data.title)
+  
+  try {
+    alert('PASO 3: Llamando a onSubmit del Preview')
     await onSubmit(data)
+    alert('PASO 4: Éxito! Cerrando modal')
+    
     form.reset()
     setPeopleDepictedList([])
     setArtistsProductionList([])
@@ -69,7 +81,10 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
     setShowGenreSuggestions(false)
     setCurrentStep('conditional')
     onClose()
+  } catch (error: any) {
+    alert('ERROR: ' + (error.message || 'Error desconocido'))
   }
+}
 
   const handleAutoSave = () => {}
 
