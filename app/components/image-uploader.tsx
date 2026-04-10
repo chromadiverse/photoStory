@@ -49,29 +49,29 @@ export default function ImageUploader({
       },
     });
 
-    uppy.use(XHRUpload, {
-      endpoint: "/api/upload-to-s3-via-api",
-      method: "post",
-      formData: true,
-      fieldName: "file",
-      getResponseData: (xhr: XMLHttpRequest) => {
-        try {
-          if (xhr.response && typeof xhr.response === "object") return xhr.response;
-          return JSON.parse(xhr.responseText);
-        } catch {
-          return {};
-        }
-      },
-      getResponseError: (xhr: XMLHttpRequest) => {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          return new Error(data.error || `Upload failed with status ${xhr.status}`);
-        } catch {
-          return new Error(`Upload failed with status ${xhr.status}`);
-        }
-      },
-    } as any);
-
+  uppy.use(XHRUpload, {
+  endpoint: "/api/upload-to-s3-via-api",
+  method: "post",
+  formData: true,
+  fieldName: "file",
+  allowedMetaFields: ["bucketName", "folderName"], // ← add this
+  getResponseData: (xhr: XMLHttpRequest) => {
+    try {
+      if (xhr.response && typeof xhr.response === "object") return xhr.response;
+      return JSON.parse(xhr.responseText);
+    } catch {
+      return {};
+    }
+  },
+  getResponseError: (xhr: XMLHttpRequest) => {
+    try {
+      const data = JSON.parse(xhr.responseText);
+      return new Error(data.error || `Upload failed with status ${xhr.status}`);
+    } catch {
+      return new Error(`Upload failed with status ${xhr.status}`);
+    }
+  },
+} as any);
     uppy.on("complete", (result) => {
       toast.error(`DEBUG: Complete - ok:${result.successful?.length} fail:${result.failed?.length}`);
       
