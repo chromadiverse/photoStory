@@ -35,27 +35,29 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
   const [debugMessage, setDebugMessage] = useState<string>('Esperando...')
   const formRef = useRef<HTMLDivElement>(null)
 
-  const form = useForm<GalleryMetadataFormData>({
-    resolver: zodResolver(GalleryMetadataSchema),
-    defaultValues: {
-      title: '',
-      location: '',
-      description: '',
-      peopleDepicted: [],
-      genres: [],
-      dateKnowledge: undefined,
-      hasOrganization: undefined,
-      isCreativeWork: undefined,
-      mediaCreator: {
-        name: '',
-        displayTitle: '',
-        role: '',
-        roleCategory: undefined,
-        roleCategoryOther: '',
-      },
+const form = useForm<GalleryMetadataFormData>({
+  resolver: zodResolver(GalleryMetadataSchema),
+  defaultValues: {
+    uploadType: "single",        // ← add this
+    file: "",                    // ← add this
+    title: '',
+    location: '',
+    description: '',
+    peopleDepicted: [],
+    genres: [],
+    dateKnowledge: undefined,
+    hasOrganization: undefined,
+    isCreativeWork: undefined,
+    mediaCreator: {
+      name: '',
+      displayTitle: '',
+      role: '',
+      roleCategory: undefined,
+      roleCategoryOther: '',
     },
-    mode: 'onChange',
-  })
+  },
+  mode: 'onChange',
+})
 
   const handleConditionalComplete = () => {
     setCurrentStep('metadata')
@@ -79,11 +81,18 @@ const handleFormSubmit = async (data: GalleryMetadataFormData) => {
     setDebugMessage('ERROR: ' + (error.message || 'Error desconocido'))
   }
 }
-  const handleSubmitClick = () => {
-    setDebugMessage('Botón Save Media clickeado')
-    form.handleSubmit(handleFormSubmit)()
-  }
-
+const handleSubmitClick = () => {
+  setDebugMessage('Button clicked')
+  form.handleSubmit(
+    (data) => {
+      setDebugMessage('Valid! Title: ' + data.title)
+      handleFormSubmit(data)
+    },
+    (errors) => {
+      setDebugMessage('ERRORS: ' + JSON.stringify(Object.keys(errors)))
+    }
+  )()
+}
   const handleAutoSave = () => {}
 const resetForm = () => {
   form.reset()
