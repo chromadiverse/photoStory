@@ -25,7 +25,7 @@ interface PreviewProps {
   userId?: string
 }
 
-const UPLOAD_TIMEOUT_MS = 30000 // 30 seconds
+const UPLOAD_TIMEOUT_MS = 30000 // 30 seconds22
 
 const Preview: React.FC<PreviewProps> = ({
   imageData,
