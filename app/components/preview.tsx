@@ -1,4 +1,3 @@
-// Preview.tsx
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
@@ -6,10 +5,12 @@ import { ArrowLeft, Download, Share2, RotateCcw, Copy, Save } from 'lucide-react
 import MetadataModal from './metadata-modal'
 import ImageUploader from './image-uploader'
 import UploadSuccess from './upload-sucess' 
-import { GalleryMetadata } from '../lib/gallery-schema'
+import { GalleryMetadataFormData } from '../types/gallery-schema' 
 import { saveGalleryMetadata, getImageUrl } from '../lib/upload-service'
 import { toast } from 'sonner'
 import { createClient } from '../lib/supabase/client'
+import { getAllOrganizations } from '../service/getAllOrganizations' 
+import { Organization } from '../types/orgaization' 
 
 interface CroppedImageData {
   croppedImage: string
@@ -35,17 +36,30 @@ const Preview: React.FC<PreviewProps> = ({
   const [isProcessing, setIsProcessing] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
-  const [pendingMetadata, setPendingMetadata] = useState<GalleryMetadata | null>(null)
+  const [pendingMetadata, setPendingMetadata] = useState<GalleryMetadataFormData | null>(null)
   const [finalImageBlob, setFinalImageBlob] = useState<Blob | null>(null)
   const [showSuccess, setShowSuccess] = useState(false)
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string>('')
+  const [organizations, setOrganizations] = useState<Organization[]>([])
 
-  // FIX: Ref to hold the upload timeout so we can clear it on success/error
   const uploadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
   const BUCKET_NAME = process.env.NEXT_PUBLIC_IMAGE_GALLERY_BUCKET || 'gallery'
 
-  // FIX: Helper to fully reset upload state and clear any pending timeout
+  // Fetch organizations when modal opens
+  useEffect(() => {
+    if (isModalOpen && organizations.length === 0) {
+      const fetchOrganizations = async () => {
+        try {
+          const orgs = await getAllOrganizations()
+          setOrganizations(orgs)
+        } catch (error) {
+          console.error('Failed to fetch organizations:', error)
+        }
+      }
+      fetchOrganizations()
+    }
+  }, [isModalOpen, organizations.length])
+
   const resetUploadState = () => {
     if (uploadTimeoutRef.current) {
       clearTimeout(uploadTimeoutRef.current)
@@ -56,7 +70,6 @@ const Preview: React.FC<PreviewProps> = ({
     setFinalImageBlob(null)
   }
 
-  // FIX: Clear timeout on unmount to avoid state updates on unmounted component
   useEffect(() => {
     return () => {
       if (uploadTimeoutRef.current) {
@@ -65,10 +78,9 @@ const Preview: React.FC<PreviewProps> = ({
     }
   }, [])
 
-  const handleMetadataSubmit = async (metadata: GalleryMetadata) => {
+  const handleMetadataSubmit = async (metadata: GalleryMetadataFormData) => {
     setIsUploading(true)
 
-    // FIX: Safety net — if upload hangs for >30s, force-reset so user isn't stuck
     uploadTimeoutRef.current = setTimeout(() => {
       console.error('Upload timed out after 30 seconds')
       resetUploadState()
@@ -85,7 +97,6 @@ const Preview: React.FC<PreviewProps> = ({
         return
       }
 
-  
       setPendingMetadata(metadata)
       setFinalImageBlob(imageData.croppedBlob)
 
@@ -101,10 +112,8 @@ const Preview: React.FC<PreviewProps> = ({
     path: string
     type: string
   }) => {
-   
-
     if (!pendingMetadata) {
-      console.error('❌ [handleUploadComplete] No pending metadata found')
+      console.error('No pending metadata found')
       toast.error('Metadata missing')
       resetUploadState()
       return
@@ -115,14 +124,13 @@ const Preview: React.FC<PreviewProps> = ({
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       
       if (!user) {
-        console.error('❌ [handleUploadComplete] User not found after upload')
+        console.error('User not found after upload')
         toast.error('User not found')
         resetUploadState()
         return
       }
 
       const imageUrl = getImageUrl(uploadedFile.path, BUCKET_NAME)
-
 
       const result = await saveGalleryMetadata(
         uploadedFile.path,
@@ -133,10 +141,7 @@ const Preview: React.FC<PreviewProps> = ({
         uploadedFile.type
       )
 
-
       if (result.success) {
-    
-        // FIX: Clear timeout FIRST before updating state on success
         if (uploadTimeoutRef.current) {
           clearTimeout(uploadTimeoutRef.current)
           uploadTimeoutRef.current = null
@@ -148,12 +153,12 @@ const Preview: React.FC<PreviewProps> = ({
         setFinalImageBlob(null)
         setIsUploading(false)
       } else {
-        console.error('❌ [handleUploadComplete] saveGalleryMetadata failed:', result.error)
+        console.error('saveGalleryMetadata failed:', result.error)
         toast.error(`Failed to save: ${result.error}`)
         resetUploadState()
       }
     } catch (error) {
-      console.error('💥 [handleUploadComplete] UNEXPECTED ERROR:', error)
+      console.error('Unexpected error:', error)
       toast.error('Failed to save image to gallery')
       resetUploadState()
     }
@@ -162,7 +167,6 @@ const Preview: React.FC<PreviewProps> = ({
   const handleUploadError = (error: Error) => {
     console.error('Upload error:', error)
     toast.error('Failed to upload image. Please try again.')
-    // FIX: Always reset state on any upload error so user isn't stuck
     resetUploadState()
   }
 
@@ -266,7 +270,6 @@ const Preview: React.FC<PreviewProps> = ({
   return (
     <>
       <div className="h-full flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100">
-        {/* Image Preview */}
         <div className="flex-1 flex items-center justify-center p-4">
           <div className="relative">
             <img
@@ -287,7 +290,6 @@ const Preview: React.FC<PreviewProps> = ({
           </div>
         </div>
 
-        {/* Action Buttons */}
         <div className="bg-white/90 backdrop-blur-sm shadow-sm p-4 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <button
@@ -359,6 +361,7 @@ const Preview: React.FC<PreviewProps> = ({
         }}
         onSubmit={handleMetadataSubmit}
         isUploading={isUploading}
+        organizations={organizations}
       />
 
       {finalImageBlob && pendingMetadata && (

@@ -1,10 +1,10 @@
 import { createClient } from './supabase/client'
-import { GalleryMetadata } from './gallery-schema'
+import { GalleryMetadataFormData } from '../types/gallery-schema'; 
 
 export async function saveGalleryMetadata(
   imagePath: string,
   imageUrl: string,
-  metadata: GalleryMetadata,
+  metadata: GalleryMetadataFormData,
   userId: string,
   fileName: string,
   fileType: string
@@ -12,16 +12,12 @@ export async function saveGalleryMetadata(
   const supabase = createClient()
 
   try {
-
-
-    // First, get the dancer_id from user_id (same as main app)
+    // First, get the dancer_id from user_id
     const { data: dancerData, error: dancerError } = await supabase
       .from('dancers')
       .select('id')
       .eq('user_id', userId)
       .single()
-
-
 
     if (dancerError || !dancerData) {
       console.error('Error getting dancer:', dancerError)
@@ -30,54 +26,81 @@ export async function saveGalleryMetadata(
 
     const dancerId = dancerData.id
 
-
-    // Prepare metadata object (matching main app structure exactly)
-    const metadataObject = {
-      file: imagePath, // IMPORTANT: Main app includes this
+    // Prepare metadata object matching the new schema
+    const metadataObject: Record<string, any> = {
       title: metadata.title,
-      date: metadata.date,
-      location: metadata.location || undefined,
-      companyGroup: metadata.companyGroup || undefined,
-      choreographers: metadata.choreographers || undefined,
-      dancersPerformers: metadata.dancersPerformers || undefined,
-      genreStyle: metadata.genreStyle || undefined,
-      musicSoundtrack: metadata.musicSoundtrack || undefined,
-      directorProducer: metadata.directorProducer || undefined,
       description: metadata.description || undefined,
-      keywords: metadata.keywords || undefined,
-      rightsPermissions: metadata.rightsPermissions || undefined,
+      location: metadata.location || undefined,
+    }
+
+    // Date handling
+    if (metadata.dateKnowledge === 'exact' && metadata.dateExact) {
+      metadataObject.dateType = 'exact'
+      metadataObject.dateValue = metadata.dateExact
+    } else if (metadata.dateKnowledge === 'approximate') {
+      metadataObject.dateType = 'approximate'
+      metadataObject.dateMonth = metadata.dateMonth || undefined
+      metadataObject.dateDay = metadata.dateDay || undefined
+      metadataObject.dateYear = metadata.dateYear || undefined
+      metadataObject.dateDecade = metadata.dateDecade || undefined
+    }
+
+    // Organization handling
+    if (metadata.hasOrganization === 'yes') {
+      if (metadata.organizationId) {
+        metadataObject.organizationId = metadata.organizationId
+      } else if (metadata.organizationName) {
+        metadataObject.organizationName = metadata.organizationName
+      }
+    }
+
+    // Creative work handling
+    if (metadata.isCreativeWork === 'yes') {
+      if (metadata.workTitle) {
+        metadataObject.workTitle = metadata.workTitle
+      }
+      if (metadata.artistsProduction && metadata.artistsProduction.length > 0) {
+        metadataObject.artistsProduction = metadata.artistsProduction
+      }
+      if (metadata.genres && metadata.genres.length > 0) {
+        metadataObject.genres = metadata.genres
+      }
+    }
+
+    // People depicted
+    if (metadata.peopleDepicted && metadata.peopleDepicted.length > 0) {
+      metadataObject.peopleDepicted = metadata.peopleDepicted
+    }
+
+    // Media creator
+    if (metadata.mediaCreator && metadata.mediaCreator.name) {
+      metadataObject.mediaCreator = metadata.mediaCreator
     }
 
     // Remove undefined values to keep the object clean
     const cleanMetadataObject = Object.fromEntries(
-      Object.entries(metadataObject).filter(([_, value]) => value !== undefined)
+      Object.entries(metadataObject).filter(([_, value]) => value !== undefined && value !== null && value !== '')
     )
-
-
 
     const insertData = {
       dancer_id: dancerId,
       name: fileName,
       path: imagePath,
       type: fileType,
-      metadata: cleanMetadataObject, // Store as actual object
+      metadata: cleanMetadataObject,
       other_organizations: null
     }
 
-
-
-    // Save to dancer_gallery_files table (matching main app)
+    // Save to dancer_gallery_files table
     const { data: insertResult, error: dbError } = await supabase
       .from('dancer_gallery_files')
       .insert(insertData)
       .select()
 
-
     if (dbError) {
       console.error('Database error:', dbError)
       return { success: false, error: dbError.message }
     }
-
 
     return { success: true }
   } catch (error) {
