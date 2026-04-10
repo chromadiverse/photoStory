@@ -60,34 +60,34 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
   const handleConditionalComplete = () => {
     setCurrentStep('metadata')
   }
-
-  const handleFormSubmit = async (data: GalleryMetadataFormData) => {
-    setDebugMessage('PASO 1: Submit iniciado')
-    
-    if (!data.title) {
-      setDebugMessage('ERROR: Falta el título')
-      return
-    }
-    
-    setDebugMessage('PASO 2: Título: ' + data.title)
-    
-    try {
-      setDebugMessage('PASO 3: Llamando a onSubmit...')
-      await onSubmit(data)
-      setDebugMessage('PASO 4: Éxito!')
-      
-      form.reset()
-      setPeopleDepictedList([])
-      setArtistsProductionList([])
-      setGenreInput('')
-      setShowGenreSuggestions(false)
-      setCurrentStep('conditional')
-      onClose()
-    } catch (error: any) {
-      setDebugMessage('ERROR: ' + (error.message || 'Error desconocido'))
-    }
+const handleFormSubmit = async (data: GalleryMetadataFormData) => {
+  setDebugMessage('PASO 1: Submit iniciado')
+  
+  if (!data.title) {
+    setDebugMessage('ERROR: Falta el título')
+    return
   }
-
+  
+  setDebugMessage('PASO 2: Título: ' + data.title)
+  
+  try {
+    setDebugMessage('PASO 3: Llamando a onSubmit...')
+    // NO cierres el modal aquí
+    await onSubmit(data) // Esto debe esperar a que termine el upload completo
+    setDebugMessage('PASO 4: Éxito!')
+    
+    // Solo resetear después de que todo termine
+    form.reset()
+    setPeopleDepictedList([])
+    setArtistsProductionList([])
+    setGenreInput('')
+    setShowGenreSuggestions(false)
+    setCurrentStep('conditional')
+    onClose()
+  } catch (error: any) {
+    setDebugMessage('ERROR: ' + (error.message || 'Error desconocido'))
+  }
+}
   const handleSubmitClick = () => {
     setDebugMessage('Botón Save Media clickeado')
     form.handleSubmit(handleFormSubmit)()
