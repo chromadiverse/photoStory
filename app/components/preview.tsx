@@ -299,6 +299,13 @@ const handleMetadataSubmit = async (metadata: GalleryMetadataFormData) => {
         </div>
 
         <div className="bg-white/90 backdrop-blur-sm shadow-sm p-4 space-y-4">
+         {isModalOpen && (
+    <div className="mb-2 p-2 bg-yellow-100 border border-yellow-400 rounded-lg">
+      <p className="text-xs font-mono text-black break-all">
+        <strong>DEBUG:</strong> Modal abierto, esperando submit
+      </p>
+    </div>
+  )}
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => setIsModalOpen(true)}

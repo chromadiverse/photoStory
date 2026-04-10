@@ -32,6 +32,7 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
   const [artistsProductionList, setArtistsProductionList] = useState<any[]>([])
   const [genreInput, setGenreInput] = useState('')
   const [showGenreSuggestions, setShowGenreSuggestions] = useState(false)
+  const [debugMessage, setDebugMessage] = useState<string>('Esperando...')
   const formRef = useRef<HTMLDivElement>(null)
 
   const form = useForm<GalleryMetadataFormData>({
@@ -59,32 +60,38 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
   const handleConditionalComplete = () => {
     setCurrentStep('metadata')
   }
-const handleFormSubmit = async (data: GalleryMetadataFormData) => {
-  alert('PASO 1: Submit iniciado')
-  
-  if (!data.title) {
-    alert('ERROR: Falta el título')
-    return
-  }
-  
-  alert('PASO 2: Título: ' + data.title)
-  
-  try {
-    alert('PASO 3: Llamando a onSubmit del Preview')
-    await onSubmit(data)
-    alert('PASO 4: Éxito! Cerrando modal')
+
+  const handleFormSubmit = async (data: GalleryMetadataFormData) => {
+    setDebugMessage('PASO 1: Submit iniciado')
     
-    form.reset()
-    setPeopleDepictedList([])
-    setArtistsProductionList([])
-    setGenreInput('')
-    setShowGenreSuggestions(false)
-    setCurrentStep('conditional')
-    onClose()
-  } catch (error: any) {
-    alert('ERROR: ' + (error.message || 'Error desconocido'))
+    if (!data.title) {
+      setDebugMessage('ERROR: Falta el título')
+      return
+    }
+    
+    setDebugMessage('PASO 2: Título: ' + data.title)
+    
+    try {
+      setDebugMessage('PASO 3: Llamando a onSubmit...')
+      await onSubmit(data)
+      setDebugMessage('PASO 4: Éxito!')
+      
+      form.reset()
+      setPeopleDepictedList([])
+      setArtistsProductionList([])
+      setGenreInput('')
+      setShowGenreSuggestions(false)
+      setCurrentStep('conditional')
+      onClose()
+    } catch (error: any) {
+      setDebugMessage('ERROR: ' + (error.message || 'Error desconocido'))
+    }
   }
-}
+
+  const handleSubmitClick = () => {
+    setDebugMessage('Botón Save Media clickeado')
+    form.handleSubmit(handleFormSubmit)()
+  }
 
   const handleAutoSave = () => {}
 
@@ -95,6 +102,7 @@ const handleFormSubmit = async (data: GalleryMetadataFormData) => {
     setArtistsProductionList([])
     setGenreInput('')
     setShowGenreSuggestions(false)
+    setDebugMessage('Esperando...')
     onClose()
   }
 
@@ -115,8 +123,15 @@ const handleFormSubmit = async (data: GalleryMetadataFormData) => {
         </div>
 
         <div className="p-6">
+          {/* DEBUG BOX - visible en el teléfono */}
+          <div className="mb-4 p-3 bg-yellow-100 border border-yellow-400 rounded-lg">
+            <p className="font-mono text-xs break-all">
+              <strong>DEBUG:</strong> {debugMessage}
+            </p>
+          </div>
+
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleFormSubmit)}>
+            <form>
               {currentStep === 'conditional' && (
                 <ConditionalStep
                   form={form}
@@ -125,22 +140,24 @@ const handleFormSubmit = async (data: GalleryMetadataFormData) => {
               )}
               
               {currentStep === 'metadata' && (
-                <MetadataStep
-                  form={form}
-                  formRef={formRef}
-                  organizations={organizations}
-                  peopleDepictedList={peopleDepictedList}
-                  setPeopleDepictedList={setPeopleDepictedList}
-                  artistsProductionList={artistsProductionList}
-                  setArtistsProductionList={setArtistsProductionList}
-                  genreInput={genreInput}
-                  setGenreInput={setGenreInput}
-                  showGenreSuggestions={showGenreSuggestions}
-                  setShowGenreSuggestions={setShowGenreSuggestions}
-                  onAutoSave={handleAutoSave}
-                  onSubmit={() => {}}
-                  isSaving={isUploading}
-                />
+                <>
+                  <MetadataStep
+                    form={form}
+                    formRef={formRef}
+                    organizations={organizations}
+                    peopleDepictedList={peopleDepictedList}
+                    setPeopleDepictedList={setPeopleDepictedList}
+                    artistsProductionList={artistsProductionList}
+                    setArtistsProductionList={setArtistsProductionList}
+                    genreInput={genreInput}
+                    setGenreInput={setGenreInput}
+                    showGenreSuggestions={showGenreSuggestions}
+                    setShowGenreSuggestions={setShowGenreSuggestions}
+                    onAutoSave={handleAutoSave}
+                    onSubmit={handleSubmitClick}
+                    isSaving={isUploading}
+                  />
+                </>
               )}
             </form>
           </Form>
