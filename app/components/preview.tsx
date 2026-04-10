@@ -25,7 +25,7 @@ interface PreviewProps {
   userId?: string
 }
 
-const UPLOAD_TIMEOUT_MS = 30000 // 30 seconds22
+const UPLOAD_TIMEOUT_MS = 30000
 
 const Preview: React.FC<PreviewProps> = ({
   imageData,
@@ -45,14 +45,16 @@ const Preview: React.FC<PreviewProps> = ({
   const uploadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const BUCKET_NAME = process.env.NEXT_PUBLIC_IMAGE_GALLERY_BUCKET || 'gallery'
 
-  // Fetch organizations when modal opens
   useEffect(() => {
     if (isModalOpen && organizations.length === 0) {
       const fetchOrganizations = async () => {
         try {
+          toast.error('📡 Fetching organizations...')
           const orgs = await getAllOrganizations()
           setOrganizations(orgs)
+          toast.error(`📡 Organizations fetched: ${orgs.length}`)
         } catch (error) {
+          toast.error('📡 Failed to fetch organizations')
           console.error('Failed to fetch organizations:', error)
         }
       }
@@ -77,89 +79,111 @@ const Preview: React.FC<PreviewProps> = ({
       }
     }
   }, [])
-const handleMetadataSubmit = async (metadata: GalleryMetadataFormData) => {
-  setIsUploading(true)
 
-  uploadTimeoutRef.current = setTimeout(() => {
-    resetUploadState()
-    toast.error('Upload timed out. Please try again.')
-  }, UPLOAD_TIMEOUT_MS)
-
-  try {
-    const supabase = createClient()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
+  const handleMetadataSubmit = async (metadata: GalleryMetadataFormData) => {
+    toast.error('🔵 PASO 1: handleMetadataSubmit iniciado')
     
-    if (userError || !user) {
+    setIsUploading(true)
+    toast.error('🔵 PASO 2: setIsUploading(true)')
+
+    uploadTimeoutRef.current = setTimeout(() => {
+      toast.error('🔴 TIMEOUT: Upload tardó más de 30 segundos')
       resetUploadState()
-      toast.error('You must be logged in to save to gallery')
-      return
-    }
+      toast.error('Upload timed out. Please try again.')
+    }, UPLOAD_TIMEOUT_MS)
 
-    setPendingMetadata(metadata)
-    setFinalImageBlob(imageData.croppedBlob)
-    
-    // No cerrar modal aquí - esperar a que ImageUploader termine
-    
-  } catch (error) {
-    resetUploadState()
-    toast.error('Failed to prepare image for upload')
-  }
-}
-  const handleUploadComplete = async (uploadedFile: {
-  name: string
-  path: string
-  type: string
-}) => {
-  if (!pendingMetadata) {
-    toast.error('Metadata missing')
-    resetUploadState()
-    return
-  }
-
-  try {
-    const supabase = createClient()
-    const { data: { user }, error: userError } = await supabase.auth.getUser()
-    
-    if (!user) {
-      toast.error('User not found')
-      resetUploadState()
-      return
-    }
-
-    const imageUrl = getImageUrl(uploadedFile.path, BUCKET_NAME)
-
-    const result = await saveGalleryMetadata(
-      uploadedFile.path,
-      imageUrl,
-      pendingMetadata,
-      user.id,
-      uploadedFile.name,
-      uploadedFile.type
-    )
-
-    if (result.success) {
-      if (uploadTimeoutRef.current) {
-        clearTimeout(uploadTimeoutRef.current)
-        uploadTimeoutRef.current = null
+    try {
+      toast.error('🔵 PASO 3: Obteniendo usuario...')
+      const supabase = createClient()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (userError || !user) {
+        toast.error('🔴 ERROR: No hay usuario logueado')
+        resetUploadState()
+        toast.error('You must be logged in to save to gallery')
+        return
       }
-      setUploadedImageUrl(imageData.croppedImage)
-      setShowSuccess(true)
-      setIsModalOpen(false)  // Cerrar modal SOLO aquí
-      setPendingMetadata(null)
-      setFinalImageBlob(null)
-      setIsUploading(false)
-    } else {
-      toast.error(`Failed to save: ${result.error}`)
+      
+      toast.error('🔵 PASO 4: Usuario OK: ' + user.id)
+      toast.error('🔵 PASO 5: Guardando metadata y blob...')
+      
+      setPendingMetadata(metadata)
+      setFinalImageBlob(imageData.croppedBlob)
+      
+      toast.error('🔵 PASO 6: Todo listo, esperando ImageUploader')
+      
+    } catch (error) {
+      toast.error('🔴 ERROR en handleMetadataSubmit: ' + (error as Error).message)
+      resetUploadState()
+      toast.error('Failed to prepare image for upload')
+    }
+  }
+
+  const handleUploadComplete = async (uploadedFile: {
+    name: string
+    path: string
+    type: string
+  }) => {
+    toast.error('🟢 PASO A: handleUploadComplete iniciado')
+    
+    if (!pendingMetadata) {
+      toast.error('🔴 ERROR: Metadata missing')
+      resetUploadState()
+      return
+    }
+
+    toast.error('🟢 PASO B: Metadata existe')
+
+    try {
+      toast.error('🟢 PASO C: Obteniendo usuario...')
+      const supabase = createClient()
+      const { data: { user }, error: userError } = await supabase.auth.getUser()
+      
+      if (!user) {
+        toast.error('🔴 ERROR: User not found')
+        resetUploadState()
+        return
+      }
+
+      toast.error('🟢 PASO D: Usuario OK, preparando save...')
+      const imageUrl = getImageUrl(uploadedFile.path, BUCKET_NAME)
+
+      toast.error('🟢 PASO E: Llamando a saveGalleryMetadata...')
+      const result = await saveGalleryMetadata(
+        uploadedFile.path,
+        imageUrl,
+        pendingMetadata,
+        user.id,
+        uploadedFile.name,
+        uploadedFile.type
+      )
+
+      if (result.success) {
+        toast.error('🟢 PASO F: Éxito! Limpiando...')
+        if (uploadTimeoutRef.current) {
+          clearTimeout(uploadTimeoutRef.current)
+          uploadTimeoutRef.current = null
+        }
+        setUploadedImageUrl(imageData.croppedImage)
+        setShowSuccess(true)
+        setIsModalOpen(false)
+        setPendingMetadata(null)
+        setFinalImageBlob(null)
+        setIsUploading(false)
+        toast.success('✅ Imagen guardada exitosamente!')
+      } else {
+        toast.error('🔴 ERROR saveGalleryMetadata: ' + (result.error || 'Unknown error'))
+        resetUploadState()
+      }
+    } catch (error) {
+      toast.error('🔴 ERROR en handleUploadComplete: ' + (error as Error).message)
       resetUploadState()
     }
-  } catch (error) {
-    toast.error('Failed to save image to gallery')
-    resetUploadState()
   }
-}
+
   const handleUploadError = (error: Error) => {
+    toast.error('🔴 Upload error: ' + error.message)
     console.error('Upload error:', error)
-    toast.error('Failed to upload image. Please try again.')
     resetUploadState()
   }
 
@@ -284,13 +308,13 @@ const handleMetadataSubmit = async (metadata: GalleryMetadataFormData) => {
         </div>
 
         <div className="bg-white/90 backdrop-blur-sm shadow-sm p-4 space-y-4">
-         {isModalOpen && (
-    <div className="mb-2 p-2 bg-yellow-100 border border-yellow-400 rounded-lg">
-      <p className="text-xs font-mono text-black break-all">
-        <strong>DEBUG:</strong> Modal abierto, esperando submit
-      </p>
-    </div>
-  )}
+          {isModalOpen && (
+            <div className="mb-2 p-2 bg-yellow-100 border border-yellow-400 rounded-lg">
+              <p className="text-xs font-mono text-black break-all">
+                <strong>DEBUG:</strong> Modal abierto, esperando submit
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={() => setIsModalOpen(true)}
