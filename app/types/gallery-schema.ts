@@ -18,13 +18,9 @@ export type FormStep =
 
 export const GalleryMetadataSchema = z
   .object({
-    uploadType: z
-      .enum(["single", "multiple"])
-      .refine((val) => val !== undefined, {
-        message: "Please select upload type",
-      }),
+  uploadType: z.enum(["single", "multiple"]).optional(),
 
-    file: z.union([z.string(), z.array(z.string())]),
+   file: z.union([z.string(), z.array(z.string())]).optional(),
     collection_name: z.string().optional(),
     dateKnowledge: z
       .enum(["exact", "approximate"])
@@ -110,26 +106,7 @@ export const GalleryMetadataSchema = z
         },
       ),
   })
-  .refine(
-    (data) => {
-      if (data.uploadType === "single") {
-        return typeof data.file === "string" && data.file.trim().length > 0;
-      } else if (data.uploadType === "multiple") {
-        return (
-          Array.isArray(data.file) &&
-          data.file.length > 0 &&
-          data.file.every(
-            (file) => typeof file === "string" && file.trim().length > 0,
-          )
-        );
-      }
-      return false;
-    },
-    {
-      message: "File is required",
-      path: ["file"],
-    },
-  )
+ 
   .refine(
     (data) => {
       if (data.dateKnowledge === "exact") {
