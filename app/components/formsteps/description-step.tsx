@@ -1,6 +1,6 @@
 import React from "react";
 import { FormField, FormItem, FormLabel, FormControl, FormDescription, FormMessage } from "../ui/form";
-import { Textarea } from "@/components/ui/textarea";
+import { Textarea } from "../ui/textarea"; 
 import { UseFormReturn } from "react-hook-form";
 import { GalleryMetadataFormData } from "@/app/types/gallery-schema"; 
 
