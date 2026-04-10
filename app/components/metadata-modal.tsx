@@ -73,18 +73,8 @@ const handleFormSubmit = async (data: GalleryMetadataFormData) => {
   try {
     setDebugMessage('PASO 3: Llamando a onSubmit...')
     await onSubmit(data)
-    setDebugMessage('PASO 4: Submit completado, esperando upload...')
-    
-    // NO cerrar el modal aquí
-    // Solo resetear el estado del step, pero mantener el modal abierto
-    form.reset()
-    setPeopleDepictedList([])
-    setArtistsProductionList([])
-    setGenreInput('')
-    setShowGenreSuggestions(false)
-    setCurrentStep('conditional')
-    
-    // El modal se cerrará cuando el upload termine y llame a onClose
+    setDebugMessage('PASO 4: Upload en progreso, esperando...')
+    // ← removed the form.reset() block that was here
   } catch (error: any) {
     setDebugMessage('ERROR: ' + (error.message || 'Error desconocido'))
   }
@@ -95,17 +85,19 @@ const handleFormSubmit = async (data: GalleryMetadataFormData) => {
   }
 
   const handleAutoSave = () => {}
-
-  const handleClose = () => {
-    setCurrentStep('conditional')
-    form.reset()
-    setPeopleDepictedList([])
-    setArtistsProductionList([])
-    setGenreInput('')
-    setShowGenreSuggestions(false)
-    setDebugMessage('Esperando...')
-    onClose()
-  }
+const resetForm = () => {
+  form.reset()
+  setPeopleDepictedList([])
+  setArtistsProductionList([])
+  setGenreInput('')
+  setShowGenreSuggestions(false)
+  setCurrentStep('conditional')
+  setDebugMessage('Esperando...')
+}
+const handleClose = () => {
+  resetForm()
+  onClose()
+}
 
   if (!isOpen) return null
 

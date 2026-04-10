@@ -119,67 +119,59 @@ const Preview: React.FC<PreviewProps> = ({
     }
   }
 
-  const handleUploadComplete = async (uploadedFile: {
-    name: string
-    path: string
-    type: string
-  }) => {
-    toast.error('🟢 PASO A: handleUploadComplete iniciado')
-    
-    if (!pendingMetadata) {
-      toast.error('🔴 ERROR: Metadata missing')
+ const handleUploadComplete = async (uploadedFile: {
+  name: string
+  path: string
+  type: string
+}) => {
+  if (!pendingMetadata) {
+    resetUploadState()
+    toast.error('Upload failed: missing metadata')
+    return
+  }
+
+  try {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
       resetUploadState()
+      toast.error('You must be logged in to save to gallery')
       return
     }
 
-    toast.error('🟢 PASO B: Metadata existe')
+    const imageUrl = getImageUrl(uploadedFile.path, BUCKET_NAME)
 
-    try {
-      toast.error('🟢 PASO C: Obteniendo usuario...')
-      const supabase = createClient()
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (!user) {
-        toast.error('🔴 ERROR: User not found')
-        resetUploadState()
-        return
+    const result = await saveGalleryMetadata(
+      uploadedFile.path,
+      imageUrl,
+      pendingMetadata,
+      user.id,
+      uploadedFile.name,
+      uploadedFile.type
+    )
+
+    if (result.success) {
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current)
+        uploadTimeoutRef.current = null
       }
-
-      toast.error('🟢 PASO D: Usuario OK, preparando save...')
-      const imageUrl = getImageUrl(uploadedFile.path, BUCKET_NAME)
-
-      toast.error('🟢 PASO E: Llamando a saveGalleryMetadata...')
-      const result = await saveGalleryMetadata(
-        uploadedFile.path,
-        imageUrl,
-        pendingMetadata,
-        user.id,
-        uploadedFile.name,
-        uploadedFile.type
-      )
-
-      if (result.success) {
-        toast.error('🟢 PASO F: Éxito! Limpiando...')
-        if (uploadTimeoutRef.current) {
-          clearTimeout(uploadTimeoutRef.current)
-          uploadTimeoutRef.current = null
-        }
-        setUploadedImageUrl(imageData.croppedImage)
-        setShowSuccess(true)
-        setIsModalOpen(false)
-        setPendingMetadata(null)
-        setFinalImageBlob(null)
-        setIsUploading(false)
-        toast.success('✅ Imagen guardada exitosamente!')
-      } else {
-        toast.error('🔴 ERROR saveGalleryMetadata: ' + (result.error || 'Unknown error'))
-        resetUploadState()
-      }
-    } catch (error) {
-      toast.error('🔴 ERROR en handleUploadComplete: ' + (error as Error).message)
+      setUploadedImageUrl(imageData.croppedImage)
+      setShowSuccess(true)
+      setPendingMetadata(null)
+      setFinalImageBlob(null)
+      setIsUploading(false)
+      setIsModalOpen(false)
+      toast.success('Image saved to gallery!')
+    } else {
       resetUploadState()
+      toast.error(result.error || 'Failed to save image')
     }
+  } catch (error) {
+    resetUploadState()
+    toast.error('Failed to save image: ' + (error as Error).message)
   }
+}
 
   const handleUploadError = (error: Error) => {
     toast.error('🔴 Upload error: ' + error.message)

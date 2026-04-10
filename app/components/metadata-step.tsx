@@ -148,7 +148,7 @@ export const MetadataStep: React.FC<MetadataStepProps> = ({
       </div>
 
       <Button
-        type="submit"
+        type="button"
         disabled={isSaving}
         className="w-full sm:w-auto"
         onClick={onSubmit}
