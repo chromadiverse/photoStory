@@ -79,45 +79,43 @@ const Preview: React.FC<PreviewProps> = ({
       }
     }
   }, [])
+const handleMetadataSubmit = async (metadata: GalleryMetadataFormData) => {
 
-  const handleMetadataSubmit = async (metadata: GalleryMetadataFormData) => {
-    toast.error('🔵 PASO 1: handleMetadataSubmit iniciado')
+  setIsUploading(true)
+
+  uploadTimeoutRef.current = setTimeout(() => {
+    toast.error('🔴 TIMEOUT: Upload tardó más de 30 segundos')
+    resetUploadState()
+  }, UPLOAD_TIMEOUT_MS)
+
+  try {
+    const supabase = createClient()
     
-    setIsUploading(true)
-    toast.error('🔵 PASO 2: setIsUploading(true)')
+    // Add a timeout race for getUser
+    const userPromise = supabase.auth.getUser()
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('getUser timed out')), 5000)
+    )
+    
+    const { data: { user }, error: userError } = await Promise.race([
+      userPromise,
+      timeoutPromise
+    ]) as any
 
-    uploadTimeoutRef.current = setTimeout(() => {
-      toast.error('🔴 TIMEOUT: Upload tardó más de 30 segundos')
+    if (userError || !user) {
       resetUploadState()
-      toast.error('Upload timed out. Please try again.')
-    }, UPLOAD_TIMEOUT_MS)
-
-    try {
-      toast.error('🔵 PASO 3: Obteniendo usuario...')
-      const supabase = createClient()
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      
-      if (userError || !user) {
-        toast.error('🔴 ERROR: No hay usuario logueado')
-        resetUploadState()
-        toast.error('You must be logged in to save to gallery')
-        return
-      }
-      
-      toast.error('🔵 PASO 4: Usuario OK: ' + user.id)
-      toast.error('🔵 PASO 5: Guardando metadata y blob...')
-      
-      setPendingMetadata(metadata)
-      setFinalImageBlob(imageData.croppedBlob)
-      
-      toast.error('🔵 PASO 6: Todo listo, esperando ImageUploader')
-      
-    } catch (error) {
-      toast.error('🔴 ERROR en handleMetadataSubmit: ' + (error as Error).message)
-      resetUploadState()
-      toast.error('Failed to prepare image for upload')
+      toast.error('You must be logged in to save to gallery')
+      return
     }
+
+    setPendingMetadata(metadata)
+    setFinalImageBlob(imageData.croppedBlob)
+
+  } catch (error) {
+    resetUploadState()
+    toast.error('Failed: ' + (error as Error).message)
   }
+}
 
  const handleUploadComplete = async (uploadedFile: {
   name: string

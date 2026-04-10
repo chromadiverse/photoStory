@@ -2,7 +2,6 @@
 
 import { useRef, useEffect } from "react";
 import Uppy from "@uppy/core";
-import type { UppyFile } from "@uppy/core";
 import XHRUpload from "@uppy/xhr-upload";
 import { toast } from "sonner";
 
@@ -26,152 +25,120 @@ export default function ImageUploader({
   onUploadError,
 }: ImageUploaderProps) {
   const uppyRef = useRef<Uppy | null>(null);
+  
+  // Keep callback refs fresh so Uppy's stale closure always calls
+  // the latest version
+  const onUploadCompleteRef = useRef(onUploadComplete);
+  const onUploadErrorRef = useRef(onUploadError);
+  
+  useEffect(() => {
+    onUploadCompleteRef.current = onUploadComplete;
+  }, [onUploadComplete]);
+  
+  useEffect(() => {
+    onUploadErrorRef.current = onUploadError;
+  }, [onUploadError]);
 
   useEffect(() => {
-    if (!uppyRef.current) {
-      toast.error("DEBUG: Inicializando Uppy");
+    const uppy = new Uppy({
+      id: `image-uploader-${Date.now()}`, // unique ID prevents conflicts on remount
+      autoProceed: true,
+      restrictions: {
+        maxNumberOfFiles: 1,
+        allowedFileTypes: ["image/*"],
+      },
+    });
+
+    uppy.use(XHRUpload, {
+      endpoint: "/api/upload-to-s3-via-api",
+      method: "post",
+      formData: true,
+      fieldName: "file",
+      getResponseData: (xhr: XMLHttpRequest) => {
+        try {
+          if (xhr.response && typeof xhr.response === "object") return xhr.response;
+          return JSON.parse(xhr.responseText);
+        } catch {
+          return {};
+        }
+      },
+      getResponseError: (xhr: XMLHttpRequest) => {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          return new Error(data.error || `Upload failed with status ${xhr.status}`);
+        } catch {
+          return new Error(`Upload failed with status ${xhr.status}`);
+        }
+      },
+    } as any);
+
+    uppy.on("complete", (result) => {
+      toast.error(`DEBUG: Complete - ok:${result.successful?.length} fail:${result.failed?.length}`);
       
-      uppyRef.current = new Uppy({
-        id: "image-uploader-pwa",
-        autoProceed: true,
-        restrictions: {
-          maxNumberOfFiles: 1,
-          allowedFileTypes: ["image/*"],
-        },
-        debug: true,
-      });
-
-      uppyRef.current.use(XHRUpload, {
-        endpoint: "/api/upload-to-s3-via-api",
-        method: "post",
-        formData: true,
-        fieldName: "file",
-        getResponseData: (xhr: XMLHttpRequest) => {
-          try {
-            if (xhr.response && typeof xhr.response === 'object') {
-              return xhr.response;
-            }
-            const data = JSON.parse(xhr.responseText);
-            return data;
-          } catch (e) {
-            toast.error("DEBUG: No se pudo parsear respuesta");
-            return {};
-          }
-        },
-        getResponseError: (xhr: XMLHttpRequest) => {
-          const status = xhr.status;
-          const responseText = xhr.responseText;
-          toast.error(`DEBUG: Error HTTP ${status}`);
-          try {
-            const data = JSON.parse(responseText);
-            return new Error(data.error || `Upload failed with status ${status}`);
-          } catch (e) {
-            return new Error(`Upload failed with status ${status}: ${responseText}`);
-          }
-        },
-      } as any);
-
-      uppyRef.current.on("progress", (progress: number) => {
-        toast.error(`DEBUG: Subiendo... ${Math.round(progress)}%`);
-      });
-
-      uppyRef.current.on("complete", (result) => {
-        toast.error(`DEBUG: Complete - successful: ${result.successful?.length || 0}, failed: ${result.failed?.length || 0}`);
-
-        if (result.successful && result.successful.length > 0) {
-          const file = result.successful[0];
-          const response = file.response?.body || {};
-          
-          toast.error(`DEBUG: Response recibida: ${JSON.stringify(response)}`);
-
-          if (response.path) {
-            toast.success("DEBUG: Upload exitoso!");
-            onUploadComplete({
-              name: file.name || `upload-${Date.now()}.jpg`,
-              path: response.path,
-              type: file.type || "image/jpeg",
-            });
-          } else {
-            const errorMsg = "No path in response";
-            toast.error(`DEBUG: ${errorMsg}`);
-            onUploadError?.(new Error(errorMsg));
-          }
+      if (result.successful && result.successful.length > 0) {
+        const file = result.successful[0];
+        const response = file.response?.body || {};
+        toast.error(`DEBUG: Response: ${JSON.stringify(response)}`);
+        
+        if (response.path) {
+          onUploadCompleteRef.current({
+            name: file.name || `upload-${Date.now()}.jpg`,
+            path: response.path,
+            type: file.type || "image/jpeg",
+          });
         } else {
-          if (result.failed && result.failed.length > 0) {
-            const rawError = result.failed[0].error;
-            let errorMsg = "Upload failed";
-            if (typeof rawError === 'string') {
-              errorMsg = rawError;
-            } else if (rawError && typeof rawError === 'object' && 'message' in rawError) {
-              errorMsg = (rawError as any).message;
-            }
-            toast.error(`DEBUG: Upload falló: ${errorMsg}`);
-            onUploadError?.(new Error(errorMsg));
-          }
+          onUploadErrorRef.current?.(new Error("No path in response"));
         }
-      });
+      } else if (result.failed && result.failed.length > 0) {
+        const rawError = result.failed[0].error;
+        const msg = typeof rawError === "string" 
+          ? rawError 
+          : (rawError as any)?.message || "Upload failed";
+        toast.error(`DEBUG: Failed: ${msg}`);
+        onUploadErrorRef.current?.(new Error(msg));
+      }
+    });
 
-      uppyRef.current.on("error", (error) => {
-        toast.error(`DEBUG: Error general: ${typeof error === 'string' ? error : error?.message || 'Unknown'}`);
-        if (typeof error === 'string') {
-          onUploadError?.(new Error(error));
-        } else if (error && typeof error === 'object' && 'message' in error) {
-          onUploadError?.(error as Error);
-        } else {
-          onUploadError?.(new Error(`Unknown error: ${error}`));
-        }
-      });
+    uppy.on("error", (error) => {
+      const msg = typeof error === "string" ? error : error?.message || "Unknown error";
+      toast.error(`DEBUG: Error: ${msg}`);
+      onUploadErrorRef.current?.(new Error(msg));
+    });
 
-      uppyRef.current.on("upload-error", (file, error, uploadResponse) => {
-        const errorMsg = typeof error === 'string' ? error : error?.message || 'Unknown upload error';
-        toast.error(`DEBUG: Upload error: ${errorMsg}`);
-        onUploadError?.(new Error(errorMsg));
-      });
+    uppy.on("upload-error", (_file, error) => {
+      const msg = typeof error === "string" ? error : error?.message || "Unknown upload error";
+      toast.error(`DEBUG: Upload-error: ${msg}`);
+      onUploadErrorRef.current?.(new Error(msg));
+    });
 
-      uppyRef.current.on("restriction-failed", (file, error) => {
-        const errorMsg = typeof error === 'string' ? error : error?.message || 'Restriction failed';
-        toast.error(`DEBUG: Restricción: ${errorMsg}`);
-        onUploadError?.(new Error(errorMsg));
+    uppyRef.current = uppy;
+
+    // Add file immediately on mount since this component only
+    // renders when imageBlob + pendingMetadata are both set
+    const file = new File([imageBlob], `photo-${Date.now()}.jpg`, {
+      type: "image/jpeg",
+    });
+
+    try {
+      uppy.addFile({
+        name: file.name,
+        type: file.type,
+        data: file,
+        meta: { bucketName, folderName },
       });
+      toast.error("DEBUG: File añadido, upload iniciando...");
+    } catch (error) {
+      toast.error(`DEBUG: Error añadiendo file: ${error}`);
+      onUploadErrorRef.current?.(error as Error);
     }
 
     return () => {
-      if (uppyRef.current) {
-        const files = uppyRef.current.getFiles();
-        if (files.length > 0) {
-          uppyRef.current.removeFiles(files.map((f) => f.id));
-        }
-      }
+      uppy.destroy();
+      uppyRef.current = null;
     };
-  }, [bucketName, folderName, onUploadComplete, onUploadError]);
-
-  useEffect(() => {
-    if (uppyRef.current && imageBlob) {
-      toast.error("DEBUG: Iniciando upload del blob");
-      
-      const existingFiles = uppyRef.current.getFiles();
-      if (existingFiles.length > 0) {
-        uppyRef.current.removeFiles(existingFiles.map((f) => f.id));
-      }
-
-      const file = new File([imageBlob], `photo-${Date.now()}.jpg`, {
-        type: "image/jpeg",
-      });
-
-      try {
-        uppyRef.current.addFile({
-          name: file.name,
-          type: file.type,
-          data: file,
-          meta: { bucketName, folderName },
-        });
-        toast.error("DEBUG: File añadido a Uppy");
-      } catch (error) {
-        toast.error(`DEBUG: Error añadiendo file: ${error}`);
-        onUploadError?.(error as Error);
-      }
-    }
-  }, [imageBlob, bucketName, folderName, onUploadError]);
+  // Only run once on mount — callbacks stay fresh via refs
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return null;
 }
