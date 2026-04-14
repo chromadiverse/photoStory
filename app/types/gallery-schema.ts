@@ -20,7 +20,7 @@ export const GalleryMetadataSchema = z
   .object({
   uploadType: z.enum(["single", "multiple"]).optional(),
 
-   file: z.union([z.string(), z.array(z.string())]).optional(),
+
     collection_name: z.string().optional(),
     dateKnowledge: z
       .enum(["exact", "approximate"])

@@ -35,78 +35,89 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
   const [debugMessage, setDebugMessage] = useState<string>('Esperando...')
   const formRef = useRef<HTMLDivElement>(null)
 
-const form = useForm<GalleryMetadataFormData>({
-  resolver: zodResolver(GalleryMetadataSchema),
-  defaultValues: {
-    uploadType: "single",        // ← add this
-    file: "",                    // ← add this
-    title: '',
-    location: '',
-    description: '',
-    peopleDepicted: [],
-    genres: [],
-    dateKnowledge: undefined,
-    hasOrganization: undefined,
-    isCreativeWork: undefined,
-    mediaCreator: {
-      name: '',
-      displayTitle: '',
-      role: '',
-      roleCategory: undefined,
-      roleCategoryOther: '',
+  const form = useForm<GalleryMetadataFormData>({
+    resolver: zodResolver(GalleryMetadataSchema),
+    defaultValues: {
+      uploadType: "single",
+      title: '',
+      location: '',
+      description: '',
+      peopleDepicted: [],
+      genres: [],
+      dateKnowledge: undefined,
+      hasOrganization: undefined,
+      isCreativeWork: undefined,
+      mediaCreator: {
+        name: '',
+        displayTitle: '',
+        role: '',
+        roleCategory: undefined,
+        roleCategoryOther: '',
+      },
     },
-  },
-  mode: 'onChange',
-})
+    mode: 'onChange',
+  })
 
   const handleConditionalComplete = () => {
     setCurrentStep('metadata')
   }
-const handleFormSubmit = async (data: GalleryMetadataFormData) => {
-  setDebugMessage('PASO 1: Submit iniciado')
-  
-  if (!data.title) {
-    setDebugMessage('ERROR: Falta el título')
-    return
-  }
-  
-  setDebugMessage('PASO 2: Título: ' + data.title)
-  
-  try {
-    setDebugMessage('PASO 3: Llamando a onSubmit...')
-    await onSubmit(data)
-    setDebugMessage('PASO 4: Upload en progreso, esperando...')
-    // ← removed the form.reset() block that was here
-  } catch (error: any) {
-    setDebugMessage('ERROR: ' + (error.message || 'Error desconocido'))
-  }
-}
-const handleSubmitClick = () => {
-  setDebugMessage('Button clicked')
-  form.handleSubmit(
-    (data) => {
-      setDebugMessage('Valid! Title: ' + data.title)
-      handleFormSubmit(data)
-    },
-    (errors) => {
-      setDebugMessage('ERRORS: ' + JSON.stringify(Object.keys(errors)))
+
+  const handleFormSubmit = async (data: GalleryMetadataFormData) => {
+    console.log('[MetadataModal] handleFormSubmit called', data)
+
+    if (!data.title) {
+      console.warn('[MetadataModal] Missing title, aborting')
+      setDebugMessage('ERROR: Missing title')
+      return
     }
-  )()
-}
-  const handleAutoSave = () => {}
-const resetForm = () => {
-  form.reset()
-  setPeopleDepictedList([])
-  setArtistsProductionList([])
-  setGenreInput('')
-  setShowGenreSuggestions(false)
-  setCurrentStep('conditional')
-  setDebugMessage('Esperando...')
-}
-const handleClose = () => {
-  resetForm()
-  onClose()
-}
+
+    setDebugMessage('Submitting metadata...')
+
+    try {
+      await onSubmit(data)
+      console.log('[MetadataModal] onSubmit resolved successfully')
+      setDebugMessage('Metadata submitted successfully!')
+    } catch (error: any) {
+      console.error('[MetadataModal] onSubmit threw:', error)
+      setDebugMessage(`ERROR: ${error.message || 'Unknown error'}`)
+    }
+  }
+
+  const handleSubmitClick = () => {
+    console.log('[MetadataModal] Save button clicked')
+    console.log('[MetadataModal] Current form values:', form.getValues())
+    console.log('[MetadataModal] Form state:', form.formState)
+
+    form.handleSubmit(
+      (data) => {
+        console.log('[MetadataModal] RHF validation passed, data:', data)
+        handleFormSubmit(data)
+      },
+      (errors) => {
+        console.warn('[MetadataModal] RHF validation failed, errors:', errors)
+        setDebugMessage(`Validation errors: ${Object.keys(errors).join(', ')}`)
+      }
+    )()
+  }
+
+  const handleAutoSave = () => {
+    console.log('[MetadataModal] Auto-save triggered')
+  }
+
+  const resetForm = () => {
+    form.reset()
+    setPeopleDepictedList([])
+    setArtistsProductionList([])
+    setGenreInput('')
+    setShowGenreSuggestions(false)
+    setCurrentStep('conditional')
+    setDebugMessage('Esperando...')
+  }
+
+  const handleClose = () => {
+    resetForm()
+    onClose()
+  }
 
   if (!isOpen) return null
 
@@ -125,7 +136,7 @@ const handleClose = () => {
         </div>
 
         <div className="p-6">
-          {/* DEBUG BOX - visible en el teléfono */}
+          {/* DEBUG BOX */}
           <div className="mb-4 p-3 bg-yellow-100 border border-yellow-400 rounded-lg">
             <p className="font-mono text-xs break-all">
               <strong>DEBUG:</strong> {debugMessage}

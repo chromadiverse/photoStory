@@ -26,7 +26,7 @@ import { Organization } from "../types/orgaization";
 interface MetadataStepProps {
   form: UseFormReturn<GalleryMetadataFormData>;
   formRef: RefObject<HTMLDivElement | null>;
- organizations: Organization[];
+  organizations: Organization[];
   peopleDepictedList: string[];
   setPeopleDepictedList: (list: string[]) => void;
   artistsProductionList: any[];
