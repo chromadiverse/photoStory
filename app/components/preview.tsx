@@ -264,13 +264,13 @@ const Preview: React.FC<PreviewProps> = ({ imageData, onStartOver, onBack, userI
       />
 
       {finalImageBlob && pendingMetadata && (
-        <ImageUploader
-          imageBlob={finalImageBlob}
-          bucketName={BUCKET_NAME}
-          folderName="im-g"
-          onUploadComplete={handleUploadComplete}
-          onUploadError={handleUploadError}
-        />
+    <ImageUploader
+  imageBlob={finalImageBlob}
+  bucketName="im-g"     // ← el bucket
+  folderName=""         // ← VACÍO, porque no quieres carpeta adicional
+  onUploadComplete={handleUploadComplete}
+  onUploadError={handleUploadError}
+/>
       )}
     </>
   )
