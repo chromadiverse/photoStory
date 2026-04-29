@@ -1,17 +1,10 @@
 // services/profileService.ts
-import { createClient } from '../lib/supabase/client';
 
 interface FetchDancerIdResult {
-  data: string | null; // Just the dancer ID as string
+  data: string | null;
   error: any;
 }
 
-/**
- * Fetches the dancer ID for the currently authenticated user.
- * @param supabaseClient - An initialized Supabase client instance
- * @param userId - The authenticated user's ID (user.id from auth)
- * @returns An object containing the dancer ID or an error
- */
 export const fetchDancerIdByUserId = async (
   supabaseClient: any,
   userId: string
@@ -22,13 +15,16 @@ export const fetchDancerIdByUserId = async (
   }
 
   try {
-    const { data, error, status } = await supabaseClient
+    console.log("[fetchDancerIdByUserId] Querying for userId:", userId);
+    
+    // Use maybeSingle() instead of single() to avoid 406 errors when no record exists
+    const { data, error } = await supabaseClient
       .from('dancers')
-      .select('id') // Only select the ID field
+      .select('id')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle(); // Changed from .single() to .maybeSingle()
 
-    if (error && status !== 406) {
+    if (error) {
       console.error("Supabase error fetching dancer ID:", error);
       return { data: null, error };
     }
@@ -38,7 +34,7 @@ export const fetchDancerIdByUserId = async (
       return { data: null, error: null };
     }
 
-    // Return just the dancer ID string
+    console.log("[fetchDancerIdByUserId] Found dancer ID:", data.id);
     return { data: data.id, error: null };
   } catch (err) {
     console.error("Unexpected error in fetchDancerIdByUserId:", err);

@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useRef, useEffect } from "react"
 import { ArrowLeft, Check, RotateCcw, ChevronDown, ChevronUp, X } from "lucide-react"
 import { getCssFilterString, type FilterSettings } from "../utils/filters"
@@ -95,6 +94,8 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
       img.crossOrigin = "anonymous"
 
       img.onload = () => {
+        console.log('[FilterPanel] Imagen cargada, dimensiones:', img.width, 'x', img.height)
+        
         const canvas = document.createElement("canvas")
         const ctx = canvas.getContext("2d", { willReadFrequently: true })
 
@@ -112,8 +113,6 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
         const data = pixelData.data
 
         const { brightness, contrast, saturation } = filterSettings
-
-
 
         // Apply filters pixel by pixel for cross-browser compatibility
         for (let i = 0; i < data.length; i += 4) {
@@ -133,7 +132,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
           g = (g - 128) * contrastFactor + 128
           b = (b - 128) * contrastFactor + 128
 
-          // Apply saturation (convert to HSL, adjust S, convert back)
+          // Apply saturation
           if (saturation !== 100) {
             const satFactor = saturation / 100
             const gray = 0.2989 * r + 0.587 * g + 0.114 * b
@@ -150,109 +149,39 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
 
         ctx.putImageData(pixelData, 0, 0)
 
-   
-
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              const url = URL.createObjectURL(blob)
-        
-              resolve({
-                croppedImage: url,
-                croppedBlob: blob,
-                rotation: imageData.rotation,
-              })
-            } else {
-              reject(new Error("Failed to create blob"))
-            }
-          },
-          "image/jpeg",
-          0.95,
-        )
-      }
-
-      img.onerror = () => reject(new Error("Failed to load image"))
-      img.src = imageData.croppedImage
+ canvas.toBlob((blob) => {
+  if (blob) {
+    const url = URL.createObjectURL(blob)
+    // NO revocar la URL anterior aquí
+    console.log('[FilterPanel] Nueva URL creada:', url.substring(0, 50))
+    resolve({
+      croppedImage: url,
+      croppedBlob: blob,
+      rotation: imageData.rotation,
     })
   }
-
-  const processImageWithFiltersFallback = async (): Promise<CroppedImageData> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image()
-      img.crossOrigin = "anonymous"
-
-      img.onload = () => {
-        const canvas = document.createElement("canvas")
-        const ctx = canvas.getContext("2d")
-
-        if (!ctx) {
-          reject(new Error("Could not get canvas context"))
-          return
-        }
-
-        canvas.width = img.width
-        canvas.height = img.height
-
-        ctx.drawImage(img, 0, 0)
-
-        const canvasImageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const data = canvasImageData.data
-
-        const brightnessFactor = (filterSettings.brightness - 100) / 100
-        const contrastFactor = (filterSettings.contrast - 100) / 100
-
-        for (let i = 0; i < data.length; i += 4) {
-          data[i] = Math.min(255, Math.max(0, data[i] + 255 * brightnessFactor))
-          data[i + 1] = Math.min(255, Math.max(0, data[i + 1] + 255 * brightnessFactor))
-          data[i + 2] = Math.min(255, Math.max(0, data[i + 2] + 255 * brightnessFactor))
-
-          const factor = (259 * (contrastFactor + 255)) / (255 * (259 - contrastFactor))
-          data[i] = Math.min(255, Math.max(0, factor * (data[i] - 128) + 128))
-          data[i + 1] = Math.min(255, Math.max(0, factor * (data[i + 1] - 128) + 128))
-          data[i + 2] = Math.min(255, Math.max(0, factor * (data[i + 2] - 128) + 128))
-        }
-
-        ctx.putImageData(canvasImageData, 0, 0)
-
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              const url = URL.createObjectURL(blob)
-              resolve({
-                croppedImage: url,
-                croppedBlob: blob,
-                rotation: imageData.rotation,
-              })
-            } else {
-              reject(new Error("Failed to create blob in fallback"))
-            }
-          },
-          "image/jpeg",
-          0.95,
-        )
+}, "image/jpeg", 0.95)
       }
 
-      img.onerror = () => reject(new Error("Failed to load image in fallback"))
+      img.onerror = () => {
+        console.error('[FilterPanel] Error cargando imagen:', imageData.croppedImage)
+        reject(new Error("Failed to load image"))
+      }
       img.src = imageData.croppedImage
     })
   }
 
   const handleComplete = async () => {
+    console.log('[FilterPanel] handleComplete iniciado')
     try {
       setIsProcessing(true)
-
       const processedImageData = await processImageWithFilters()
+      console.log('[FilterPanel] Procesamiento exitoso, llamando a onComplete')
       onComplete(processedImageData)
     } catch (error) {
-      console.error("Error processing image with filters:", error)
-      try {
-        const fallbackData = await processImageWithFiltersFallback()
-        onComplete(fallbackData)
-      } catch (fallbackError) {
-        console.error("Fallback processing also failed:", fallbackError)
-        console.warn("Using original image data as final fallback")
-        onComplete(imageData)
-      }
+      console.error("[FilterPanel] Error processing image:", error)
+      console.warn("[FilterPanel] Usando imagen original como fallback")
+      onComplete(imageData)
     } finally {
       setIsProcessing(false)
     }
@@ -261,7 +190,6 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
   return (
     <div className="h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100 overflow-hidden">
       <style>{sliderStyles}</style>
-      {/* Header */}
       <div className="bg-white/90 backdrop-blur-sm shadow-sm px-4 py-3 flex items-center justify-between flex-shrink-0">
         <button
           onClick={onBack}
@@ -282,7 +210,6 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
         </button>
       </div>
 
-      {/* Image Preview */}
       <div
         className="flex items-center justify-center p-4 bg-white/60 transition-all duration-500 ease-in-out flex-shrink-0"
         style={{
@@ -299,6 +226,8 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
               filter: applyFilters(),
               transform: `scale(${imageScale})`,
             }}
+            onError={(e) => console.error('[FilterPanel] Error mostrando imagen:', e)}
+            onLoad={() => console.log('[FilterPanel] Imagen mostrada correctamente')}
           />
           {isProcessing && (
             <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">
@@ -308,9 +237,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
         </div>
       </div>
 
-      {/* Filter Controls Container */}
       <div className="bg-white/90 backdrop-blur-sm shadow-sm flex-grow overflow-hidden flex flex-col">
-        {/* Filter Controls */}
         <div
           className="overflow-y-auto overscroll-contain scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent transition-all duration-500 ease-in-out relative"
           style={{
@@ -332,7 +259,6 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
           )}
 
           <div className="p-6 space-y-8">
-            {/* Brightness */}
             <div className="space-y-4 px-2 mt-2">
               <div className="flex justify-between items-center min-h-[32px]">
                 <label className="text-base font-semibold text-gray-700">Brightness</label>
@@ -355,7 +281,6 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
               </div>
             </div>
 
-            {/* Contrast */}
             <div className="space-y-4 px-2">
               <div className="flex justify-between items-center min-h-[32px]">
                 <label className="text-base font-semibold text-gray-700">Contrast</label>
@@ -378,7 +303,6 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
               </div>
             </div>
 
-            {/* Saturation */}
             <div className="space-y-4 px-2">
               <div className="flex justify-between items-center min-h-[32px]">
                 <label className="text-base font-semibold text-gray-700">Saturation</label>
@@ -401,7 +325,6 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
               </div>
             </div>
 
-            {/* Reset Button */}
             <div className="pt-4 border-t border-gray-200">
               <button
                 onClick={resetFilters}
@@ -415,7 +338,6 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
           </div>
         </div>
 
-        {/* Filter Controls Toggle Button - Always Visible */}
         <div className="flex-shrink-0">
           {isFiltersExpanded ? (
             <button

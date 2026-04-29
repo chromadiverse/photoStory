@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { createClient } from "./lib/supabase/client"
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { useRouter } from "next/navigation"
 import CameraView from "./components/camera-view"
 import Cropper from "./components/cropper"
@@ -11,7 +11,6 @@ import WelcomeModal from "./components/welcome-modal"
 import ExitConfirmModal from "./components/exit-confirmation-modal"
 import { Camera, Sliders, Search, ArrowLeft, Crop } from "lucide-react"
 import type { FilterSettings } from "./utils/filters"
-import { fetchDancerIdByUserId } from "./service/profileService"
 
 type ViewType = "camera" | "crop" | "filter" | "preview"
 
@@ -39,40 +38,32 @@ export default function Home() {
   const [user, setUser] = useState<any>(null)
   const [dancerId, setDancerId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [filterSettings, setFilterSettings] = useState<FilterSettings>({
+    brightness: 100,
+    contrast: 100,
+    saturation: 100,
+  })
   const router = useRouter()
 
-  // Stable supabase client — never recreated on re-render
-  const supabaseRef = useRef(createClient())
-  const supabase = supabaseRef.current
-
-  // Track whether loading has already been resolved to prevent double-resolution
-  const loadingResolvedRef = useRef(false)
-  const resolveLoading = () => {
-    if (!loadingResolvedRef.current) {
-      loadingResolvedRef.current = true
-      setLoading(false)
+  const supabase = useRef(createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      auth: {
+        persistSession: true,
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+        detectSessionInUrl: true,
+        flowType: 'pkce',
+      },
     }
-  }
+  )).current
 
-  // FIX 2 — Stable dancerId ref so in-flight uploads always see the
-  // current dancer ID even if a re-render fires mid-upload.
-  // dancerId state drives UI; dancerIdRef drives async logic (e.g. Preview upload).
   const dancerIdRef = useRef<string | null>(null)
+
   const safeSetDancerId = (id: string | null) => {
     dancerIdRef.current = id
     setDancerId(id)
   }
-
-  // Safety net — if loading is still true after 8 seconds, force it off
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      if (!loadingResolvedRef.current) {
-        console.warn("Loading timeout hit — forcing loading to false")
-        resolveLoading()
-      }
-    }, 8000)
-    return () => clearTimeout(timeout)
-  }, [])
 
   useEffect(() => {
     const hasSeenWelcome = localStorage.getItem("hasSeenWelcomeModal")
@@ -84,109 +75,76 @@ export default function Home() {
   useEffect(() => {
     let mounted = true
 
-    const fetchDancer = async (userId: string) => {
-      const result = await fetchDancerIdByUserId(supabase, userId)
-      if (!mounted) return
-      if (result.error) {
-        console.error("Error fetching dancer ID:", result.error)
-      } else if (result.data) {
-        safeSetDancerId(result.data)
-      } else {
-        console.warn("No dancer found for user")
-        safeSetDancerId(null)
-      }
-    }
-
-    const checkUser = async () => {
+    const init = async () => {
       try {
-        const { data: { user }, error } = await supabase.auth.getUser()
-
-        if (!mounted) return
-
-        if (error || !user) {
-          resolveLoading()
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (!session) {
           router.push("/login")
           return
         }
 
-        setUser(user)
-        await fetchDancer(user.id)
+        setUser(session.user)
 
-        if (!mounted) return
-        resolveLoading()
+        const { data, error } = await supabase
+          .from('dancers')
+          .select('id')
+          .eq('user_id', session.user.id)
+          .maybeSingle()
+
+        if (error) {
+          console.error('[Init] Error:', error)
+        } else if (data) {
+          safeSetDancerId(data.id)
+        }
+
+        if (mounted) setLoading(false)
       } catch (err) {
-        console.error("Unexpected error in checkUser:", err)
+        console.error('[Init] Exception:', err)
         if (mounted) {
-          resolveLoading()
+          setLoading(false)
           router.push("/login")
         }
       }
     }
 
-    // FIX 3 — Only redirect on an explicit SIGNED_OUT event.
-    // Previously, ANY null session (including transient mobile network drops,
-    // backgrounded tabs, token refresh timing) triggered a redirect to /login.
-    // On mobile Safari, backgrounding the app suspends JS and the token refresh
-    // can temporarily return null — this was causing false logouts.
-    // Now we only redirect when Supabase explicitly tells us the user signed out.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (!mounted) return
+    init()
 
-      // Let checkUser() handle the first resolution — don't race with it
-      if (event === "INITIAL_SESSION") return
-
-      if (event === "SIGNED_OUT") {
-        // Genuine sign-out: clear state and redirect
-        resolveLoading()
-        router.push("/login")
-        return
-      }
-
-      // TOKEN_REFRESHED, USER_UPDATED, SIGNED_IN after initial load:
-      // update user state but DO NOT treat a transient null session as a logout
-      if (session?.user) {
-        setUser(session.user)
-        // Only re-fetch dancer if we don't have one yet, to avoid
-        // redundant Supabase calls and mid-upload re-renders
-        if (!dancerIdRef.current) {
-          await fetchDancer(session.user.id)
-        }
-        resolveLoading()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        router.push('/login')
       }
     })
-
-    checkUser()
 
     return () => {
       mounted = false
       subscription.unsubscribe()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.push("/login")
-    router.refresh()
-  }
-
   const handleImageCapture = (image: CapturedImage) => {
+    console.log('[Home] handleImageCapture - blob size:', image.blob.size)
     setCapturedImage(image)
     setCurrentView("crop")
   }
 
   const handleCropComplete = (cropData: CroppedImageData) => {
+    console.log('[Home] handleCropComplete - new URL:', cropData.croppedImage?.substring(0, 50))
+    console.log('[Home] handleCropComplete - blob size:', cropData.croppedBlob?.size)
     setCroppedImageData(cropData)
     setFilteredImageData(null)
     setCurrentView("filter")
   }
 
   const handleFilterComplete = (processedData: CroppedImageData) => {
+    console.log('[Home] handleFilterComplete - nueva URL:', processedData.croppedImage?.substring(0, 50))
+    console.log('[Home] handleFilterComplete - nuevo blob size:', processedData.croppedBlob?.size)
     setFilteredImageData(processedData)
     setCurrentView("preview")
   }
 
   const handleStartOver = () => {
+    console.log('[Home] handleStartOver - limpiando todo')
     setCapturedImage(null)
     setCroppedImageData(null)
     setFilteredImageData(null)
@@ -198,12 +156,6 @@ export default function Home() {
     setCurrentView("camera")
   }
 
-  const [filterSettings, setFilterSettings] = useState<FilterSettings>({
-    brightness: 100,
-    contrast: 100,
-    saturation: 100,
-  })
-
   const handleCloseWelcomeModal = () => {
     setShowWelcomeModal(false)
     localStorage.setItem("hasSeenWelcomeModal", "true")
@@ -214,8 +166,6 @@ export default function Home() {
   }
 
   const confirmExit = () => {
-    // Use ref here so this always has the current value even if called
-    // during a re-render triggered by an auth state change
     const id = dancerIdRef.current
     if (id) {
       window.location.href = `https://curtainconnect.com/profiles/${id}/gallery`
@@ -245,17 +195,8 @@ export default function Home() {
     }
   }
 
-  // FIX 1 — Replaced the 5-child flex row with a 3-zone CSS grid.
-  // Previously: flex justify-between with whitespace-nowrap text buttons + a
-  // fixed w-16 icon caused the row to overflow ~320px screens (iPhone SE / 14
-  // Mini), pushing the rightmost button off-screen.
-  // Fix: grid-cols-[auto_1fr_auto] pins the two action buttons to each edge
-  // while the icon stays centred in the flex-1 middle column. Text buttons now
-  // use text-[11px] and tighter padding so they never overflow even at 320px.
   const renderNavigation = () => (
     <div className="grid grid-cols-[auto_1fr_auto] items-center gap-1 px-2 py-2 bg-white/90 backdrop-blur-sm shadow-sm">
-
-      {/* Left zone: back arrow + Helpful Tips */}
       <div className="flex items-center gap-1">
         <button
           onClick={() => {
@@ -281,7 +222,6 @@ export default function Home() {
         </button>
       </div>
 
-      {/* Centre zone: animated icon — naturally centred by the grid */}
       <div className="flex items-center justify-center">
         <div className="relative w-12 h-12 flex items-center justify-center">
           <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center animate-pulse">
@@ -291,7 +231,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Right zone: profile link */}
       <button
         onClick={handleGoToGallery}
         className="text-[11px] font-semibold text-white bg-blue-600 px-2.5 py-1.5 rounded-lg shadow-md active:scale-95 active:bg-blue-700 transition-transform leading-tight"
@@ -334,9 +273,7 @@ export default function Home() {
             imageData={filteredImageData}
             onStartOver={handleStartOver}
             onBack={() => setCurrentView("filter")}
-            // Pass the stable ref value so mid-upload re-renders
-            // caused by auth state changes can't null this out
-            userId={dancerIdRef.current ?? undefined}
+            userId={dancerId ?? undefined}
           />
         )}
       </div>

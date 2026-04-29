@@ -16,9 +16,7 @@ export async function middleware(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({
-            request,
-          })
+          supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           )
@@ -27,25 +25,26 @@ export async function middleware(request: NextRequest) {
     }
   )
 
+  const { data: { user } } = await supabase.auth.getUser()
 
-  const { data: { user }, error } = await supabase.auth.getUser()
-
-
-
-
-  if (!user && request.nextUrl.pathname !== '/login') {
-
+  // Helper to carry refreshed session cookies into any redirect
+  function redirectWithCookies(pathname: string) {
     const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
+    url.pathname = pathname
+    const redirectResponse = NextResponse.redirect(url)
+    // ✅ Copy all cookies (including refreshed session) from supabaseResponse
+    supabaseResponse.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value, cookie)
+    })
+    return redirectResponse
   }
 
+  if (!user && request.nextUrl.pathname !== '/login') {
+    return redirectWithCookies('/login')
+  }
 
   if (user && request.nextUrl.pathname === '/login') {
-
-    const url = request.nextUrl.clone()
-    url.pathname = '/'
-    return NextResponse.redirect(url)
+    return redirectWithCookies('/')
   }
 
   return supabaseResponse
@@ -53,13 +52,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder files
-     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }
