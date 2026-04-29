@@ -10,16 +10,11 @@ const s3Client = new S3Client({
     accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
   },
+  forcePathStyle: true,  // ← FORZAR path-style (NO virtual-hosted)
 })
 
 function stripChecksumParams(rawUrl: string): string {
-  console.log("=== [stripChecksumParams] URL original ===")
-  console.log(rawUrl)
-  
   const url = new URL(rawUrl)
-  
-  console.log("=== [stripChecksumParams] Parámetros encontrados ===")
-  console.log([...url.searchParams.keys()])
   
   const paramsToRemove = [
     'x-amz-checksum-crc32',
@@ -31,26 +26,17 @@ function stripChecksumParams(rawUrl: string): string {
   ]
   
   paramsToRemove.forEach(param => {
-    if (url.searchParams.has(param)) {
-      console.log(`Eliminando: ${param}`)
-      url.searchParams.delete(param)
-    }
+    url.searchParams.delete(param)
   })
   
-  // Eliminar cualquier parámetro que tenga "checksum"
   const allKeys = [...url.searchParams.keys()]
   allKeys.forEach(key => {
     if (key.toLowerCase().includes('checksum')) {
-      console.log(`Eliminando (checksum): ${key}`)
       url.searchParams.delete(key)
     }
   })
   
-  const cleanUrl = url.toString()
-  console.log("=== [stripChecksumParams] URL limpia ===")
-  console.log(cleanUrl)
-  
-  return cleanUrl
+  return url.toString()
 }
 
 export async function POST(req: NextRequest) {
