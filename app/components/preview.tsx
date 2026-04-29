@@ -265,10 +265,10 @@ const Preview: React.FC<PreviewProps> = ({ imageData, onStartOver, onBack, userI
 
       {finalImageBlob && pendingMetadata && (
         //ESTO NO VA A FUNCIONAR EN LOCALl
-    <ImageUploader
+<ImageUploader
   imageBlob={finalImageBlob}
-  bucketName="im-g"     // ← el bucket
-  folderName=""         // ← VACÍO, porque no quieres carpeta adicional
+  bucketName={BUCKET_NAME}  // ← esto es "prod"
+  folderName="im-g"          // ← la carpeta dentro del bucket
   onUploadComplete={handleUploadComplete}
   onUploadError={handleUploadError}
 />
