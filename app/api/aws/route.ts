@@ -10,7 +10,7 @@ const s3Client = new S3Client({
     accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
   },
-  forcePathStyle: true,  // ← FORZAR path-style (NO virtual-hosted)
+  forcePathStyle: false,  // ← Virtual-hosted style
 })
 
 function stripChecksumParams(rawUrl: string): string {
@@ -40,11 +40,7 @@ function stripChecksumParams(rawUrl: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  console.log("=== /api/aws RECIBIDO ===")
-  const { bucketName, folderName, fileType } = await req.json()
-  console.log("bucketName:", bucketName)
-  console.log("folderName:", folderName)
-  console.log("fileType:", fileType)
+  const { bucketName, fileType } = await req.json()
 
   if (!bucketName || !fileType) {
     return Response.json({ message: "bucketName and fileType are required" }, { status: 400 })
@@ -52,24 +48,18 @@ export async function POST(req: NextRequest) {
 
   const ext = fileType.split("/")[1]
   const uniqueFileName = `${randomUUID()}.${ext}`
-  const key = folderName ? `${folderName}/${uniqueFileName}` : uniqueFileName
-
-  console.log("key:", key)
+  // IMPORTANTE: key es solo el nombre del archivo
+  const key = uniqueFileName
 
   const putCommand = new PutObjectCommand({
-    Bucket: bucketName,
+    Bucket: bucketName,  // ← "im-g"
     Key: key,
     ContentType: fileType,
   })
 
   try {
     const rawSignedUrl = await getSignedUrl(s3Client, putCommand, { expiresIn: 3600 })
-    console.log("=== rawSignedUrl generada ===")
-    
     const signedUrl = stripChecksumParams(rawSignedUrl)
-    
-    console.log("=== URL final devuelta ===")
-    console.log(signedUrl)
 
     return Response.json({ signedUrl, uniqueFileName })
   } catch (error) {
