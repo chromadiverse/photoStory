@@ -94,7 +94,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
       img.crossOrigin = "anonymous"
 
       img.onload = () => {
-        console.log('[FilterPanel] Imagen cargada, dimensiones:', img.width, 'x', img.height)
+    
         
         const canvas = document.createElement("canvas")
         const ctx = canvas.getContext("2d", { willReadFrequently: true })
@@ -153,7 +153,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
   if (blob) {
     const url = URL.createObjectURL(blob)
     // NO revocar la URL anterior aquí
-    console.log('[FilterPanel] Nueva URL creada:', url.substring(0, 50))
+
     resolve({
       croppedImage: url,
       croppedBlob: blob,
@@ -172,11 +172,11 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
   }
 
   const handleComplete = async () => {
-    console.log('[FilterPanel] handleComplete iniciado')
+   
     try {
       setIsProcessing(true)
       const processedImageData = await processImageWithFilters()
-      console.log('[FilterPanel] Procesamiento exitoso, llamando a onComplete')
+
       onComplete(processedImageData)
     } catch (error) {
       console.error("[FilterPanel] Error processing image:", error)
@@ -227,7 +227,7 @@ const FilterPanel: React.FC<FilterPanelProps> = ({ imageData, filterSettings, on
               transform: `scale(${imageScale})`,
             }}
             onError={(e) => console.error('[FilterPanel] Error mostrando imagen:', e)}
-            onLoad={() => console.log('[FilterPanel] Imagen mostrada correctamente')}
+           
           />
           {isProcessing && (
             <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center rounded-lg">

@@ -123,28 +123,26 @@ export default function Home() {
   }, [])
 
   const handleImageCapture = (image: CapturedImage) => {
-    console.log('[Home] handleImageCapture - blob size:', image.blob.size)
+
     setCapturedImage(image)
     setCurrentView("crop")
   }
 
   const handleCropComplete = (cropData: CroppedImageData) => {
-    console.log('[Home] handleCropComplete - new URL:', cropData.croppedImage?.substring(0, 50))
-    console.log('[Home] handleCropComplete - blob size:', cropData.croppedBlob?.size)
+  
     setCroppedImageData(cropData)
     setFilteredImageData(null)
     setCurrentView("filter")
   }
 
   const handleFilterComplete = (processedData: CroppedImageData) => {
-    console.log('[Home] handleFilterComplete - nueva URL:', processedData.croppedImage?.substring(0, 50))
-    console.log('[Home] handleFilterComplete - nuevo blob size:', processedData.croppedBlob?.size)
+  
     setFilteredImageData(processedData)
     setCurrentView("preview")
   }
 
   const handleStartOver = () => {
-    console.log('[Home] handleStartOver - limpiando todo')
+ 
     setCapturedImage(null)
     setCroppedImageData(null)
     setFilteredImageData(null)

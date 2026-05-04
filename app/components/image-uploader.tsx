@@ -12,6 +12,7 @@ interface ImageUploaderProps {
   onUploadComplete: (uploadedFile: {
     name: string;
     path: string;
+     url: string;
     type: string;
   }) => void;
   onUploadError?: (error: Error) => void;
@@ -32,13 +33,11 @@ export default function ImageUploader({
   useEffect(() => { onUploadErrorRef.current = onUploadError; }, [onUploadError]);
 
   useEffect(() => {
-    console.log('[ImageUploader] Mounted, starting upload...')
-    console.log('[ImageUploader] bucketName:', bucketName)
-    console.log('[ImageUploader] folderName:', folderName)
-    console.log('[ImageUploader] imageBlob size:', imageBlob.size)
+
 
     // Skip Uppy entirely — direct fetch is simpler and works fine here
     const run = async () => {
+       console.log('🚀 run() called', new Date().toISOString())
       try {
         const file = new File([imageBlob], `photo-${Date.now()}.jpg`, { type: "image/jpeg" })
 
@@ -47,16 +46,21 @@ export default function ImageUploader({
         formData.append("bucketName", bucketName)
         formData.append("folderName", folderName)
 
-        console.log('[ImageUploader] Sending POST to /api/upload-to-s3-via-api')
+     
 
-        const response = await fetch("/api/upload-to-s3-via-api", {
-          method: "POST",
-          body: formData,
-        })
+    
+
+
+    
+   
+
+    const response = await fetch("/api/upload-to-s3-via-api", {
+      method: "POST",
+      body: formData,
+    })
 
         const data = await response.json()
-        console.log('[ImageUploader] Response status:', response.status)
-        console.log('[ImageUploader] Response data:', data)
+
 
         if (!response.ok) {
           throw new Error(data.error || `Upload failed with status ${response.status}`)
@@ -67,9 +71,10 @@ export default function ImageUploader({
         }
 
         onUploadCompleteRef.current({
-          name: file.name,
-          path: data.path,
-          type: file.type,
+      name: file.name,
+  path: data.path,
+  url: data.url,  // ← add this
+  type: file.type,
         })
 
       } catch (error) {

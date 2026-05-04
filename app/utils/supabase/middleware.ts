@@ -34,7 +34,7 @@ export const updateSession = async (request: NextRequest) => {
   if (error) {
     console.error('[Middleware] Error getting user:', error.message);
   } else if (user) {
-    console.log('[Middleware] User authenticated:', user.id);
+
   }
 
   return response;

@@ -11,15 +11,11 @@ export async function saveGalleryMetadata(
 ): Promise<{ success: boolean; error?: string }> {
   const supabase = createClient()
   
-  console.log('📦 [saveGalleryMetadata] Iniciando...')
-  console.log('📦 userId:', userId)
-  console.log('📦 imagePath:', imagePath)
-  console.log('📦 fileName:', fileName)
-  console.log('📦 metadata:', metadata)
+
 
   try {
     // First, get the dancer_id from user_id
-    console.log('📦 Buscando dancer para userId:', userId)
+   
     const { data: dancerData, error: dancerError } = await supabase
       .from('dancers')
       .select('id')
@@ -32,7 +28,7 @@ export async function saveGalleryMetadata(
     }
 
     const dancerId = dancerData.id
-    console.log('✅ Dancer encontrado - ID:', dancerId)
+   
 
     // Prepare metadata object matching the new schema
     const metadataObject: Record<string, any> = {
@@ -90,7 +86,7 @@ export async function saveGalleryMetadata(
       Object.entries(metadataObject).filter(([_, value]) => value !== undefined && value !== null && value !== '')
     )
 
-    console.log('📦 cleanMetadataObject:', cleanMetadataObject)
+ 
 
     const insertData = {
       dancer_id: dancerId,
@@ -101,7 +97,7 @@ export async function saveGalleryMetadata(
       other_organizations: null
     }
 
-    console.log('📦 Insertando en dancer_gallery_files:', insertData)
+  
 
     // Save to dancer_gallery_files table
     const { data: insertResult, error: dbError } = await supabase
@@ -115,7 +111,7 @@ export async function saveGalleryMetadata(
       return { success: false, error: dbError.message }
     }
 
-    console.log('✅ Registro insertado:', insertResult)
+
     return { success: true }
   } catch (error) {
     console.error('❌ Unexpected error:', error)

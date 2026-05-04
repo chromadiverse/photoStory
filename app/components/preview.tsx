@@ -63,74 +63,67 @@ const Preview: React.FC<PreviewProps> = ({ imageData, onStartOver, onBack, userI
     }
   }, [])
 
-  const handleMetadataSubmit = async (metadata: GalleryMetadataFormData) => {
-    console.log('🔵 [Preview] handleMetadataSubmit - userId:', userId)
-
-    if (!userId) {
-      toast.error('You must be logged in to save to gallery')
-      return
-    }
-
-    setIsModalOpen(false)
-    setIsUploading(true)
-    setPendingMetadata(metadata)
-    setFinalImageBlob(imageData.croppedBlob)
-
-    uploadTimeoutRef.current = setTimeout(() => {
-      toast.error('Upload timed out after 30 seconds')
-      resetUploadState()
-    }, UPLOAD_TIMEOUT_MS)
+const handleMetadataSubmit = async (metadata: GalleryMetadataFormData) => {
+  if (!userId) {
+    toast.error('You must be logged in to save to gallery')
+    return
   }
-  
-  const handleUploadComplete = async (uploadedFile: { name: string; path: string; type: string }) => {
-    console.log('🟢 [Preview] handleUploadComplete - path:', uploadedFile.path)
-    console.log('🟢 [Preview] pendingMetadata:', pendingMetadata ? 'YES' : 'NO')
-    console.log('🟢 [Preview] userId:', userId)
 
-    if (!pendingMetadata || !userId) {
-      console.error('🔴 [Preview] FALTA metadata o userId')
-      resetUploadState()
-      toast.error('Upload failed: missing metadata or user')
-      return
-    }
+  setIsModalOpen(false)
+  setIsUploading(true)
+  // Set both together in one tick so ImageUploader only mounts once
+  setPendingMetadata(metadata)
+  setFinalImageBlob(imageData.croppedBlob)
 
-    try {
-      console.log('🟢 [Preview] Llamando a saveGalleryMetadata...')
-      const result = await saveGalleryMetadata(
-        uploadedFile.path,
-        uploadedFile.path,
-        pendingMetadata,
-        userId,
-        uploadedFile.name,
-        uploadedFile.type
-      )
+  uploadTimeoutRef.current = setTimeout(() => {
+    toast.error('Upload timed out after 30 seconds')
+    resetUploadState()
+  }, UPLOAD_TIMEOUT_MS)
+}
+const handleUploadComplete = async (uploadedFile: { name: string; path: string; url: string; type: string }) => {
+ 
+  if (!pendingMetadata || !userId) {
+    console.error('🔴 [Preview] FALTA metadata o userId')
+    resetUploadState()
+    toast.error('Upload failed: missing metadata or user')
+    return
+  }
 
-      console.log('🟢 [Preview] Resultado de saveGalleryMetadata:', result)
+  try {
+    // Extract just "uuid.jpeg" from "im-g/uuid.jpeg"
+    const keyOnly = uploadedFile.path.split("/").pop()!
 
-      if (result.success) {
-        console.log('🟢 [Preview] Éxito! Mostrando pantalla de éxito')
-        if (uploadTimeoutRef.current) {
-          clearTimeout(uploadTimeoutRef.current)
-          uploadTimeoutRef.current = null
-        }
-        setUploadedImageUrl(imageData.croppedImage)
-        setShowSuccess(true)
-        setPendingMetadata(null)
-        setFinalImageBlob(null)
-        setIsUploading(false)
-        toast.success('Image saved to gallery!')
-      } else {
-        console.error('🔴 [Preview] saveGalleryMetadata falló:', result.error)
-        resetUploadState()
-        toast.error(result.error || 'Failed to save image')
+    const result = await saveGalleryMetadata(
+      keyOnly,  // ✅ "uuid.jpeg" — matches working images in DB
+      keyOnly,  // ✅ "uuid.jpeg" — storage key
+      pendingMetadata,
+      userId,
+      uploadedFile.name,
+      uploadedFile.type
+    )
+
+    if (result.success) {
+      if (uploadTimeoutRef.current) {
+        clearTimeout(uploadTimeoutRef.current)
+        uploadTimeoutRef.current = null
       }
-    } catch (error) {
-      console.error('🔴 [Preview] Excepción en saveGalleryMetadata:', error)
+      setUploadedImageUrl(uploadedFile.url)  // full URL for immediate display
+      setShowSuccess(true)
+      setPendingMetadata(null)
+      setFinalImageBlob(null)
+      setIsUploading(false)
+      toast.success('Image saved to gallery!')
+    } else {
+      console.error('🔴 [Preview] saveGalleryMetadata falló:', result.error)
       resetUploadState()
-      toast.error('Failed to save image: ' + (error as Error).message)
+      toast.error(result.error || 'Failed to save image')
     }
+  } catch (error) {
+    console.error('🔴 [Preview] Excepción en saveGalleryMetadata:', error)
+    resetUploadState()
+    toast.error('Failed to save image: ' + (error as Error).message)
   }
-  
+}
   const handleUploadError = (error: Error) => {
     console.error('🔴 [Preview] Upload error:', error)
     toast.error('Upload error: ' + error.message)
@@ -267,8 +260,8 @@ const Preview: React.FC<PreviewProps> = ({ imageData, onStartOver, onBack, userI
         //ESTO NO VA A FUNCIONAR EN LOCALl
 <ImageUploader
   imageBlob={finalImageBlob}
-  bucketName="prod"     // ← CAMBIA DE "im-g" A "prod"
-  folderName="im-g"     // ← La carpeta dentro de prod
+  bucketName="prod"     
+  folderName="im-g"    
   onUploadComplete={handleUploadComplete}
   onUploadError={handleUploadError}
 />

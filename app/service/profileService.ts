@@ -15,8 +15,7 @@ export const fetchDancerIdByUserId = async (
   }
 
   try {
-    console.log("[fetchDancerIdByUserId] Querying for userId:", userId);
-    
+  
     // Use maybeSingle() instead of single() to avoid 406 errors when no record exists
     const { data, error } = await supabaseClient
       .from('dancers')
@@ -34,7 +33,7 @@ export const fetchDancerIdByUserId = async (
       return { data: null, error: null };
     }
 
-    console.log("[fetchDancerIdByUserId] Found dancer ID:", data.id);
+
     return { data: data.id, error: null };
   } catch (err) {
     console.error("Unexpected error in fetchDancerIdByUserId:", err);

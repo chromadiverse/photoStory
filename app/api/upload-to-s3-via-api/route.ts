@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
     const bucketName = formData.get("bucketName") as string | null;
+    const folderName = formData.get("folderName") as string || "im-g";
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -26,21 +27,27 @@ export async function POST(request: NextRequest) {
 
     const fileBuffer = await file.arrayBuffer();
     const fileBufferTyped = new Uint8Array(fileBuffer);
-    
-    const ext = file.type.split("/")[1];
-    const uniqueFileName = `${crypto.randomUUID()}.${ext}`;
+
+    const mimeType = file.type;
+    const ext = mimeType.includes("/") ? mimeType.split("/")[1].split("+")[0] : "bin";
+    const uniqueFileName = `${folderName}/${crypto.randomUUID()}.${ext}`;
 
     const command = new PutObjectCommand({
       Bucket: bucketName,
       Key: uniqueFileName,
-      ContentType: file.type,
+      ContentType: mimeType,
       Body: fileBufferTyped,
     });
 
     await s3Client.send(command);
 
-    console.log("=== R2 UPLOAD SUCCESS ===");
-    return NextResponse.json({ path: uniqueFileName });
+    const publicBase = process.env.S3_PUBLIC_URL!.replace(/\/$/, "");
+    const publicUrl = `${publicBase}/${uniqueFileName}`;
+
+    return NextResponse.json({
+      path: uniqueFileName,
+      url: publicUrl,
+    });
 
   } catch (error) {
     console.error("=== API Route Error ===", error);

@@ -63,7 +63,7 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
   }
 
   const handleFormSubmit = async (data: GalleryMetadataFormData) => {
-    console.log('[MetadataModal] handleFormSubmit called', data)
+
 
     if (!data.title) {
       console.warn('[MetadataModal] Missing title, aborting')
@@ -75,7 +75,7 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
 
     try {
       await onSubmit(data)
-      console.log('[MetadataModal] onSubmit resolved successfully')
+
       setDebugMessage('Metadata submitted successfully!')
     } catch (error: any) {
       console.error('[MetadataModal] onSubmit threw:', error)
@@ -84,13 +84,11 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
   }
 
   const handleSubmitClick = () => {
-    console.log('[MetadataModal] Save button clicked')
-    console.log('[MetadataModal] Current form values:', form.getValues())
-    console.log('[MetadataModal] Form state:', form.formState)
+
 
     form.handleSubmit(
       (data) => {
-        console.log('[MetadataModal] RHF validation passed, data:', data)
+     
         handleFormSubmit(data)
       },
       (errors) => {
@@ -101,7 +99,7 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
   }
 
   const handleAutoSave = () => {
-    console.log('[MetadataModal] Auto-save triggered')
+  
   }
 
   const resetForm = () => {
