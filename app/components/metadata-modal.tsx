@@ -135,11 +135,7 @@ const MetadataModal: React.FC<MetadataModalProps> = ({
 
         <div className="p-6">
           {/* DEBUG BOX */}
-          <div className="mb-4 p-3 bg-yellow-100 border border-yellow-400 rounded-lg">
-            <p className="font-mono text-xs break-all">
-              <strong>DEBUG:</strong> {debugMessage}
-            </p>
-          </div>
+        
 
           <Form {...form}>
             <form>
