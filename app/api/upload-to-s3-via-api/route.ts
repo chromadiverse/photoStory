@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-
+//lol
 const s3Client = new S3Client({
   region: "auto",
   endpoint: process.env.S3_ENDPOINT,
