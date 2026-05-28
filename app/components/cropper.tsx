@@ -577,13 +577,14 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
         </div>
 
         <div
-          className="absolute border-2 border-white shadow-xl pointer-events-none"
+          className="absolute border-2 border-white shadow-xl"
           style={{
             left: offsetX + cropArea.x * scale,
             top: offsetY + cropArea.y * scale,
             width: cropArea.width * scale,
             height: cropArea.height * scale,
             boxShadow: "0 0 0 9999px rgba(0,0,0,0.6)",
+            pointerEvents: "none",
           }}
         >
           <div className="absolute inset-0">
@@ -605,7 +606,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
 
           <div
             className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-14 h-14 bg-black/40 backdrop-blur-sm rounded-full flex items-center justify-center cursor-move border-2 border-white/30 z-10"
-            style={{ touchAction: "none" }}
+            style={{ touchAction: "none", pointerEvents: "auto" }}
             onMouseDown={(e) => handleDragStart(e, "move")}
             onTouchStart={(e) => handleDragStart(e, "move")}
           >
@@ -622,6 +623,7 @@ const Cropper: React.FC<CropperProps> = ({ image, onCropComplete, onBack }) => {
                 left: pos.includes("w") ? "-20px" : "auto",
                 right: pos.includes("e") ? "-20px" : "auto",
                 touchAction: "none",
+                pointerEvents: "auto" as const,
               }}
               onMouseDown={(e) => handleDragStart(e, pos)}
               onTouchStart={(e) => handleDragStart(e, pos)}
