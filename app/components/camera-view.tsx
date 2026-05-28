@@ -501,6 +501,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           stableFrameCount.current = Math.max(stableFrameCount.current - 1, 0);
         }
         const stable = stableFrameCount.current >= MIN_STABLE_FRAMES;
+        const wasStable = isShapeStableRef.current;
 
         // Keep refs in sync first (used on next frame immediately)
         bestShapeRef.current     = cur;
@@ -510,7 +511,24 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
         setBestShape(cur);
         setIsShapeStable(stable);
 
-        drawOverlay(overlay, shapes, cur, stable);
+        // Play lock sound when first becoming stable
+        if (stable && !wasStable && cur) {
+          playSound('lock');
+        }
+
+        // Update guidance if we have a shape
+        if (cur && canvas) {
+          setGuidance(calcGuidance(cur, canvas.width, canvas.height));
+        } else {
+          setGuidance({ distance: null, tilt: 0, offsetX: 0, offsetY: 0 });
+        }
+
+        // Check light level
+        if (canvas) {
+          setIsLowLight(!checkLightLevel(canvas));
+        }
+
+        drawOverlay(overlay, shapes, cur, stable, guidance);
       } catch (e) {
         console.error('Detection loop error:', e);
       }
@@ -520,7 +538,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
 
     loop();
     return () => { if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current); };
-  }, [isDetectionReady, hasCamera, isAutoDetectionEnabled, deviceType, performanceTier]);
+  }, [isDetectionReady, hasCamera, isAutoDetectionEnabled, deviceType, performanceTier, playSound, calcGuidance, checkLightLevel, guidance]);
 
   // Clear overlay + reset detection state when auto-detect is disabled
   useEffect(() => {
@@ -541,7 +559,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
 
   // ─── Overlay drawing ──────────────────────────────────────────────────────
 
-  const drawOverlay = (overlay: HTMLCanvasElement, shapes: DetectedShape[], best: DetectedShape | null, stable: boolean) => {
+  const drawOverlay = (overlay: HTMLCanvasElement, shapes: DetectedShape[], best: DetectedShape | null, stable: boolean, guidance: GuidanceInfo) => {
     const ctx = overlay.getContext('2d');
     if (!ctx) return;
 
@@ -592,7 +610,10 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       ctx.font      = 'bold 15px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('Align document within frame', overlay.width / 2, gy - 28);
+      const hintText = guidance?.distance === 'far' ? 'Move closer' :
+                       guidance?.distance === 'close' ? 'Move farther' :
+                       'Align document within frame';
+      ctx.fillText(hintText, overlay.width / 2, gy - 28);
 
       return;
     }
@@ -612,10 +633,11 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     ctx.globalCompositeOperation = 'source-over';
 
     const color  = stable ? '#34D399' : '#60A5FA'; // emerald : sky blue
+    const handleRadius = stable ? 11 : 8;
 
-    // Glow effect
+    // Glow effect - pulse when unstable
     ctx.shadowColor = color;
-    ctx.shadowBlur  = stable ? 18 : 10;
+    ctx.shadowBlur  = stable ? 18 : 10 + Math.sin(Date.now() / 150) * 4;
 
     // Border
     ctx.strokeStyle = color;
@@ -629,18 +651,39 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     ctx.setLineDash([]);
     ctx.shadowBlur = 0;
 
-    // Corner dots — clean two-tone circles
+    // Corner dots — clean two-tone circles (larger when stable)
     c.forEach(p => {
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, handleRadius, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, handleRadius * 0.5, 0, Math.PI * 2);
       ctx.fill();
     });
+
+    // Draw tilt indicator if tilt is significant
+    if (guidance && guidance.tilt > 8) {
+      const cx = c.reduce((s, p) => s + p.x, 0) / 4;
+      const cy = c.reduce((s, p) => s + p.y, 0) / 4;
+      const tiltText = `Tilt: ${Math.round(guidance.tilt)} deg`;
+
+      ctx.font = 'bold 12px system-ui, sans-serif';
+      const tw = ctx.measureText(tiltText).width;
+      const ph = 22, pw = tw + 20;
+
+      ctx.fillStyle = 'rgba(251,191,36,0.9)';
+      ctx.beginPath();
+      ctx.roundRect(cx - pw / 2, cy + 50, pw, ph, ph / 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#000';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(tiltText, cx, cy + 50 + ph / 2);
+    }
 
     // Centre label
     const cx = c.reduce((s, p) => s + p.x, 0) / 4;
@@ -665,7 +708,71 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
     }
   };
 
-  // ─── Perspective correction ───────────────────────────────────────────────
+  const enhanceEdges = (imgSrc: string): string => {
+    try {
+      if (!window.cv) return imgSrc;
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return imgSrc;
+      img.src = imgSrc;
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx.drawImage(img, 0, 0);
+      const src = window.cv.imread(canvas);
+      const gray = new window.cv.Mat();
+      const edges = new window.cv.Mat();
+      const enhanced = new window.cv.Mat();
+      window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY);
+      window.cv.GaussianBlur(gray, gray, new window.cv.Size(3, 3), 0);
+      window.cv.Canny(gray, edges, 50, 150, 3, true);
+      window.cv.dilate(edges, edges, new window.cv.Mat(), new window.cv.Point(-1, -1), 1);
+      const rgba = new window.cv.Mat();
+      window.cv.cvtColor(edges, rgba, window.cv.COLOR_GRAY2RGBA);
+      const alpha = new window.cv.Mat(src.rows, src.cols, window.cv.CV_8UC1, new window.cv.Scalar(255));
+      const rgbaWithAlpha = new window.cv.Mat();
+      window.cv.merge([rgba, alpha], rgbaWithAlpha);
+      window.cv.addWeighted(src, 0.9, rgbaWithAlpha, 0.15, 0, enhanced);
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = enhanced.cols;
+      outCanvas.height = enhanced.rows;
+      window.cv.imshow(outCanvas, enhanced);
+      src.delete(); gray.delete(); edges.delete(); enhanced.delete(); rgba.delete(); alpha.delete(); rgbaWithAlpha.delete();
+      return outCanvas.toDataURL('image/jpeg', 0.95);
+    } catch { return imgSrc; }
+  };
+
+  // ─── Capture ──────────────────────────────────────────────────────────────
+
+  const handleCapture = useCallback(async () => {
+    if (!webcamRef.current) return;
+    setIsCapturing(true);
+    playSound('shutter');
+    triggerFlash();
+    try {
+      const video = webcamRef.current.video!;
+      const cap = document.createElement('canvas');
+      cap.width  = video.videoWidth;
+      cap.height = video.videoHeight;
+      cap.getContext('2d')!.drawImage(video, 0, 0, cap.width, cap.height);
+      let imgSrc = cap.toDataURL('image/jpeg', 0.95);
+
+      let finalSrc = imgSrc;
+      if (isAutoDetectionEnabled && bestShapeRef.current && canvasRef.current) {
+        finalSrc = await perspectiveCorrect(imgSrc, bestShapeRef.current.corners, canvasRef.current);
+        finalSrc = enhanceEdges(finalSrc);
+      }
+
+      const blob = await fetch(finalSrc).then(r => r.blob());
+      const img = new Image();
+      img.onload = () => onImageCapture({ src: finalSrc, blob, width: img.width, height: img.height });
+      img.src = finalSrc;
+    } catch (e) {
+      console.error('Capture error:', e);
+    } finally {
+      setIsCapturing(false);
+    }
+  }, [onImageCapture, isAutoDetectionEnabled, playSound]);
 
   const orderCorners = (corners: Point[]): Point[] => {
     const cx = corners.reduce((s, p) => s + p.x, 0) / corners.length;
@@ -700,7 +807,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
           const src = window.cv.imread(img);
           const dst = new window.cv.Mat();
           const srcPts = window.cv.matFromArray(4, 1, window.cv.CV_32FC2,
-            ordered.flatMap(p => [p.x, p.y]));
+            ordered.flatMap((p: Point) => [p.x, p.y]));
           const dstPts = window.cv.matFromArray(4, 1, window.cv.CV_32FC2,
             [0, 0, ow, 0, ow, oh, 0, oh]);
           const M = window.cv.getPerspectiveTransform(srcPts, dstPts);
@@ -725,35 +832,6 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       };
       img.src = imgSrc;
     });
-
-  // ─── Capture ──────────────────────────────────────────────────────────────
-
-  const handleCapture = useCallback(async () => {
-    if (!webcamRef.current) return;
-    setIsCapturing(true);
-    try {
-      const video = webcamRef.current.video!;
-      const cap = document.createElement('canvas');
-      cap.width  = video.videoWidth;
-      cap.height = video.videoHeight;
-      cap.getContext('2d')!.drawImage(video, 0, 0, cap.width, cap.height);
-      const imgSrc = cap.toDataURL('image/jpeg', 0.95);
-
-      let finalSrc = imgSrc;
-      if (isAutoDetectionEnabled && bestShapeRef.current && canvasRef.current) {
-        finalSrc = await perspectiveCorrect(imgSrc, bestShapeRef.current.corners, canvasRef.current);
-      }
-
-      const blob = await fetch(finalSrc).then(r => r.blob());
-      const img  = new Image();
-      img.onload = () => onImageCapture({ src: finalSrc, blob, width: img.width, height: img.height });
-      img.src = finalSrc;
-    } catch (e) {
-      console.error('Capture error:', e);
-    } finally {
-      setIsCapturing(false);
-    }
-  }, [onImageCapture, isAutoDetectionEnabled]);
 
   const handleFileCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -790,7 +868,7 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
       {/* Camera viewport */}
       <div className="relative flex-1 overflow-hidden">
         {hasCamera ? (
-          <>
+          <div className="relative w-full h-full">
             <Webcam
               ref={webcamRef}
               audio={false}
@@ -832,7 +910,36 @@ const CameraView: React.FC<CameraViewProps> = ({ onImageCapture }) => {
                  bestShape ? (isShapeStable ? 'Locked in' : 'Detecting…') : 'Searching…'}
               </div>
             </div>
-          </>
+
+            {/* Low light indicator */}
+            {isLowLight && isAutoDetectionEnabled && (
+              <div className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-500/20 border border-amber-500/40 text-amber-300 backdrop-blur-sm">
+                <AlertCircle size={12} />
+                <span>Low light</span>
+              </div>
+            )}
+
+            {/* Distance indicator */}
+            {guidance.distance && isAutoDetectionEnabled && !bestShape && (
+              <div className={`absolute bottom-24 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-full text-xs font-semibold backdrop-blur-sm transition-all ${
+                guidance.distance === 'far'
+                  ? 'bg-sky-500/30 border border-sky-400/50 text-sky-200'
+                  : guidance.distance === 'close'
+                  ? 'bg-amber-500/30 border border-amber-400/50 text-amber-200'
+                  : 'bg-emerald-500/30 border border-emerald-400/50 text-emerald-200'
+              }`}>
+                {guidance.distance === 'far' ? 'Move closer' : guidance.distance === 'close' ? 'Move farther' : 'Good distance'}
+              </div>
+            )}
+
+            {/* Flash overlay */}
+            <div
+              ref={flashRef}
+              className={`absolute inset-0 bg-white pointer-events-none transition-opacity duration-75 ${
+                showFlash ? 'opacity-90' : 'opacity-0'
+              }`}
+            />
+          </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full bg-zinc-900 gap-4">
             <Camera size={52} className="text-zinc-500" />
